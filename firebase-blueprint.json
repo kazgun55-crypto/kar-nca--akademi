@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profiles",
+      "description": "Registered users in the system",
+      "type": "document",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "uid": { "type": "string" },
+          "email": { "type": "string" },
+          "name": { "type": "string" },
+          "role": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      }
+    },
+    "teachers": {
+      "title": "Teachers",
+      "description": "Teacher records",
+      "type": "document"
+    },
+    "students": {
+      "title": "Students",
+      "description": "Student records",
+      "type": "document"
+    },
+    "meetings": {
+      "title": "Meetings",
+      "description": "Meeting logs",
+      "type": "document"
+    }
+  },
+  "rules": [
+    {
+      "collection": "users",
+      "allow": {
+        "read": "request.auth != null",
+        "write": "request.auth != null"
+      }
+    },
+    {
+      "collection": "teachers",
+      "allow": {
+        "read": "true",
+        "write": "request.auth != null"
+      }
+    },
+    {
+      "collection": "students",
+      "allow": {
+        "read": "true",
+        "write": "request.auth != null"
+      }
+    },
+    {
+      "collection": "meetings",
+      "allow": {
+        "read": "request.auth != null",
+        "write": "request.auth != null"
+      }
+    }
+  ]
+}

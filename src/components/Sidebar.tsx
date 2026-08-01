@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { logoutFirebase } from '@/src/lib/firestoreService';
 import { 
   LayoutDashboard, 
   Users, 
@@ -115,10 +116,17 @@ export function Sidebar() {
             <HelpCircle className="w-5 h-5" />
             <span className="text-sm">Yardım Merkezi</span>
           </a>
-          <NavLink to="/login" className="flex items-center gap-3 text-on-surface py-2 opacity-60 hover:opacity-100 transition-opacity">
+          <button 
+            type="button"
+            onClick={() => {
+              logoutFirebase();
+              window.location.href = '/login';
+            }}
+            className="w-full flex items-center gap-3 text-on-surface py-2 opacity-60 hover:opacity-100 transition-opacity text-left"
+          >
             <LogIn className="w-5 h-5" />
             <span className="text-sm">Çıkış Yap</span>
-          </NavLink>
+          </button>
         </div>
       </div>
     </aside>
