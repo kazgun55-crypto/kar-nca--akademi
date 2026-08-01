@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LogIn, User, Lock, ArrowRight, ShieldCheck, Sparkles, Mail, CheckCircle2, AlertTriangle, X, KeyRound, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { authenticateUser, seedFirestoreIfEmpty, syncFirestoreToLocalStorage } from '../lib/firestoreService';
+import { authenticateUser, seedFirestoreIfEmpty, syncFirestoreToLocalStorage, saveStudentToFirestore, saveTeacherToFirestore } from '../lib/firestoreService';
 
 export function Login() {
   const [role, setRole] = useState<'teacher' | 'student' | 'admin'>('student');
@@ -22,89 +22,9 @@ export function Login() {
   const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
-    // Sync Firestore data & Seed defaults if empty
+    // Sync Firestore data & Seed defaults ONCE if database is fresh
     seedFirestoreIfEmpty();
     syncFirestoreToLocalStorage();
-
-    // 1. Pre-populate teachers if empty
-    const savedTeachers = localStorage.getItem('teachers');
-    if (!savedTeachers || JSON.parse(savedTeachers).length === 0) {
-      const defaultTeachers = [
-        { 
-          id: '1', 
-          name: 'Dr. Ahmet Yılmaz', 
-          department: 'Matematik', 
-          email: 'ahmet@okul.com', 
-          status: 'Aktif', 
-          username: 'ahmet_y', 
-          password: 'password123', 
-          image: 'https://picsum.photos/seed/t1/100/100',
-          role: 'teacher'
-        },
-        { 
-          id: '2', 
-          name: 'Prof. Ayşe Demir', 
-          department: 'Fizik', 
-          email: 'ayse@okul.com', 
-          status: 'Aktif', 
-          username: 'ayse_d', 
-          password: 'password123', 
-          image: 'https://picsum.photos/seed/t2/100/100',
-          role: 'teacher'
-        }
-      ];
-      localStorage.setItem('teachers', JSON.stringify(defaultTeachers));
-    }
-
-    // 2. Pre-populate students if empty
-    const savedStudents = localStorage.getItem('students');
-    if (!savedStudents || JSON.parse(savedStudents).length === 0) {
-      const defaultStudents = [
-        { 
-          id: '1', 
-          name: 'Ahmet Yılmaz', 
-          grade: '12. Sınıf', 
-          lastTrialScore: 85.5, 
-          avatar: 'https://picsum.photos/seed/s1/100/100', 
-          image: 'https://picsum.photos/seed/s1/100/100',
-          username: 'ahmet', 
-          password: '123', 
-          teacherId: '1',
-          completion: 78,
-          lastActive: '5 dakika önce',
-          role: 'student'
-        },
-        { 
-          id: '2', 
-          name: 'Ayşe Demir', 
-          grade: '11. Sınıf', 
-          lastTrialScore: 72.0, 
-          avatar: 'https://picsum.photos/seed/s2/100/100', 
-          image: 'https://picsum.photos/seed/s2/100/100',
-          username: 'ayse', 
-          password: '123', 
-          teacherId: '1',
-          completion: 64,
-          lastActive: '2 saat önce',
-          role: 'student'
-        },
-        { 
-          id: '3', 
-          name: 'Can Özkan', 
-          grade: '12. Sınıf', 
-          lastTrialScore: 91.2, 
-          avatar: 'https://picsum.photos/seed/s3/100/100', 
-          image: 'https://picsum.photos/seed/s3/100/100',
-          username: 'can', 
-          password: '123', 
-          teacherId: '1',
-          completion: 88,
-          lastActive: 'Bugün 10:00',
-          role: 'student'
-        }
-      ];
-      localStorage.setItem('students', JSON.stringify(defaultStudents));
-    }
   }, []);
 
   const handleForgotSearch = (e: React.FormEvent) => {
@@ -170,21 +90,17 @@ export function Login() {
     setEmailSentStatus(`E-posta istemciniz (${email}) adresine e-posta taslağıyla açıldı!`);
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!foundAccount || !newPassword.trim()) return;
 
-    if (foundAccount.storageKey) {
-      const list = JSON.parse(localStorage.getItem(foundAccount.storageKey) || '[]');
-      const updated = list.map((item: any) => {
-        if (item.id === foundAccount.id) {
-          return { ...item, password: newPassword.trim() };
-        }
-        return item;
-      });
-      localStorage.setItem(foundAccount.storageKey, JSON.stringify(updated));
+    const updatedAccount = { ...foundAccount, password: newPassword.trim() };
+    if (foundAccount.storageKey === 'students') {
+      await saveStudentToFirestore(updatedAccount);
+    } else if (foundAccount.storageKey === 'teachers') {
+      await saveTeacherToFirestore(updatedAccount);
     }
 
-    setFoundAccount((prev: any) => prev ? { ...prev, password: newPassword.trim() } : null);
+    setFoundAccount(updatedAccount);
     setEmailSentStatus('Şifreniz başarıyla güncellendi!');
     setNewPassword('');
   };

@@ -29,8 +29,6 @@ export function AddTeacher() {
 
     // Save to Firestore & Local Storage
     await saveTeacherToFirestore(newTeacher);
-    const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
-    localStorage.setItem('teachers', JSON.stringify([...savedTeachers, newTeacher]));
 
     setShowSuccess(true);
     setFormData({

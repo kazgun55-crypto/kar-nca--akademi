@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, ShieldCheck, Sparkles, User, School, AtSign, Lock, Eye, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { saveStudentToFirestore } from '../lib/firestoreService';
+import { saveStudentToFirestore, getTeachersFromFirestore } from '../lib/firestoreService';
 
 export function AddStudent() {
   const [formData, setFormData] = useState({
@@ -15,8 +15,7 @@ export function AddStudent() {
   const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
-    setTeachers(savedTeachers);
+    getTeachersFromFirestore().then(list => setTeachers(list));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,8 +37,6 @@ export function AddStudent() {
 
     // Save to Firestore & Local Storage
     await saveStudentToFirestore(newStudent);
-    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-    localStorage.setItem('students', JSON.stringify([...savedStudents, newStudent]));
 
     setShowSuccess(true);
     setFormData({ name: '', grade: '', username: '', password: '', teacherId: '' });

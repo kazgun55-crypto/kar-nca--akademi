@@ -3,6 +3,7 @@ import { TrendingUp, Users, Verified, FileText, Mail, Sparkles, Timer, Calendar,
 import { StatCard } from '@/src/components/StatCard';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
+import { subscribeStudents, subscribeTeachers } from '@/src/lib/firestoreService';
 
 export function Dashboard() {
   const [studentCount, setStudentCount] = useState<number>(0);
@@ -10,18 +11,24 @@ export function Dashboard() {
   const [avgScore, setAvgScore] = useState<number>(0);
 
   useEffect(() => {
-    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-    const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
+    const unsubStudents = subscribeStudents((studentsList) => {
+      setStudentCount(studentsList.length);
+      if (studentsList.length > 0) {
+        const totalComp = studentsList.reduce((acc: number, s: any) => acc + (s.completion || 75), 0);
+        setAvgScore(Math.round(totalComp / studentsList.length));
+      } else {
+        setAvgScore(0);
+      }
+    });
 
-    setStudentCount(savedStudents.length);
-    setTeacherCount(savedTeachers.length);
+    const unsubTeachers = subscribeTeachers((teachersList) => {
+      setTeacherCount(teachersList.length);
+    });
 
-    if (savedStudents.length > 0) {
-      const totalComp = savedStudents.reduce((acc: number, s: any) => acc + (s.completion || 75), 0);
-      setAvgScore(Math.round(totalComp / savedStudents.length));
-    } else {
-      setAvgScore(0);
-    }
+    return () => {
+      unsubStudents();
+      unsubTeachers();
+    };
   }, []);
 
   const calculateCountdownDays = (examType: 'LGS' | 'YKS') => {

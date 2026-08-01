@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MoreVertical, Eye, ChevronLeft, ChevronRight, Users, Trash2, Edit, AlertTriangle, CheckCircle2, X, Mail } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { saveStudentToFirestore, deleteStudentFromFirestore } from '../lib/firestoreService';
+import { saveStudentToFirestore, deleteStudentFromFirestore, subscribeStudents, subscribeTeachers } from '../lib/firestoreService';
 
 export function StudentDirectory() {
   const [students, setStudents] = useState<any[]>([]);
@@ -16,27 +16,19 @@ export function StudentDirectory() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    loadData();
+    const unsubStudents = subscribeStudents((list) => {
+      setStudents(list);
+    });
+
+    const unsubTeachers = subscribeTeachers((list) => {
+      setTeachers(list);
+    });
+
+    return () => {
+      unsubStudents();
+      unsubTeachers();
+    };
   }, []);
-
-  const loadData = () => {
-    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-    const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
-
-    if (savedStudents.length === 0) {
-      const defaults = [
-        { id: '1', name: 'Ahmet Yılmaz', grade: '12. Sınıf', username: 'ahmet', password: '123', completion: 85, lastActive: '10 dakika önce', image: 'https://picsum.photos/seed/s1/100/100', teacherId: '1' },
-        { id: '2', name: 'Ayşe Demir', grade: '11. Sınıf', username: 'ayse', password: '123', completion: 72, lastActive: 'Dün 14:20', image: 'https://picsum.photos/seed/s2/100/100', teacherId: '1' },
-        { id: '3', name: 'Can Özkan', grade: '12. Sınıf', username: 'can', password: '123', completion: 91, lastActive: '2 saat önce', image: 'https://picsum.photos/seed/s3/100/100', teacherId: '1' },
-      ];
-      setStudents(defaults);
-      localStorage.setItem('students', JSON.stringify(defaults));
-    } else {
-      setStudents(savedStudents);
-    }
-
-    setTeachers(savedTeachers);
-  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -61,10 +53,6 @@ export function StudentDirectory() {
     if (!deletingStudent) return;
 
     await deleteStudentFromFirestore(deletingStudent.id);
-    const updated = students.filter(s => s.id !== deletingStudent.id);
-    setStudents(updated);
-    localStorage.setItem('students', JSON.stringify(updated));
-
     showToast(`${deletingStudent.name} sistemden silindi.`);
     setDeletingStudent(null);
     setShowDeleteConfirm(false);
@@ -75,10 +63,6 @@ export function StudentDirectory() {
     if (!editingStudent) return;
 
     await saveStudentToFirestore(editingStudent);
-    const updated = students.map(s => s.id === editingStudent.id ? editingStudent : s);
-    setStudents(updated);
-    localStorage.setItem('students', JSON.stringify(updated));
-
     showToast(`${editingStudent.name} bilgileri güncellendi.`);
     setEditingStudent(null);
   };

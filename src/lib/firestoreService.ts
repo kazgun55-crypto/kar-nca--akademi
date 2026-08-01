@@ -29,9 +29,18 @@ export interface UserProfile {
   createdAt?: string;
 }
 
-// 1. Seed Initial Firestore Data if collections or predefined users are missing
+// 1. Seed Initial Firestore Data ONCE if database is fresh
 export async function seedFirestoreIfEmpty() {
   try {
+    const isSeeded = localStorage.getItem('firestore_seeded');
+    if (isSeeded) return;
+
+    const usersSnap = await getDocs(collection(db, 'users'));
+    if (!usersSnap.empty) {
+      localStorage.setItem('firestore_seeded', 'true');
+      return;
+    }
+
     const defaultTeachers = [
       { 
         id: 'teacher_gokce', 
@@ -141,6 +150,8 @@ export async function seedFirestoreIfEmpty() {
         grade: s.grade
       }, { merge: true });
     }
+
+    localStorage.setItem('firestore_seeded', 'true');
   } catch (err) {
     console.warn('Firestore seeding skipped or failed:', err);
   }
@@ -485,21 +496,69 @@ export async function logoutFirebase() {
   localStorage.removeItem('currentUserGrade');
 }
 
-// 5. Realtime Sync Firestore Collections to Local Storage
+// 5. Realtime Sync & Retrieval Firestore Collections
+export async function getStudentsFromFirestore(): Promise<any[]> {
+  try {
+    const snap = await getDocs(collection(db, 'students'));
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    localStorage.setItem('students', JSON.stringify(list));
+    return list;
+  } catch (err) {
+    console.error('Error fetching students from Firestore:', err);
+    return JSON.parse(localStorage.getItem('students') || '[]');
+  }
+}
+
+export async function getTeachersFromFirestore(): Promise<any[]> {
+  try {
+    const snap = await getDocs(collection(db, 'teachers'));
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    localStorage.setItem('teachers', JSON.stringify(list));
+    return list;
+  } catch (err) {
+    console.error('Error fetching teachers from Firestore:', err);
+    return JSON.parse(localStorage.getItem('teachers') || '[]');
+  }
+}
+
+export function subscribeStudents(callback: (students: any[]) => void) {
+  return onSnapshot(collection(db, 'students'), (snap) => {
+    const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    localStorage.setItem('students', JSON.stringify(list));
+    callback(list);
+  }, (err) => {
+    console.error('Students snapshot error:', err);
+  });
+}
+
+export function subscribeTeachers(callback: (teachers: any[]) => void) {
+  return onSnapshot(collection(db, 'teachers'), (snap) => {
+    const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    localStorage.setItem('teachers', JSON.stringify(list));
+    callback(list);
+  }, (err) => {
+    console.error('Teachers snapshot error:', err);
+  });
+}
+
+export async function updateStudentTeacherId(studentId: string, teacherId: string) {
+  try {
+    await setDoc(doc(db, 'students', studentId), { teacherId }, { merge: true });
+  } catch (err) {
+    console.error('Error updating student teacherId in Firestore:', err);
+  }
+}
+
 export function syncFirestoreToLocalStorage() {
   // Sync Teachers
   onSnapshot(collection(db, 'teachers'), (snap) => {
-    if (!snap.empty) {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      localStorage.setItem('teachers', JSON.stringify(list));
-    }
+    const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    localStorage.setItem('teachers', JSON.stringify(list));
   });
 
   // Sync Students
   onSnapshot(collection(db, 'students'), (snap) => {
-    if (!snap.empty) {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      localStorage.setItem('students', JSON.stringify(list));
-    }
+    const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    localStorage.setItem('students', JSON.stringify(list));
   });
 }

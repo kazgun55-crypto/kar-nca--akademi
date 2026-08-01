@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { subscribeStudents, updateStudentTeacherId, deleteStudentFromFirestore } from '../lib/firestoreService';
 import { 
   Users, 
   Search, 
@@ -135,75 +136,36 @@ export function MyStudents() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const loadTeacherStudents = () => {
-    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-    setAllDirectoryStudents(savedStudents);
-    
-    const teacherId = localStorage.getItem('currentUserId') || '1';
-    
-    // Filter students assigned to this teacher
-    let myStudents = savedStudents.filter((s: any) => s.teacherId === teacherId);
-    
-    // If teacherId is '1' (Dr. Ahmet Yılmaz) and no students assigned, initialize demo assignment
-    if (myStudents.length === 0 && teacherId === '1' && savedStudents.length === 0) {
-      const initialStudents = [
-        { id: '1', name: 'Ahmet Yılmaz', grade: '12. Sınıf', lastTrialScore: 85.5, avatar: 'https://picsum.photos/seed/s1/100/100', username: 'ahmet', password: '123', teacherId: '1' },
-        { id: '2', name: 'Ayşe Demir', grade: '11. Sınıf', lastTrialScore: 72.0, avatar: 'https://picsum.photos/seed/s2/100/100', username: 'ayse', password: '123', teacherId: '1' },
-        { id: '3', name: 'Can Özkan', grade: '12. Sınıf', lastTrialScore: 91.2, avatar: 'https://picsum.photos/seed/s3/100/100', username: 'can', password: '123', teacherId: '1' },
-      ];
-      localStorage.setItem('students', JSON.stringify(initialStudents));
-      myStudents = initialStudents;
-      setAllDirectoryStudents(initialStudents);
-    }
-    
-    setStudents(myStudents);
-  };
-
   useEffect(() => {
-    loadTeacherStudents();
+    const unsub = subscribeStudents((allList) => {
+      setAllDirectoryStudents(allList);
+      const teacherId = localStorage.getItem('currentUserId') || '1';
+      const myStudents = allList.filter((s: any) => s.teacherId === teacherId);
+      setStudents(myStudents);
+    });
+
+    return () => unsub();
   }, []);
 
-  const claimStudent = (studentId: string) => {
+  const claimStudent = async (studentId: string) => {
     const teacherId = localStorage.getItem('currentUserId') || '1';
-    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-    
-    const updated = savedStudents.map((s: any) => {
-      if (s.id === studentId) {
-        return { ...s, teacherId };
-      }
-      return s;
-    });
-
-    localStorage.setItem('students', JSON.stringify(updated));
+    await updateStudentTeacherId(studentId, teacherId);
     showToast('Öğrenci başarıyla danışmanlığınıza eklendi!');
-    loadTeacherStudents();
+    setShowClaimModal(false);
   };
 
-  const handleUnassignStudent = (studentId: string) => {
-    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-    const updated = savedStudents.map((s: any) => {
-      if (s.id === studentId) {
-        return { ...s, teacherId: '' };
-      }
-      return s;
-    });
-
-    localStorage.setItem('students', JSON.stringify(updated));
+  const handleUnassignStudent = async (studentId: string) => {
+    await updateStudentTeacherId(studentId, '');
     showToast('Öğrenci danışmanlığınızdan çıkarıldı.');
     setShowDeleteStudentModal(false);
     setDeletingStudentTarget(null);
-    loadTeacherStudents();
   };
 
-  const handlePermanentlyDeleteStudent = (studentId: string) => {
-    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-    const updated = savedStudents.filter((s: any) => s.id !== studentId);
-
-    localStorage.setItem('students', JSON.stringify(updated));
+  const handlePermanentlyDeleteStudent = async (studentId: string) => {
+    await deleteStudentFromFirestore(studentId);
     showToast('Öğrenci sistemden tamamen silindi.');
     setShowDeleteStudentModal(false);
     setDeletingStudentTarget(null);
-    loadTeacherStudents();
   };
 
   const handleStudentClick = (student: Student) => {

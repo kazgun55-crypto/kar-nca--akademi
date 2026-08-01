@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MoreVertical, Eye, ChevronLeft, ChevronRight, UserPlus, Mail, Calendar, Trash2, Edit, ShieldCheck, CheckCircle2, AlertTriangle, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { saveTeacherToFirestore, deleteTeacherFromFirestore } from '../lib/firestoreService';
+import { saveTeacherToFirestore, deleteTeacherFromFirestore, subscribeTeachers, subscribeStudents, updateStudentTeacherId } from '../lib/firestoreService';
 
 export function TeacherDirectory() {
   const [teachers, setTeachers] = useState<any[]>([]);
@@ -16,28 +16,22 @@ export function TeacherDirectory() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    const unsubTeachers = subscribeTeachers((list) => {
+      setTeachers(list);
+    });
 
-  const loadData = () => {
-    const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
-    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
+    const unsubStudents = subscribeStudents((list) => {
+      setStudents(list);
+    });
+
     const savedMeetings = JSON.parse(localStorage.getItem('meetings') || '[]');
-    
-    if (savedTeachers.length === 0) {
-      const defaults = [
-        { id: '1', name: 'Dr. Ahmet Yılmaz', department: 'Matematik', email: 'ahmet@okul.com', status: 'Aktif', username: 'ahmet_y', password: 'password123', image: 'https://picsum.photos/seed/t1/100/100' },
-        { id: '2', name: 'Prof. Ayşe Demir', department: 'Fizik', email: 'ayse@okul.com', status: 'Aktif', username: 'ayse_d', password: 'password123', image: 'https://picsum.photos/seed/t2/100/100' },
-      ];
-      setTeachers(defaults);
-      localStorage.setItem('teachers', JSON.stringify(defaults));
-    } else {
-      setTeachers(savedTeachers);
-    }
-    
-    setStudents(savedStudents);
     setMeetings(savedMeetings);
-  };
+
+    return () => {
+      unsubTeachers();
+      unsubStudents();
+    };
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -63,14 +57,12 @@ export function TeacherDirectory() {
     if (!deletingTeacher) return;
     
     await deleteTeacherFromFirestore(deletingTeacher.id);
-    const updatedTeachers = teachers.filter(t => t.id !== deletingTeacher.id);
-    setTeachers(updatedTeachers);
-    localStorage.setItem('teachers', JSON.stringify(updatedTeachers));
 
-    // Remove teacher association from students
-    const updatedStudents = students.map(s => s.teacherId === deletingTeacher.id ? { ...s, teacherId: '' } : s);
-    setStudents(updatedStudents);
-    localStorage.setItem('students', JSON.stringify(updatedStudents));
+    // Remove teacher association from affected students in Firestore
+    const affectedStudents = students.filter(s => s.teacherId === deletingTeacher.id);
+    for (const s of affectedStudents) {
+      await updateStudentTeacherId(s.id, '');
+    }
 
     showToast(`${deletingTeacher.name} sistemden silindi.`);
     setDeletingTeacher(null);
@@ -82,24 +74,17 @@ export function TeacherDirectory() {
     if (!editingTeacher) return;
 
     await saveTeacherToFirestore(editingTeacher);
-    const updatedTeachers = teachers.map(t => t.id === editingTeacher.id ? editingTeacher : t);
-    setTeachers(updatedTeachers);
-    localStorage.setItem('teachers', JSON.stringify(updatedTeachers));
-
     showToast(`${editingTeacher.name} bilgileri güncellendi.`);
     setEditingTeacher(null);
   };
 
-  const toggleStatus = (teacherId: string) => {
-    const updatedTeachers = teachers.map(t => {
-      if (t.id === teacherId) {
-        const nextStatus = t.status === 'Aktif' ? 'Pasif' : 'Aktif';
-        return { ...t, status: nextStatus };
-      }
-      return t;
-    });
-    setTeachers(updatedTeachers);
-    localStorage.setItem('teachers', JSON.stringify(updatedTeachers));
+  const toggleStatus = async (teacherId: string) => {
+    const found = teachers.find(t => t.id === teacherId);
+    if (!found) return;
+
+    const nextStatus = found.status === 'Aktif' ? 'Pasif' : 'Aktif';
+    const updated = { ...found, status: nextStatus };
+    await saveTeacherToFirestore(updated);
     showToast('Öğretmen durumu güncellendi.');
   };
 
