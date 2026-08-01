@@ -1,0 +1,69 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-manrope: "Manrope", sans-serif;
+  --font-inter: "Inter", sans-serif;
+
+  --color-primary: #005bbf;
+  --color-primary-container: #1a73e8;
+  --color-on-primary: #ffffff;
+  
+  --color-secondary: #6f43c0;
+  --color-secondary-container: #a97efd;
+  --color-on-secondary: #ffffff;
+
+  --color-tertiary: #1a6c23;
+  --color-tertiary-container: #37863a;
+  --color-on-tertiary: #ffffff;
+
+  --color-surface: #f3faff;
+  --color-on-surface: #071e27;
+  --color-on-surface-variant: #414754;
+
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #e6f6ff;
+  --color-surface-container: #dbf1fe;
+  --color-surface-container-high: #d5ecf8;
+  --color-surface-container-highest: #cfe6f2;
+
+  --color-outline: #727785;
+  --color-outline-variant: #c1c6d6;
+
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1.5rem;
+}
+
+@layer base {
+  body {
+    @apply font-inter bg-surface text-on-surface antialiased;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-manrope;
+  }
+}
+
+.glass-panel {
+  @apply bg-white/70 backdrop-blur-xl;
+}
+
+.shadow-ambient {
+  box-shadow: 0 12px 40px rgba(7, 30, 39, 0.06);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-outline-variant/30 rounded-full;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-outline-variant/60;
+}
