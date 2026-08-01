@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LogIn, User, Lock, ArrowRight, ShieldCheck, Sparkles, Mail, CheckCircle2, AlertTriangle, X, KeyRound, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { loginWithFirebase, seedFirestoreIfEmpty, syncFirestoreToLocalStorage } from '../lib/firestoreService';
+import { authenticateUser, seedFirestoreIfEmpty, syncFirestoreToLocalStorage } from '../lib/firestoreService';
 
 export function Login() {
   const [role, setRole] = useState<'teacher' | 'student' | 'admin'>('student');
@@ -203,95 +203,19 @@ export function Login() {
 
     setLoading(true);
     try {
-      // First attempt real Firebase Auth
-      await loginWithFirebase(cleanUsername, cleanPassword);
-      setSuccessMsg('Firebase ile başarıyla giriş yapıldı! Yönlendiriliyorsunuz...');
-      const userRole = localStorage.getItem('userRole');
+      const result = await authenticateUser(cleanUsername, cleanPassword, role);
+      setSuccessMsg('Giriş başarılı! Yönlendiriliyorsunuz...');
       setTimeout(() => {
-        if (userRole === 'student') navigate('/portal');
-        else if (userRole === 'teacher') navigate('/my-students');
+        if (result.role === 'student') navigate('/portal');
+        else if (result.role === 'teacher') navigate('/my-students');
         else navigate('/');
-      }, 600);
-      return;
-    } catch (firebaseErr: any) {
-      console.log('Firebase login fallback checking local credentials...', firebaseErr);
+      }, 500);
+    } catch (err: any) {
+      console.error('Giriş hatası:', err);
+      setError(err.message || 'Geçersiz kullanıcı adı/e-posta veya şifre.');
     } finally {
       setLoading(false);
     }
-
-    // Local / Demo fallbacks
-    const tryStudent = () => {
-      const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-      const student = savedStudents.find((s: any) => 
-        (s.username?.trim().toLowerCase() === cleanUsername.toLowerCase() || s.email?.trim().toLowerCase() === cleanUsername.toLowerCase()) && 
-        s.password === cleanPassword
-      );
-      
-      if (student) {
-        localStorage.setItem('userRole', 'student');
-        localStorage.setItem('currentUserId', student.id);
-        localStorage.setItem('currentUserName', student.name);
-        localStorage.setItem('currentUserGrade', student.grade || '12. Sınıf');
-        navigate('/portal');
-        return true;
-      }
-      if (cleanUsername.toLowerCase() === 'ogrenci' && cleanPassword === '123') {
-        localStorage.setItem('userRole', 'student');
-        localStorage.setItem('currentUserId', '1');
-        localStorage.setItem('currentUserName', 'Ahmet Yılmaz');
-        localStorage.setItem('currentUserGrade', '12. Sınıf');
-        navigate('/portal');
-        return true;
-      }
-      return false;
-    };
-
-    const tryTeacher = () => {
-      const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
-      const teacher = savedTeachers.find((t: any) => 
-        (t.username?.trim().toLowerCase() === cleanUsername.toLowerCase() || t.email?.trim().toLowerCase() === cleanUsername.toLowerCase()) && 
-        t.password === cleanPassword
-      );
-      
-      if (teacher) {
-        localStorage.setItem('userRole', 'teacher');
-        localStorage.setItem('currentUserId', teacher.id);
-        localStorage.setItem('currentUserName', teacher.name);
-        localStorage.setItem('currentUserEmail', teacher.email || '');
-        navigate('/my-students');
-        return true;
-      }
-      if (cleanUsername.toLowerCase() === 'hoca' && cleanPassword === '123') {
-        localStorage.setItem('userRole', 'teacher');
-        localStorage.setItem('currentUserId', '1');
-        localStorage.setItem('currentUserName', 'Dr. Ahmet Yılmaz');
-        localStorage.setItem('currentUserEmail', 'ahmet@okul.com');
-        navigate('/my-students');
-        return true;
-      }
-      return false;
-    };
-
-    const tryAdmin = () => {
-      if ((cleanUsername.toLowerCase() === 'köksal' || cleanUsername.toLowerCase() === 'koksal' || cleanUsername.toLowerCase() === 'admin') && (cleanPassword === 'köksal123' || cleanPassword === 'koksal123' || cleanPassword === 'admin123')) {
-        localStorage.setItem('userRole', 'admin');
-        localStorage.setItem('currentUserId', 'admin');
-        localStorage.setItem('currentUserName', 'Sistem Yöneticisi');
-        navigate('/');
-        return true;
-      }
-      return false;
-    };
-
-    if (role === 'student' && tryStudent()) return;
-    if (role === 'teacher' && tryTeacher()) return;
-    if (role === 'admin' && tryAdmin()) return;
-
-    if (tryTeacher()) return;
-    if (tryStudent()) return;
-    if (tryAdmin()) return;
-
-    setError('Geçersiz kullanıcı adı/e-posta veya şifre.');
   };
 
   const fillDemo = (demoRole: 'student' | 'teacher' | 'teacher2' | 'admin') => {

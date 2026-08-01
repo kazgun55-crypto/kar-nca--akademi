@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MoreVertical, Eye, ChevronLeft, ChevronRight, Users, Trash2, Edit, AlertTriangle, CheckCircle2, X, Mail } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { saveStudentToFirestore, deleteStudentFromFirestore } from '../lib/firestoreService';
 
 export function StudentDirectory() {
   const [students, setStudents] = useState<any[]>([]);
@@ -56,9 +57,10 @@ export function StudentDirectory() {
     showToast(`${student.name} için giriş bilgileri e-posta taslağı olarak açıldı.`);
   };
 
-  const handleDeleteStudent = () => {
+  const handleDeleteStudent = async () => {
     if (!deletingStudent) return;
 
+    await deleteStudentFromFirestore(deletingStudent.id);
     const updated = students.filter(s => s.id !== deletingStudent.id);
     setStudents(updated);
     localStorage.setItem('students', JSON.stringify(updated));
@@ -68,10 +70,11 @@ export function StudentDirectory() {
     setShowDeleteConfirm(false);
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStudent) return;
 
+    await saveStudentToFirestore(editingStudent);
     const updated = students.map(s => s.id === editingStudent.id ? editingStudent : s);
     setStudents(updated);
     localStorage.setItem('students', JSON.stringify(updated));

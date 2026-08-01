@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, ShieldCheck, Sparkles, User, School, AtSign, Lock, Eye, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { saveStudentToFirestore } from '../lib/firestoreService';
 
 export function AddStudent() {
   const [formData, setFormData] = useState({
@@ -18,7 +19,7 @@ export function AddStudent() {
     setTeachers(savedTeachers);
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.username) return;
 
@@ -28,12 +29,15 @@ export function AddStudent() {
       grade: formData.grade || '12. Sınıf',
       username: formData.username,
       password: formData.password || '123456',
+      email: `${formData.username}@okul.com`,
       teacherId: formData.teacherId,
       lastTrialScore: 0,
       avatar: `https://picsum.photos/seed/${formData.username}/100/100`,
       role: 'student'
     };
 
+    // Save to Firestore & Local Storage
+    await saveStudentToFirestore(newStudent);
     const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
     localStorage.setItem('students', JSON.stringify([...savedStudents, newStudent]));
 

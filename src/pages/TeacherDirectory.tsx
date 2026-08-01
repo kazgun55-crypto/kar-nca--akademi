@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MoreVertical, Eye, ChevronLeft, ChevronRight, UserPlus, Mail, Calendar, Trash2, Edit, ShieldCheck, CheckCircle2, AlertTriangle, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { saveTeacherToFirestore, deleteTeacherFromFirestore } from '../lib/firestoreService';
 
 export function TeacherDirectory() {
   const [teachers, setTeachers] = useState<any[]>([]);
@@ -58,9 +59,10 @@ export function TeacherDirectory() {
     }).length;
   };
 
-  const handleDeleteTeacher = () => {
+  const handleDeleteTeacher = async () => {
     if (!deletingTeacher) return;
     
+    await deleteTeacherFromFirestore(deletingTeacher.id);
     const updatedTeachers = teachers.filter(t => t.id !== deletingTeacher.id);
     setTeachers(updatedTeachers);
     localStorage.setItem('teachers', JSON.stringify(updatedTeachers));
@@ -75,10 +77,11 @@ export function TeacherDirectory() {
     setShowDeleteConfirm(false);
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTeacher) return;
 
+    await saveTeacherToFirestore(editingTeacher);
     const updatedTeachers = teachers.map(t => t.id === editingTeacher.id ? editingTeacher : t);
     setTeachers(updatedTeachers);
     localStorage.setItem('teachers', JSON.stringify(updatedTeachers));

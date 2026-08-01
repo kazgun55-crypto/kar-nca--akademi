@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserPlus, Shield, Mail, BookOpen, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { saveTeacherToFirestore } from '../lib/firestoreService';
 
 export function AddTeacher() {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export function AddTeacher() {
   });
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const newTeacher = {
@@ -26,6 +27,8 @@ export function AddTeacher() {
       role: 'teacher'
     };
 
+    // Save to Firestore & Local Storage
+    await saveTeacherToFirestore(newTeacher);
     const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
     localStorage.setItem('teachers', JSON.stringify([...savedTeachers, newTeacher]));
 
