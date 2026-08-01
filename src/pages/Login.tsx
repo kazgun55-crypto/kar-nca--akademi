@@ -218,9 +218,13 @@ export function Login() {
     }
   };
 
-  const fillDemo = (demoRole: 'student' | 'teacher' | 'teacher2' | 'admin') => {
+  const fillDemo = (demoRole: 'student' | 'teacher' | 'gokce' | 'teacher2' | 'admin') => {
     setError('');
-    if (demoRole === 'teacher') {
+    if (demoRole === 'gokce') {
+      setRole('teacher');
+      setUsername('gokce');
+      setPassword('123');
+    } else if (demoRole === 'teacher') {
       setRole('teacher');
       setUsername('ahmet_y');
       setPassword('password123');
@@ -387,40 +391,6 @@ export function Login() {
                 )}
               </button>
             </form>
-            
-            <div className="mt-6 pt-6 border-t border-outline-variant/15 space-y-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant text-center">Hızlı Demolar - Tıklayıp Deneyin</p>
-              <div className="flex flex-wrap justify-center gap-2">
-                <button 
-                  type="button"
-                  onClick={() => fillDemo('teacher')}
-                  className="px-3 py-1.5 rounded-xl bg-surface-container-high hover:bg-primary/10 hover:text-primary text-[11px] font-bold text-on-surface-variant transition-all border border-outline-variant/10"
-                >
-                  👨‍🏫 Öğretmen (Ahmet Y.)
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => fillDemo('teacher2')}
-                  className="px-3 py-1.5 rounded-xl bg-surface-container-high hover:bg-primary/10 hover:text-primary text-[11px] font-bold text-on-surface-variant transition-all border border-outline-variant/10"
-                >
-                  👩‍🏫 Öğretmen (Ayşe D.)
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => fillDemo('student')}
-                  className="px-3 py-1.5 rounded-xl bg-surface-container-high hover:bg-primary/10 hover:text-primary text-[11px] font-bold text-on-surface-variant transition-all border border-outline-variant/10"
-                >
-                  🎓 Öğrenci (Ahmet)
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => fillDemo('admin')}
-                  className="px-3 py-1.5 rounded-xl bg-surface-container-high hover:bg-primary/10 hover:text-primary text-[11px] font-bold text-on-surface-variant transition-all border border-outline-variant/10"
-                >
-                  ⚙️ Yönetici (Köksal)
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </div>

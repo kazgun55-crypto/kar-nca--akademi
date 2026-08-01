@@ -29,110 +29,117 @@ export interface UserProfile {
   createdAt?: string;
 }
 
-// 1. Seed Initial Firestore Data if collections are empty
+// 1. Seed Initial Firestore Data if collections or predefined users are missing
 export async function seedFirestoreIfEmpty() {
   try {
-    const teachersSnap = await getDocs(collection(db, 'teachers'));
-    if (teachersSnap.empty) {
-      const defaultTeachers = [
-        { 
-          id: '1', 
-          name: 'Dr. Ahmet Yılmaz', 
-          department: 'Matematik', 
-          email: 'ahmet@okul.com', 
-          status: 'Aktif', 
-          username: 'ahmet_y', 
-          password: 'password123', 
-          image: 'https://picsum.photos/seed/t1/100/100',
-          role: 'teacher'
-        },
-        { 
-          id: '2', 
-          name: 'Prof. Ayşe Demir', 
-          department: 'Fizik', 
-          email: 'ayse@okul.com', 
-          status: 'Aktif', 
-          username: 'ayse_d', 
-          password: 'password123', 
-          image: 'https://picsum.photos/seed/t2/100/100',
-          role: 'teacher'
-        }
-      ];
-      for (const t of defaultTeachers) {
-        await setDoc(doc(db, 'teachers', t.id), t);
-        await setDoc(doc(db, 'users', t.id), {
-          uid: t.id,
-          name: t.name,
-          email: t.email,
-          username: t.username,
-          password: t.password,
-          role: 'teacher',
-          department: t.department
-        });
+    const defaultTeachers = [
+      { 
+        id: 'teacher_gokce', 
+        name: 'Gökçe Öğretmen', 
+        department: 'Matematik', 
+        email: 'gokce@okul.com', 
+        status: 'Aktif', 
+        username: 'gokce', 
+        password: '123', 
+        image: 'https://picsum.photos/seed/gokce/100/100',
+        role: 'teacher'
+      },
+      { 
+        id: '1', 
+        name: 'Dr. Ahmet Yılmaz', 
+        department: 'Matematik', 
+        email: 'ahmet@okul.com', 
+        status: 'Aktif', 
+        username: 'ahmet_y', 
+        password: 'password123', 
+        image: 'https://picsum.photos/seed/t1/100/100',
+        role: 'teacher'
+      },
+      { 
+        id: '2', 
+        name: 'Prof. Ayşe Demir', 
+        department: 'Fizik', 
+        email: 'ayse@okul.com', 
+        status: 'Aktif', 
+        username: 'ayse_d', 
+        password: 'password123', 
+        image: 'https://picsum.photos/seed/t2/100/100',
+        role: 'teacher'
       }
+    ];
+
+    for (const t of defaultTeachers) {
+      await setDoc(doc(db, 'teachers', t.id), t, { merge: true });
+      await setDoc(doc(db, 'users', t.id), {
+        uid: t.id,
+        name: t.name,
+        email: t.email,
+        username: t.username,
+        password: t.password,
+        role: 'teacher',
+        department: t.department
+      }, { merge: true });
     }
 
-    const studentsSnap = await getDocs(collection(db, 'students'));
-    if (studentsSnap.empty) {
-      const defaultStudents = [
-        { 
-          id: '1', 
-          name: 'Ahmet Yılmaz', 
-          grade: '12. Sınıf', 
-          lastTrialScore: 85.5, 
-          avatar: 'https://picsum.photos/seed/s1/100/100', 
-          image: 'https://picsum.photos/seed/s1/100/100',
-          username: 'ahmet', 
-          password: '123', 
-          email: 'ahmet.ogrenci@okul.com',
-          teacherId: '1',
-          completion: 78,
-          lastActive: '5 dakika önce',
-          role: 'student'
-        },
-        { 
-          id: '2', 
-          name: 'Ayşe Demir', 
-          grade: '11. Sınıf', 
-          lastTrialScore: 72.0, 
-          avatar: 'https://picsum.photos/seed/s2/100/100', 
-          image: 'https://picsum.photos/seed/s2/100/100',
-          username: 'ayse', 
-          password: '123', 
-          email: 'ayse.ogrenci@okul.com',
-          teacherId: '1',
-          completion: 64,
-          lastActive: '2 saat önce',
-          role: 'student'
-        },
-        { 
-          id: '3', 
-          name: 'Can Özkan', 
-          grade: '12. Sınıf', 
-          lastTrialScore: 91.2, 
-          avatar: 'https://picsum.photos/seed/s3/100/100', 
-          image: 'https://picsum.photos/seed/s3/100/100',
-          username: 'can', 
-          password: '123', 
-          email: 'can.ogrenci@okul.com',
-          teacherId: '1',
-          completion: 88,
-          lastActive: 'Bugün 10:00',
-          role: 'student'
-        }
-      ];
-      for (const s of defaultStudents) {
-        await setDoc(doc(db, 'students', s.id), s);
-        await setDoc(doc(db, 'users', s.id), {
-          uid: s.id,
-          name: s.name,
-          email: s.email,
-          username: s.username,
-          password: s.password,
-          role: 'student',
-          grade: s.grade
-        });
+    const defaultStudents = [
+      { 
+        id: '1', 
+        name: 'Ahmet Yılmaz', 
+        grade: '12. Sınıf', 
+        lastTrialScore: 85.5, 
+        avatar: 'https://picsum.photos/seed/s1/100/100', 
+        image: 'https://picsum.photos/seed/s1/100/100',
+        username: 'ahmet', 
+        password: '123', 
+        email: 'ahmet.ogrenci@okul.com',
+        teacherId: 'teacher_gokce',
+        completion: 78,
+        lastActive: '5 dakika önce',
+        role: 'student'
+      },
+      { 
+        id: '2', 
+        name: 'Ayşe Demir', 
+        grade: '11. Sınıf', 
+        lastTrialScore: 72.0, 
+        avatar: 'https://picsum.photos/seed/s2/100/100', 
+        image: 'https://picsum.photos/seed/s2/100/100',
+        username: 'ayse', 
+        password: '123', 
+        email: 'ayse.ogrenci@okul.com',
+        teacherId: 'teacher_gokce',
+        completion: 64,
+        lastActive: '2 saat önce',
+        role: 'student'
+      },
+      { 
+        id: '3', 
+        name: 'Can Özkan', 
+        grade: '12. Sınıf', 
+        lastTrialScore: 91.2, 
+        avatar: 'https://picsum.photos/seed/s3/100/100', 
+        image: 'https://picsum.photos/seed/s3/100/100',
+        username: 'can', 
+        password: '123', 
+        email: 'can.ogrenci@okul.com',
+        teacherId: '1',
+        completion: 88,
+        lastActive: 'Bugün 10:00',
+        role: 'student'
       }
+    ];
+
+    for (const s of defaultStudents) {
+      await setDoc(doc(db, 'students', s.id), s, { merge: true });
+      await setDoc(doc(db, 'users', s.id), {
+        uid: s.id,
+        name: s.name,
+        email: s.email,
+        username: s.username,
+        password: s.password,
+        role: 'student',
+        grade: s.grade
+      }, { merge: true });
     }
   } catch (err) {
     console.warn('Firestore seeding skipped or failed:', err);
