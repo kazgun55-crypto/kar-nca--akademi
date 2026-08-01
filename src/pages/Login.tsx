@@ -316,10 +316,10 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface p-6">
-      <div className="w-full max-w-5xl bg-surface-container-lowest rounded-[2.5rem] shadow-ambient overflow-hidden flex flex-col md:flex-row border border-outline-variant/10">
+    <div className="min-h-screen flex items-center justify-center bg-surface p-3 sm:p-6">
+      <div className="w-full max-w-5xl bg-surface-container-lowest rounded-[2rem] sm:rounded-[2.5rem] shadow-ambient overflow-hidden flex flex-col md:flex-row border border-outline-variant/10">
         {/* Left Side - Branding/Info */}
-        <div className="w-full md:w-2/5 p-12 bg-gradient-to-br from-primary to-primary-container text-white flex flex-col justify-between relative overflow-hidden">
+        <div className="w-full md:w-2/5 p-6 sm:p-8 md:p-12 bg-gradient-to-br from-primary to-primary-container text-white flex flex-col justify-between relative overflow-hidden">
           <div className="relative z-10">
             <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mb-8">
               <LogIn className="w-8 h-8" />

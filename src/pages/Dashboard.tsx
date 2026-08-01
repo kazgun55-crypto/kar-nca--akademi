@@ -45,15 +45,15 @@ export function Dashboard() {
   const yksDays = calculateCountdownDays('YKS');
 
   return (
-    <div className="space-y-8">
-      <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+    <div className="space-y-6 md:space-y-8">
+      <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-6">
         <div className="space-y-1">
-          <h3 className="text-4xl font-extrabold tracking-tight text-on-surface">Öğrenci Yönetimi</h3>
-          <p className="text-on-surface-variant font-medium">Akademik gelişim ve erişim kontrollerini buradan yönetin.</p>
+          <h3 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-on-surface">Öğrenci Yönetimi</h3>
+          <p className="text-xs sm:text-sm text-on-surface-variant font-medium">Akademik gelişim ve erişim kontrollerini buradan yönetin.</p>
         </div>
         <Link 
           to="/students/new"
-          className="bg-gradient-to-br from-primary to-primary-container text-white px-8 py-4 rounded-full font-bold shadow-xl shadow-primary/25 hover:scale-105 active:scale-95 transition-all flex items-center gap-3"
+          className="bg-gradient-to-br from-primary to-primary-container text-white px-6 sm:px-8 py-3.5 sm:py-4 rounded-full font-bold shadow-xl shadow-primary/25 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 text-sm sm:text-base w-full sm:w-auto"
         >
           <Users className="w-5 h-5" />
           Yeni Öğrenci Ekle
@@ -61,7 +61,7 @@ export function Dashboard() {
       </section>
 
       {/* Sınav Geri Sayım Sayaçları Banner */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gradient-to-r from-primary/5 to-secondary/5 border border-outline-variant/10 p-6 rounded-[2.5rem] shadow-sm">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 bg-gradient-to-r from-primary/5 to-secondary/5 border border-outline-variant/10 p-4 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm">
         <div className="flex items-center gap-4 bg-white/60 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
           <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
             <Timer className="w-6 h-6" />

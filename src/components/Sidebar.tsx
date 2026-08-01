@@ -31,7 +31,12 @@ const navItems = [
   { icon: Settings, label: 'Ayarlar', path: '/settings', roles: ['admin', 'teacher', 'student'] },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  isMobile?: boolean;
+  onClose?: () => void;
+}
+
+export function Sidebar({ isMobile = false, onClose }: SidebarProps) {
   const userRole = localStorage.getItem('userRole') || 'student';
   const filteredNavItems = navItems.filter(item => item.roles.includes(userRole));
 
@@ -55,17 +60,31 @@ export function Sidebar() {
   const lgsDays = calculateCountdownDays('LGS');
   const yksDays = calculateCountdownDays('YKS');
 
+  const containerClasses = isMobile
+    ? "h-full w-full bg-surface-container-low flex flex-col py-6 gap-2 overflow-y-auto"
+    : "h-screen w-72 left-0 top-0 sticky bg-surface-container-low flex flex-col py-8 gap-2 hidden md:flex";
+
   return (
-    <aside className="h-screen w-72 left-0 top-0 sticky bg-surface-container-low flex flex-col py-8 gap-2 hidden md:flex">
-      <div className="px-8 mb-4">
-        <h1 className="font-manrope font-bold text-primary text-2xl tracking-tight">Scholar Pulse</h1>
-        <p className="text-on-surface opacity-60 text-xs mt-1 font-medium">
-          {userRole === 'admin' ? 'Yönetici Paneli' : userRole === 'teacher' ? 'Öğretmen Portalı' : 'Öğrenci Portalı'}
-        </p>
+    <aside className={containerClasses}>
+      <div className="px-6 md:px-8 mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="font-manrope font-bold text-primary text-xl md:text-2xl tracking-tight">Scholar Pulse</h1>
+          <p className="text-on-surface opacity-60 text-xs mt-0.5 font-medium">
+            {userRole === 'admin' ? 'Yönetici Paneli' : userRole === 'teacher' ? 'Öğretmen Portalı' : 'Öğrenci Portalı'}
+          </p>
+        </div>
+        {isMobile && onClose && (
+          <button 
+            onClick={onClose}
+            className="p-2 rounded-full bg-surface-container-high text-on-surface hover:bg-surface-container-highest transition-colors"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {(userRole === 'admin' || userRole === 'teacher') && (
-        <div className="mx-6 mb-4 p-4 bg-gradient-to-br from-primary/5 to-secondary/5 border border-outline-variant/10 rounded-2xl space-y-2">
+        <div className="mx-4 md:mx-6 mb-4 p-3.5 md:p-4 bg-gradient-to-br from-primary/5 to-secondary/5 border border-outline-variant/10 rounded-2xl space-y-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
             <Timer className="w-3.5 h-3.5 text-primary" /> Sınav Sayaçları
           </p>
@@ -82,38 +101,44 @@ export function Sidebar() {
         </div>
       )}
       
-      <nav className="flex-grow">
+      <nav className="flex-grow space-y-1">
         {filteredNavItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
+            onClick={() => {
+              if (isMobile && onClose) onClose();
+            }}
             className={({ isActive }) => cn(
-              "flex items-center gap-3 py-3 px-6 transition-all duration-300 ease-in-out",
+              "flex items-center gap-3 py-3 px-6 transition-all duration-300 ease-in-out text-sm font-medium",
               isActive 
-                ? "bg-primary text-white rounded-r-full -ml-4 pl-10 font-bold shadow-lg shadow-primary/20" 
+                ? "bg-primary text-white rounded-r-full -ml-2 md:-ml-4 pl-8 md:pl-10 font-bold shadow-lg shadow-primary/20" 
                 : "text-on-surface opacity-60 hover:bg-surface-container-high hover:opacity-100"
             )}
           >
-            <item.icon className="w-5 h-5" />
-            <span className="text-sm">{item.label}</span>
+            <item.icon className="w-5 h-5 flex-shrink-0" />
+            <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      <div className="px-6 mt-auto">
+      <div className="px-6 mt-auto pt-4">
         {(userRole === 'admin' || userRole === 'teacher') && (
           <NavLink 
             to="/students/new"
-            className="w-full bg-gradient-to-r from-primary to-primary-container text-white py-3 px-4 rounded-full font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-transform"
+            onClick={() => {
+              if (isMobile && onClose) onClose();
+            }}
+            className="w-full bg-gradient-to-r from-primary to-primary-container text-white py-3 px-4 rounded-full font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-transform text-sm"
           >
             <Plus className="w-5 h-5" />
             <span>Yeni Öğrenci</span>
           </NavLink>
         )}
         
-        <div className="mt-6 border-t border-outline-variant/15 pt-4">
+        <div className="mt-4 border-t border-outline-variant/15 pt-4">
           <a href="#" className="flex items-center gap-3 text-on-surface py-2 opacity-60 hover:opacity-100 transition-opacity">
-            <HelpCircle className="w-5 h-5" />
+            <HelpCircle className="w-5 h-5 flex-shrink-0" />
             <span className="text-sm">Yardım Merkezi</span>
           </a>
           <button 
@@ -124,7 +149,7 @@ export function Sidebar() {
             }}
             className="w-full flex items-center gap-3 text-on-surface py-2 opacity-60 hover:opacity-100 transition-opacity text-left"
           >
-            <LogIn className="w-5 h-5" />
+            <LogIn className="w-5 h-5 flex-shrink-0" />
             <span className="text-sm">Çıkış Yap</span>
           </button>
         </div>

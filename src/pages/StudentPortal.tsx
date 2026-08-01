@@ -210,11 +210,11 @@ export function StudentPortal() {
     <div className="space-y-12 pb-20">
       {/* Banner Section */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-8 relative overflow-hidden bg-gradient-to-br from-primary to-primary-container rounded-[2.5rem] p-12 text-white shadow-lg">
+        <div className="lg:col-span-8 relative overflow-hidden bg-gradient-to-br from-primary to-primary-container rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 md:p-12 text-white shadow-lg">
           <div className="relative z-10 max-w-lg">
-            <span className="text-white/60 uppercase tracking-widest text-xs font-bold mb-4 block">Öğrenci Portalı</span>
-            <h1 className="text-5xl md:text-6xl font-extrabold mb-6 leading-tight font-manrope">Tekrar hoş geldin,<br />{studentName.split('')[0]}.</h1>
-            <p className="text-lg text-white/80 mb-10 font-medium">
+            <span className="text-white/60 uppercase tracking-widest text-xs font-bold mb-2 sm:mb-4 block">Öğrenci Portalı</span>
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold mb-4 sm:mb-6 leading-tight font-manrope">Tekrar hoş geldin,<br />{studentName.split(' ')[0]}.</h1>
+            <p className="text-sm sm:text-base md:text-lg text-white/80 mb-6 sm:mb-10 font-medium">
               Bugün yapman gereken {todayTasks.length} görev var. {tasks.length > todayTasks.length && `Haftalık programında toplam ${tasks.length} görev bulunuyor.`} Haftalık programının %{progressPercent} kısmını tamamladın!
             </p>
             <button 
@@ -222,7 +222,7 @@ export function StudentPortal() {
                 setViewMode('today');
                 scrollToTasks();
               }}
-              className="bg-white text-primary font-bold px-10 py-4 rounded-full hover:scale-105 active:scale-95 transition-all shadow-lg"
+              className="bg-white text-primary font-bold px-6 sm:px-10 py-3.5 sm:py-4 rounded-full hover:scale-105 active:scale-95 transition-all shadow-lg text-sm sm:text-base"
             >
               Öğrenmeye Devam Et
             </button>
@@ -233,13 +233,13 @@ export function StudentPortal() {
 
           {/* Countdown Badge */}
           {countdown && (
-            <div className="absolute top-8 right-8 bg-white/20 backdrop-blur-md border border-white/30 px-6 py-3 rounded-2xl flex items-center gap-3 shadow-xl">
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+            <div className="mt-6 md:mt-0 md:absolute md:top-8 md:right-8 bg-white/20 backdrop-blur-md border border-white/30 px-4 sm:px-6 py-2.5 sm:py-3 rounded-2xl flex items-center gap-3 shadow-xl w-fit">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-xl flex items-center justify-center">
                 <Timer className="w-5 h-5 text-white" />
               </div>
               <div>
                 <p className="text-[10px] font-black text-white/60 uppercase tracking-widest leading-none mb-1">{countdown.label} Sayacı</p>
-                <p className="text-xl font-black text-white leading-none">{countdown.days} Gün Kaldı</p>
+                <p className="text-lg sm:text-xl font-black text-white leading-none">{countdown.days} Gün Kaldı</p>
               </div>
             </div>
           )}
