@@ -83,26 +83,26 @@ export function MyStudents() {
   const yksDays = calculateCountdownDays('YKS');
   const maarifDays = calculateMaarifExamCountdown();
   
-  const uniqueClasses = Array.from(new Set(students.map(s => s.grade)));
+  const uniqueClasses = Array.from(new Set(students.map(s => s.grade).filter(Boolean)));
   
   const filteredStudents = selectedClass === 'all'
     ? students
     : students.filter(s => s.grade === selectedClass);
 
   const showLgsCounter = selectedClass === 'all'
-    ? filteredStudents.some(s => s.grade.includes('8') || s.grade.toLowerCase().includes('lgs'))
+    ? filteredStudents.some(s => (s.grade || '').includes('8') || (s.grade || '').toLowerCase().includes('lgs'))
     : (selectedClass.includes('8') || selectedClass.toLowerCase().includes('lgs'));
 
   const showYksCounter = selectedClass === 'all'
-    ? filteredStudents.some(s => s.grade.includes('12') || s.grade.includes('11') || s.grade.toLowerCase().includes('yks') || s.grade.toLowerCase().includes('mezun'))
+    ? filteredStudents.some(s => (s.grade || '').includes('12') || (s.grade || '').includes('11') || (s.grade || '').toLowerCase().includes('yks') || (s.grade || '').toLowerCase().includes('mezun'))
     : (selectedClass.includes('12') || selectedClass.includes('11') || selectedClass.toLowerCase().includes('yks') || selectedClass.toLowerCase().includes('mezun'));
 
   const showMaarifCounter = selectedClass === 'all'
-    ? filteredStudents.some(s => s.grade.includes('9') || s.grade.includes('10'))
+    ? filteredStudents.some(s => (s.grade || '').includes('9') || (s.grade || '').includes('10'))
     : (selectedClass.includes('9') || selectedClass.includes('10'));
 
   const studentSubjectObjects: Subject[] = selectedStudent 
-    ? getSubjectsForGrade(selectedStudent.grade)
+    ? getSubjectsForGrade(selectedStudent.grade || '')
     : [];
   const currentSubjects: string[] = studentSubjectObjects.length > 0 
     ? studentSubjectObjects.map(s => s.name) 
@@ -459,10 +459,10 @@ export function MyStudents() {
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Maarif Modeli Ortak Sınav</p>
+                        <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{maarifDays.title}</p>
                       </div>
-                      <p className="text-2xl font-black text-amber-600 mt-0.5">{maarifDays} Gün Kaldı</p>
-                      <p className="text-[10px] text-on-surface-variant font-medium">Hedef: 9 & 10. Sınıf MEB Ortak Yazılı</p>
+                      <p className="text-2xl font-black text-amber-600 mt-0.5">{maarifDays.days} Gün Kaldı</p>
+                      <p className="text-[10px] text-on-surface-variant font-medium">Hedef: {maarifDays.subtitle}</p>
                     </div>
                   </div>
                 )}
@@ -523,7 +523,7 @@ export function MyStudents() {
                           <h4 className="font-bold text-lg text-on-surface group-hover:text-primary transition-colors">{student.name}</h4>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">{student.grade}</p>
-                            {(student.grade.includes('9') || student.grade.includes('10')) && (
+                            {(Boolean(student.grade) && (student.grade.includes('9') || student.grade.includes('10'))) && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/20">
                                 <Sparkles className="w-2.5 h-2.5 text-amber-500" /> Maarif
                               </span>
@@ -623,7 +623,7 @@ export function MyStudents() {
                 <h3 className="text-3xl font-black text-on-surface">{selectedStudent?.name}</h3>
                 <div className="flex items-center justify-center md:justify-start gap-2 mt-1">
                   <p className="text-on-surface-variant font-bold">{selectedStudent?.grade} Öğrencisi</p>
-                  {(selectedStudent?.grade.includes('9') || selectedStudent?.grade.includes('10')) && (
+                  {(Boolean(selectedStudent?.grade) && (selectedStudent!.grade.includes('9') || selectedStudent!.grade.includes('10'))) && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/20">
                       <Sparkles className="w-3 h-3 text-amber-500" /> Maarif Modeli
                     </span>
