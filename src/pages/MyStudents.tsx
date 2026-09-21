@@ -26,6 +26,12 @@ import {
   BarChart, Bar, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   AreaChart, Area
 } from 'recharts';
+import { 
+  getSubjectsForGrade, 
+  getGradeCategory, 
+  calculateMaarifExamCountdown,
+  Subject
+} from '../lib/curriculum';
 
 interface Student {
   id: string;
@@ -47,8 +53,6 @@ interface Task {
 }
 
 const DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
-const SUBJECTS_HS = ['Matematik', 'Türkçe', 'Fizik', 'Kimya', 'Biyoloji'];
-const SUBJECTS_8 = ['Matematik', 'Türkçe', 'Fen ve Teknoloji', 'İnkılap Tarihi ve Atatürkçülük', 'Din Kültürü ve Ahlak Bilgisi', 'İngilizce'];
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981'];
 
 export function MyStudents() {
@@ -64,7 +68,7 @@ export function MyStudents() {
     
     let examYear = now.getFullYear();
     let examMonth = 5; // June is 5 (0-indexed)
-    let examDay = examType === 'LGS' ? 6 : 19; // June 6 (LGS 2027) or June 19 (YKS 2027)
+    let examDay = examType === 'LGS' ? 6 : 19; // June 6 (LGS) or June 19 (YKS)
     
     let examDate = new Date(examYear, examMonth, examDay);
     if (today > examDate) {
@@ -77,6 +81,7 @@ export function MyStudents() {
 
   const lgsDays = calculateCountdownDays('LGS');
   const yksDays = calculateCountdownDays('YKS');
+  const maarifDays = calculateMaarifExamCountdown();
   
   const uniqueClasses = Array.from(new Set(students.map(s => s.grade)));
   
@@ -92,7 +97,16 @@ export function MyStudents() {
     ? filteredStudents.some(s => s.grade.includes('12') || s.grade.includes('11') || s.grade.toLowerCase().includes('yks') || s.grade.toLowerCase().includes('mezun'))
     : (selectedClass.includes('12') || selectedClass.includes('11') || selectedClass.toLowerCase().includes('yks') || selectedClass.toLowerCase().includes('mezun'));
 
-  const currentSubjects = selectedStudent?.grade.includes('8') ? SUBJECTS_8 : SUBJECTS_HS;
+  const showMaarifCounter = selectedClass === 'all'
+    ? filteredStudents.some(s => s.grade.includes('9') || s.grade.includes('10'))
+    : (selectedClass.includes('9') || selectedClass.includes('10'));
+
+  const studentSubjectObjects: Subject[] = selectedStudent 
+    ? getSubjectsForGrade(selectedStudent.grade)
+    : [];
+  const currentSubjects: string[] = studentSubjectObjects.length > 0 
+    ? studentSubjectObjects.map(s => s.name) 
+    : ['Matematik', 'Türkçe', 'Fizik', 'Kimya', 'Biyoloji'];
 
   // Program modal states
   const [showProgramModal, setShowProgramModal] = useState(false);
@@ -424,22 +438,36 @@ export function MyStudents() {
             )}
 
             {/* Sınav Geri Sayım Sayaçları Banner */}
-            {(showLgsCounter || showYksCounter) && (
-              <div className={`grid gap-6 bg-gradient-to-r from-primary/5 to-secondary/5 border border-outline-variant/10 p-6 rounded-[2.5rem] shadow-sm ${showLgsCounter && showYksCounter ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+            {(showLgsCounter || showYksCounter || showMaarifCounter) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-gradient-to-r from-primary/5 via-amber-500/5 to-secondary/5 border border-outline-variant/10 p-6 rounded-[2.5rem] shadow-sm">
                 {showLgsCounter && (
-                  <div className="flex items-center gap-4 bg-white/60 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
+                  <div className="flex items-center gap-4 bg-white/70 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
                     <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
                       <Timer className="w-6 h-6" />
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">LGS Sınav Sayacı</p>
                       <p className="text-2xl font-black text-primary mt-0.5">{lgsDays} Gün Kaldı</p>
-                      <p className="text-[10px] text-on-surface-variant font-medium">Hedef: LGS Hazırlık Sınavı</p>
+                      <p className="text-[10px] text-on-surface-variant font-medium">Hedef: 8. Sınıf LGS Sınavı</p>
+                    </div>
+                  </div>
+                )}
+                {showMaarifCounter && (
+                  <div className="flex items-center gap-4 bg-white/70 backdrop-blur-sm p-6 rounded-[2rem] border border-amber-500/20">
+                    <div className="h-14 w-14 rounded-2xl bg-amber-500/15 flex items-center justify-center text-amber-600 shadow-sm">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Maarif Modeli Ortak Sınav</p>
+                      </div>
+                      <p className="text-2xl font-black text-amber-600 mt-0.5">{maarifDays} Gün Kaldı</p>
+                      <p className="text-[10px] text-on-surface-variant font-medium">Hedef: 9 & 10. Sınıf MEB Ortak Yazılı</p>
                     </div>
                   </div>
                 )}
                 {showYksCounter && (
-                  <div className="flex items-center gap-4 bg-white/60 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
+                  <div className="flex items-center gap-4 bg-white/70 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
                     <div className="h-14 w-14 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary shadow-sm">
                       <Calendar className="w-6 h-6" />
                     </div>
@@ -493,7 +521,14 @@ export function MyStudents() {
                         </div>
                         <div>
                           <h4 className="font-bold text-lg text-on-surface group-hover:text-primary transition-colors">{student.name}</h4>
-                          <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">{student.grade}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">{student.grade}</p>
+                            {(student.grade.includes('9') || student.grade.includes('10')) && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                                <Sparkles className="w-2.5 h-2.5 text-amber-500" /> Maarif
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -586,7 +621,14 @@ export function MyStudents() {
               </div>
               <div className="text-center md:text-left flex-grow">
                 <h3 className="text-3xl font-black text-on-surface">{selectedStudent?.name}</h3>
-                <p className="text-on-surface-variant font-bold">{selectedStudent?.grade} Öğrencisi</p>
+                <div className="flex items-center justify-center md:justify-start gap-2 mt-1">
+                  <p className="text-on-surface-variant font-bold">{selectedStudent?.grade} Öğrencisi</p>
+                  {(selectedStudent?.grade.includes('9') || selectedStudent?.grade.includes('10')) && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                      <Sparkles className="w-3 h-3 text-amber-500" /> Maarif Modeli
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex gap-4">
                 <button 
@@ -1185,9 +1227,33 @@ export function MyStudents() {
                       type="text" 
                       value={newTask.title}
                       onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                      placeholder="Örn: Logaritma Giriş"
+                      placeholder="Örn: 9. Sınıf Maarif Modeli Konu Adı"
                       className="w-full px-5 py-4 bg-surface-container-low border-none rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary"
                     />
+                    {(() => {
+                      const topics = studentSubjectObjects.find(s => s.name === newTask.subject)?.topics || [];
+                      if (topics.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5 pt-1">
+                          <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-amber-500" />
+                            Müfredat Konu Başlıkları (Seçmek için tıklayın):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                            {topics.map((topic) => (
+                              <button
+                                key={topic}
+                                type="button"
+                                onClick={() => setNewTask({ ...newTask, title: topic })}
+                                className="px-2 py-1 bg-surface-container-high hover:bg-primary/10 hover:text-primary rounded-lg text-[10px] font-bold text-on-surface transition-all"
+                              >
+                                {topic}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {newTask.type === 'question' && (

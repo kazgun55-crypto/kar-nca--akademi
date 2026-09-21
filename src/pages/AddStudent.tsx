@@ -112,12 +112,37 @@ export function AddStudent() {
                       className="w-full pl-12 pr-4 py-4 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface appearance-none outline-none"
                     >
                       <option value="">Sınıf Seçiniz</option>
-                      <option value="8. Sınıf">8. Sınıf (LGS)</option>
-                      <option value="12-A">12-A Sınıfı</option>
-                      <option value="12-B">12-B Sınıfı</option>
-                      <option value="11-C">11-C Sınıfı</option>
+                      <optgroup label="Ortaokul / LGS">
+                        <option value="8. Sınıf">8. Sınıf (LGS Hazırlık)</option>
+                        <option value="8-A">8-A Sınıfı (LGS)</option>
+                        <option value="8-B">8-B Sınıfı (LGS)</option>
+                      </optgroup>
+                      <optgroup label="Lise - Maarif Modeli">
+                        <option value="9. Sınıf">9. Sınıf (Maarif Modeli)</option>
+                        <option value="9-A">9-A Sınıfı (Maarif Modeli)</option>
+                        <option value="9-B">9-B Sınıfı (Maarif Modeli)</option>
+                        <option value="10. Sınıf">10. Sınıf (Maarif Modeli)</option>
+                        <option value="10-A">10-A Sınıfı (Maarif Modeli)</option>
+                        <option value="10-B">10-B Sınıfı (Maarif Modeli)</option>
+                      </optgroup>
+                      <optgroup label="Lise / YKS Hazırlık">
+                        <option value="11. Sınıf">11. Sınıf (YKS Hazırlık)</option>
+                        <option value="11-A">11-A Sınıfı</option>
+                        <option value="11-B">11-B Sınıfı</option>
+                        <option value="11-C">11-C Sınıfı</option>
+                        <option value="12. Sınıf">12. Sınıf (YKS)</option>
+                        <option value="12-A">12-A Sınıfı</option>
+                        <option value="12-B">12-B Sınıfı</option>
+                        <option value="Mezun">Mezun (YKS)</option>
+                      </optgroup>
                     </select>
                   </div>
+                  {(formData.grade.includes('9') || formData.grade.includes('10')) && (
+                    <p className="text-[11px] font-bold text-amber-600 flex items-center gap-1.5 mt-1 ml-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      MEB Türkiye Yüzyılı Maarif Modeli müfredatı otomatik tanımlanacaktır.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">

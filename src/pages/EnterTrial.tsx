@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ClipboardCheck, 
   Plus, 
@@ -10,65 +10,21 @@ import {
   ChevronRight,
   ChevronDown,
   Save,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  GraduationCap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-
-interface Subject {
-  name: string;
-  topics: string[];
-}
-
-const SUBJECTS_12: Subject[] = [
-  { 
-    name: 'Matematik', 
-    topics: ['Sayılar', 'Polinomlar', 'Türev', 'İntegral', 'Trigonometri', 'Logaritma', 'Fonksiyonlar', 'Geometri'] 
-  },
-  { 
-    name: 'Türkçe', 
-    topics: ['Sözcükte Anlam', 'Cümlede Anlam', 'Paragraf', 'Yazım Kuralları', 'Noktalama İşaretleri', 'Dil Bilgisi'] 
-  },
-  { 
-    name: 'Fizik', 
-    topics: ['Kuvvet ve Hareket', 'Optik', 'Elektrik ve Manyetizma', 'Dalgalar', 'Modern Fizik'] 
-  },
-  { 
-    name: 'Kimya', 
-    topics: ['Atom ve Periyodik Sistem', 'Mol Kavramı', 'Asitler, Bazlar ve Tuzlar', 'Kimyasal Tepkimeler'] 
-  },
-  { 
-    name: 'Biyoloji', 
-    topics: ['Hücre', 'Kalıtım', 'Sistemler', 'Ekoloji', 'Canlıların Temel Bileşenleri'] 
-  }
-];
-
-const SUBJECTS_8: Subject[] = [
-  { 
-    name: 'Matematik', 
-    topics: ['Çarpanlar ve Katlar', 'Üslü İfadeler', 'Kareköklü İfadeler', 'Veri Analizi', 'Olasılık', 'Cebirsel İfadeler', 'Doğrusal Denklemler', 'Eşitsizlikler', 'Üçgenler', 'Eşlik ve Benzerlik', 'Dönüşüm Geometrisi', 'Geometrik Cisimler'] 
-  },
-  { 
-    name: 'Türkçe', 
-    topics: ['Fiilimsiler', 'Sözcükte Anlam', 'Cümlede Anlam', 'Paragraf', 'Yazım Kuralları', 'Noktalama İşaretleri', 'Cümlenin Ögeleri', 'Fiilde Çatı', 'Cümle Türleri', 'Anlatım Bozuklukları', 'Sözel Mantık'] 
-  },
-  { 
-    name: 'Fen ve Teknoloji', 
-    topics: ['Mevsimler ve İklim', 'DNA ve Genetik Kod', 'Basınç', 'Madde ve Endüstri', 'Basit Makineler', 'Enerji Dönüşümleri', 'Elektrik Yükleri'] 
-  },
-  { 
-    name: 'İnkılap Tarihi ve Atatürkçülük', 
-    topics: ['Bir Kahraman Doğuyor', 'Milli Uyanış', 'Ya İstiklal Ya Ölüm', 'Atatürkçülük', 'Demokratikleşme Çabaları', 'Dış Politika', 'Atatürk\'ün Ölümü'] 
-  },
-  { 
-    name: 'Din Kültürü ve Ahlak Bilgisi', 
-    topics: ['Kader İnancı', 'Zekat ve Sadaka', 'Din ve Hayat', 'Hz. Muhammed\'in Örnekliği', 'Kur\'an-ı Kerim'] 
-  },
-  { 
-    name: 'İngilizce', 
-    topics: ['Friendship', 'Teen Life', 'In the Kitchen', 'On the Phone', 'The Internet', 'Adventures', 'Tourism', 'Chores', 'Science', 'Natural Forces'] 
-  }
-];
+import { 
+  Subject, 
+  SUBJECTS_8, 
+  SUBJECTS_9_MAARIF, 
+  SUBJECTS_10_MAARIF, 
+  SUBJECTS_11_12, 
+  getSubjectsForGrade,
+  getGradeCategory
+} from '../lib/curriculum';
 
 interface TrialData {
   id: string;
@@ -247,8 +203,18 @@ function SubjectCard({
 
 export function EnterTrial() {
   const navigate = useNavigate();
-  const studentGrade = localStorage.getItem('currentUserGrade') || '12. Sınıf';
-  const subjects = studentGrade.includes('8') ? SUBJECTS_8 : SUBJECTS_12;
+  const rawGrade = localStorage.getItem('currentUserGrade') || '9. Sınıf';
+  const initialCategory = getGradeCategory(rawGrade);
+
+  const [activeGradeCategory, setActiveGradeCategory] = useState<'8' | '9' | '10' | 'yks'>(initialCategory);
+
+  const subjects = activeGradeCategory === '8'
+    ? SUBJECTS_8
+    : activeGradeCategory === '9'
+    ? SUBJECTS_9_MAARIF
+    : activeGradeCategory === '10'
+    ? SUBJECTS_10_MAARIF
+    : SUBJECTS_11_12;
 
   const [trialResults, setTrialResults] = useState<{
     [subject: string]: {
@@ -264,14 +230,24 @@ export function EnterTrial() {
     return initial;
   });
 
-  const [expandedSubject, setExpandedSubject] = useState<string | null>(subjects[0].name);
+  // Reinitialize results when category changes
+  useEffect(() => {
+    const updated: any = {};
+    subjects.forEach(s => {
+      updated[s.name] = trialResults[s.name] || { correct: 0, incorrect: 0, wrongTopics: [] };
+    });
+    setTrialResults(updated);
+    setExpandedSubject(subjects[0]?.name || null);
+  }, [activeGradeCategory]);
+
+  const [expandedSubject, setExpandedSubject] = useState<string | null>(subjects[0]?.name || null);
   const [showSuccess, setShowSuccess] = useState(false);
 
   const updateResult = (subject: string, field: 'correct' | 'incorrect', value: number) => {
     setTrialResults(prev => ({
       ...prev,
       [subject]: {
-        ...prev[subject],
+        ...(prev[subject] || { correct: 0, incorrect: 0, wrongTopics: [] }),
         [field]: Math.max(0, value)
       }
     }));
@@ -279,7 +255,7 @@ export function EnterTrial() {
 
   const toggleTopic = (subject: string, topic: string) => {
     setTrialResults(prev => {
-      const current = prev[subject];
+      const current = prev[subject] || { correct: 0, incorrect: 0, wrongTopics: [] };
       const isSelected = current.wrongTopics.some(t => t.topic === topic);
       
       const newTopics = isSelected
@@ -298,7 +274,7 @@ export function EnterTrial() {
 
   const updateTopicCount = (subject: string, topic: string, count: number) => {
     setTrialResults(prev => {
-      const current = prev[subject];
+      const current = prev[subject] || { correct: 0, incorrect: 0, wrongTopics: [] };
       const newTopics = current.wrongTopics.map(t => 
         t.topic === topic ? { ...t, count: Math.max(1, count) } : t
       );
@@ -317,7 +293,7 @@ export function EnterTrial() {
     let total = 0;
     Object.values(trialResults).forEach((r) => {
       const res = r as { correct: number; incorrect: number };
-      total += res.correct - (res.incorrect * 0.25);
+      total += (res.correct || 0) - ((res.incorrect || 0) * 0.25);
     });
     return Math.max(0, total);
   };
@@ -325,6 +301,14 @@ export function EnterTrial() {
   const saveTrial = () => {
     const studentId = localStorage.getItem('currentUserId');
     if (!studentId) return;
+
+    const gradeLabel = activeGradeCategory === '8'
+      ? '8. Sınıf (LGS)'
+      : activeGradeCategory === '9'
+      ? '9. Sınıf (Maarif Modeli)'
+      : activeGradeCategory === '10'
+      ? '10. Sınıf (Maarif Modeli)'
+      : '11 & 12. Sınıf (YKS)';
 
     const newTrial: TrialData = {
       id: Math.random().toString(36).substr(2, 9),
@@ -336,7 +320,7 @@ export function EnterTrial() {
     // Save to trial results history (student specific)
     const detailedKey = `trial_results_detailed_${studentId}`;
     const savedTrials = JSON.parse(localStorage.getItem(detailedKey) || '[]');
-    localStorage.setItem(detailedKey, JSON.stringify([...savedTrials, newTrial]));
+    localStorage.setItem(detailedKey, JSON.stringify([...savedTrials, { ...newTrial, gradeLabel }]));
 
     // Update legacy trial_results for the existing analytics chart (student specific)
     const legacyKey = `trial_results_${studentId}`;
@@ -354,14 +338,16 @@ export function EnterTrial() {
     const legacyErrors = JSON.parse(localStorage.getItem(errorsKey) || '[]');
     Object.entries(trialResults).forEach(([_, data]) => {
       const res = data as { wrongTopics: { topic: string; count: number }[] };
-      res.wrongTopics.forEach(item => {
-        const existing = legacyErrors.find((e: any) => e.topic === item.topic);
-        if (existing) {
-          existing.count += item.count;
-        } else {
-          legacyErrors.push({ id: Math.random().toString(36).substr(2, 9), topic: item.topic, count: item.count });
-        }
-      });
+      if (res?.wrongTopics) {
+        res.wrongTopics.forEach(item => {
+          const existing = legacyErrors.find((e: any) => e.topic === item.topic);
+          if (existing) {
+            existing.count += item.count;
+          } else {
+            legacyErrors.push({ id: Math.random().toString(36).substr(2, 9), topic: item.topic, count: item.count });
+          }
+        });
+      }
     });
     localStorage.setItem(errorsKey, JSON.stringify(legacyErrors));
 
@@ -372,19 +358,103 @@ export function EnterTrial() {
     }, 2000);
   };
 
+  const isMaarif = activeGradeCategory === '9' || activeGradeCategory === '10';
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-20">
-      <div className="space-y-1">
-        <h3 className="text-4xl font-extrabold tracking-tight text-on-surface">Deneme Sonucu Gir</h3>
-        <p className="text-on-surface-variant font-medium">Ders bazlı sonuçlarını ve yanlış yaptığın konuları işaretle.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-on-surface">Deneme & Sınav Sonucu Gir</h3>
+            {isMaarif && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 rounded-full text-xs font-black border border-amber-500/20">
+                <Sparkles className="w-3.5 h-3.5" />
+                Maarif Modeli
+              </span>
+            )}
+          </div>
+          <p className="text-on-surface-variant font-medium text-sm">Ders bazlı netlerinizi ve Türkiye Yüzyılı Maarif Modeli konu analizlerinizi kaydedin.</p>
+        </div>
       </div>
 
+      {/* Sınıf / Seviye Seçim Çubuğu */}
+      <div className="bg-surface-container-low p-2 rounded-2xl border border-outline-variant/10 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setActiveGradeCategory('8')}
+          className={`flex-1 min-w-[120px] py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            activeGradeCategory === '8'
+              ? 'bg-primary text-white shadow-md'
+              : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4" />
+          8. Sınıf (LGS)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveGradeCategory('9')}
+          className={`flex-1 min-w-[150px] py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            activeGradeCategory === '9'
+              ? 'bg-primary text-white shadow-md'
+              : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-400" />
+          9. Sınıf (Maarif Modeli)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveGradeCategory('10')}
+          className={`flex-1 min-w-[150px] py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            activeGradeCategory === '10'
+              ? 'bg-primary text-white shadow-md'
+              : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-400" />
+          10. Sınıf (Maarif Modeli)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveGradeCategory('yks')}
+          className={`flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            activeGradeCategory === 'yks'
+              ? 'bg-primary text-white shadow-md'
+              : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4" />
+          11 & 12. Sınıf (YKS)
+        </button>
+      </div>
+
+      {/* Maarif Modeli Bilgilendirme Kartı */}
+      {isMaarif && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-primary/5 to-secondary/5 border border-amber-500/20 rounded-2xl p-4 flex items-center gap-4">
+          <div className="h-10 w-10 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div className="text-xs">
+            <p className="font-bold text-on-surface">
+              {activeGradeCategory}. Sınıf MEB Türkiye Yüzyılı Maarif Modeli Müfredatı Aktif
+            </p>
+            <p className="text-on-surface-variant mt-0.5">
+              Beceri temelli soru kalıpları, ortak yazılı sınavlar ve yeni nesil konu başlıkları sisteme tam entegre edilmiştir.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4">
-        {studentGrade.includes('8') ? (
+        {activeGradeCategory === '8' ? (
           <>
-            <div className="mt-8 mb-4">
-              <h4 className="text-xl font-bold text-primary flex items-center gap-2">
-                <div className="w-2 h-8 bg-primary rounded-full" />
+            <div className="mt-4 mb-2">
+              <h4 className="text-lg font-bold text-primary flex items-center gap-2">
+                <div className="w-2 h-6 bg-primary rounded-full" />
                 Sözel Bölüm (50 Soru)
               </h4>
             </div>
@@ -401,13 +471,72 @@ export function EnterTrial() {
               />
             ))}
 
-            <div className="mt-12 mb-4">
-              <h4 className="text-xl font-bold text-secondary flex items-center gap-2">
-                <div className="w-2 h-8 bg-secondary rounded-full" />
+            <div className="mt-8 mb-2">
+              <h4 className="text-lg font-bold text-secondary flex items-center gap-2">
+                <div className="w-2 h-6 bg-secondary rounded-full" />
                 Sayısal Bölüm (40 Soru)
               </h4>
             </div>
             {subjects.filter(s => ['Matematik', 'Fen ve Teknoloji'].includes(s.name)).map((subject) => (
+              <SubjectCard 
+                key={subject.name}
+                subject={subject}
+                expandedSubject={expandedSubject}
+                setExpandedSubject={setExpandedSubject}
+                trialResults={trialResults}
+                updateResult={updateResult}
+                toggleTopic={toggleTopic}
+                updateTopicCount={updateTopicCount}
+              />
+            ))}
+          </>
+        ) : isMaarif ? (
+          <>
+            <div className="mt-4 mb-2">
+              <h4 className="text-lg font-bold text-primary flex items-center gap-2">
+                <div className="w-2 h-6 bg-primary rounded-full" />
+                Fen & Matematik Bilimleri (Maarif Modeli)
+              </h4>
+            </div>
+            {subjects.filter(s => s.name.includes('Matematik') || s.name.includes('Fizik') || s.name.includes('Kimya') || s.name.includes('Biyoloji')).map((subject) => (
+              <SubjectCard 
+                key={subject.name}
+                subject={subject}
+                expandedSubject={expandedSubject}
+                setExpandedSubject={setExpandedSubject}
+                trialResults={trialResults}
+                updateResult={updateResult}
+                toggleTopic={toggleTopic}
+                updateTopicCount={updateTopicCount}
+              />
+            ))}
+
+            <div className="mt-8 mb-2">
+              <h4 className="text-lg font-bold text-secondary flex items-center gap-2">
+                <div className="w-2 h-6 bg-secondary rounded-full" />
+                Sosyal Bilimler, Türk Dili ve Edebiyatı (Maarif Modeli)
+              </h4>
+            </div>
+            {subjects.filter(s => s.name.includes('Türk Dili') || s.name.includes('Tarih') || s.name.includes('Coğrafya') || s.name.includes('Felsefe') || s.name.includes('Din')).map((subject) => (
+              <SubjectCard 
+                key={subject.name}
+                subject={subject}
+                expandedSubject={expandedSubject}
+                setExpandedSubject={setExpandedSubject}
+                trialResults={trialResults}
+                updateResult={updateResult}
+                toggleTopic={toggleTopic}
+                updateTopicCount={updateTopicCount}
+              />
+            ))}
+
+            <div className="mt-8 mb-2">
+              <h4 className="text-lg font-bold text-tertiary flex items-center gap-2">
+                <div className="w-2 h-6 bg-tertiary rounded-full" />
+                Yabancı Diller (Maarif Modeli)
+              </h4>
+            </div>
+            {subjects.filter(s => s.name.includes('İngilizce')).map((subject) => (
               <SubjectCard 
                 key={subject.name}
                 subject={subject}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, Timer, ClipboardCheck, ArrowRight } from 'lucide-react';
+import { Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, Timer, ClipboardCheck, ArrowRight, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Task {
@@ -67,7 +67,15 @@ export function StudentPortal() {
     if (grade.includes('8')) {
       label = 'LGS';
       examDay = 6; // June 6
-    } else if (grade.includes('12') || grade.includes('Mezun')) {
+    } else if (grade.includes('9')) {
+      label = '9. Sınıf Maarif Modeli Ortak Sınav';
+      examMonth = 4; // May (MEB 2. Dönem Ortak Yazılı)
+      examDay = 28;
+    } else if (grade.includes('10')) {
+      label = '10. Sınıf Maarif Modeli Ortak Sınav';
+      examMonth = 4; // May (MEB 2. Dönem Ortak Yazılı)
+      examDay = 29;
+    } else if (grade.includes('11') || grade.includes('12') || grade.toLowerCase().includes('mezun')) {
       label = 'YKS';
       examDay = 19; // June 19
     } else {
@@ -212,7 +220,14 @@ export function StudentPortal() {
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8 relative overflow-hidden bg-gradient-to-br from-primary to-primary-container rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 md:p-12 text-white shadow-lg">
           <div className="relative z-10 max-w-lg">
-            <span className="text-white/60 uppercase tracking-widest text-xs font-bold mb-2 sm:mb-4 block">Öğrenci Portalı</span>
+            <div className="flex flex-wrap items-center gap-2 mb-2 sm:mb-4">
+              <span className="text-white/70 uppercase tracking-widest text-xs font-bold">Öğrenci Portalı</span>
+              {(studentGrade.includes('9') || studentGrade.includes('10')) && (
+                <span className="inline-flex items-center gap-1 bg-amber-400/90 text-slate-900 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
+                  <Sparkles className="w-3 h-3 text-slate-900" /> Maarif Modeli
+                </span>
+              )}
+            </div>
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold mb-4 sm:mb-6 leading-tight font-manrope">Tekrar hoş geldin,<br />{studentName.split(' ')[0]}.</h1>
             <p className="text-sm sm:text-base md:text-lg text-white/80 mb-6 sm:mb-10 font-medium">
               Bugün yapman gereken {todayTasks.length} görev var. {tasks.length > todayTasks.length && `Haftalık programında toplam ${tasks.length} görev bulunuyor.`} Haftalık programının %{progressPercent} kısmını tamamladın!
