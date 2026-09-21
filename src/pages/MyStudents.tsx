@@ -18,7 +18,8 @@ import {
   History,
   Archive,
   Timer,
-  Trash2
+  Trash2,
+  Repeat
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -43,7 +44,7 @@ interface Student {
 
 interface Task {
   id: string;
-  type: 'video' | 'question' | 'reading';
+  type: 'video' | 'question' | 'reading' | 'book';
   title: string;
   subject: string;
   amount?: string;
@@ -110,9 +111,10 @@ export function MyStudents() {
 
   // Program modal states
   const [showProgramModal, setShowProgramModal] = useState(false);
-  const [selectedDay, setSelectedDay] = useState('');
+  const [selectedDay, setSelectedDay] = useState('Pazartesi');
+  const [selectedDays, setSelectedDays] = useState<string[]>(['Pazartesi']);
   const [newTask, setNewTask] = useState({
-    type: 'video' as 'video' | 'question' | 'reading',
+    type: 'question' as 'video' | 'question' | 'reading' | 'book',
     subject: '',
     title: '',
     amount: '',
@@ -121,7 +123,7 @@ export function MyStudents() {
 
   useEffect(() => {
     if (selectedStudent) {
-      setNewTask(prev => ({ ...prev, subject: currentSubjects[0] }));
+      setNewTask(prev => ({ ...prev, subject: currentSubjects[0] || 'Türkçe' }));
     }
   }, [selectedStudent]);
 
@@ -327,19 +329,33 @@ export function MyStudents() {
   const addTask = () => {
     if (!newTask.title) return;
     
-    const task: Task = {
+    const daysToApply = selectedDays.length > 0 ? selectedDays : [selectedDay || DAYS[0]];
+
+    const newTasks: Task[] = daysToApply.map(day => ({
       id: Math.random().toString(36).substr(2, 9),
       ...newTask,
-      day: selectedDay,
+      day,
       completed: false
-    };
+    }));
 
-    const updatedTasks = [...studentTasks, task];
+    const updatedTasks = [...studentTasks, ...newTasks];
     setStudentTasks(updatedTasks);
     localStorage.setItem(`tasks_${selectedStudent?.id}`, JSON.stringify(updatedTasks));
     
-    setNewTask({ type: 'video', subject: currentSubjects[0], title: '', amount: '', videoUrl: '' });
+    setNewTask({ 
+      type: 'question', 
+      subject: currentSubjects[0] || 'Türkçe', 
+      title: '', 
+      amount: '', 
+      videoUrl: '' 
+    });
     setShowProgramModal(false);
+  };
+
+  const deleteTask = (taskId: string) => {
+    const updatedTasks = studentTasks.filter((t: Task) => t.id !== taskId);
+    setStudentTasks(updatedTasks);
+    localStorage.setItem(`tasks_${selectedStudent?.id}`, JSON.stringify(updatedTasks));
   };
 
   const getStudentTasksByDay = (day: string) => {
@@ -651,7 +667,7 @@ export function MyStudents() {
 
             {activeTab === 'program' ? (
               <div className="space-y-6">
-                <div className="bg-surface-container-low p-6 rounded-[2rem] flex items-center justify-between">
+                <div className="bg-surface-container-low p-6 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-6">
                     <div className="text-center">
                       <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam Ödev</p>
@@ -663,7 +679,7 @@ export function MyStudents() {
                       <p className="text-2xl font-black text-tertiary">{studentTasks.filter(t => t.completed).length}</p>
                     </div>
                   </div>
-                  <div className="flex-grow max-w-xs mx-8">
+                  <div className="flex-grow max-w-xs mx-4 w-full">
                     <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-tertiary transition-all duration-500" 
@@ -671,34 +687,74 @@ export function MyStudents() {
                       />
                     </div>
                   </div>
+                  <button 
+                    onClick={() => {
+                      setSelectedDay(DAYS[0]);
+                      setSelectedDays([...DAYS]);
+                      setShowProgramModal(true);
+                    }}
+                    className="px-5 py-2.5 bg-primary text-white rounded-2xl text-xs font-black hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-md shadow-primary/20 shrink-0"
+                  >
+                    <Repeat className="w-4 h-4" />
+                    Çoklu Güne / Haftalık Ödev Ekle
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
                 {DAYS.map((day) => (
                   <div key={day} className="space-y-4">
-                    <div className="text-center py-2 bg-surface-container-high rounded-xl">
+                    <div className="text-center py-2 bg-surface-container-high rounded-xl flex items-center justify-between px-3">
                       <span className="text-xs font-black text-on-surface uppercase">{day}</span>
+                      <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container-lowest px-2 py-0.5 rounded-full">
+                        {getStudentTasksByDay(day).length}
+                      </span>
                     </div>
                     
                     <div className="space-y-3">
                       {getStudentTasksByDay(day).map((task: Task) => (
-                        <div key={task.id} className={`p-3 rounded-2xl border shadow-sm space-y-2 transition-all ${task.completed ? 'bg-tertiary/5 border-tertiary/20' : 'bg-white border-outline-variant/10'}`}>
+                        <div key={task.id} className={`p-3 rounded-2xl border shadow-sm space-y-2 transition-all group relative ${task.completed ? 'bg-tertiary/5 border-tertiary/20' : 'bg-white border-outline-variant/10'}`}>
                           <div className="flex items-center justify-between">
-                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-md ${
+                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-1 ${
                               task.type === 'video' ? 'bg-blue-100 text-blue-600' : 
-                              task.type === 'question' ? 'bg-orange-100 text-orange-600' : 'bg-purple-100 text-purple-600'
+                              task.type === 'question' ? 'bg-orange-100 text-orange-600' : 
+                              task.type === 'book' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-600'
                             }`}>
-                              {task.type.toUpperCase()}
+                              {task.type === 'book' && <BookOpen className="w-2.5 h-2.5" />}
+                              {task.type === 'book' ? 'KİTAP OKUMA' : task.type === 'question' ? 'SORU' : task.type === 'video' ? 'VİDEO' : 'OKUMA'}
                             </span>
-                            {task.completed && <CheckCircle2 className="w-3 h-3 text-tertiary" />}
+                            <div className="flex items-center gap-1">
+                              {task.completed && <CheckCircle2 className="w-3.5 h-3.5 text-tertiary" />}
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteTask(task.id);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-1 text-outline hover:text-red-600 transition-all rounded"
+                                title="Ödevi Sil"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
                           <p className={`text-[10px] font-bold leading-tight ${task.completed ? 'text-on-surface/50 line-through' : 'text-on-surface'}`}>{task.title}</p>
+                          {task.amount && (
+                            <div className="pt-0.5">
+                              <span className="text-[9px] font-bold text-on-surface-variant/80 bg-surface-container-low px-1.5 py-0.5 rounded">
+                                {task.amount}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ))}
                       
                       <button 
-                        onClick={() => { setSelectedDay(day); setShowProgramModal(true); }}
+                        onClick={() => { 
+                          setSelectedDay(day); 
+                          setSelectedDays([day]);
+                          setShowProgramModal(true); 
+                        }}
                         className="w-full py-3 border-2 border-dashed border-outline-variant/30 rounded-2xl flex items-center justify-center text-outline hover:border-primary hover:text-primary transition-all group"
+                        title={`${day} gününe ödev ekle`}
                       >
                         <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
                       </button>
@@ -1185,109 +1241,367 @@ export function MyStudents() {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-white w-full max-w-lg rounded-[3rem] overflow-hidden shadow-2xl"
+              className="bg-white w-full max-w-xl max-h-[92vh] overflow-y-auto rounded-[2.5rem] shadow-2xl custom-scrollbar"
             >
-              <div className="p-8 space-y-6">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-2xl font-black text-on-surface">{selectedDay} Programı</h4>
+              <div className="p-7 space-y-6">
+                <div className="flex items-center justify-between border-b border-outline-variant/10 pb-4">
+                  <div>
+                    <h4 className="text-xl font-black text-on-surface">
+                      {selectedDays.length > 1 
+                        ? `${selectedDays.length === 7 ? 'Haftalık (Tüm Günler)' : `${selectedDays.length} Günlük`} Ödev Programı` 
+                        : `${selectedDay} Programı`}
+                    </h4>
+                    <p className="text-xs font-medium text-on-surface-variant mt-0.5">
+                      {selectedStudent?.name} ({selectedStudent?.grade}) için ödev atayın.
+                    </p>
+                  </div>
                   <button onClick={() => setShowProgramModal(false)} className="p-2 hover:bg-surface-container-high rounded-full transition-colors">
-                    <X className="w-6 h-6" />
+                    <X className="w-5 h-5 text-on-surface-variant" />
                   </button>
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['video', 'question', 'reading'] as const).map((type) => (
-                      <button
-                        key={type}
-                        onClick={() => setNewTask({ ...newTask, type })}
-                        className={`py-3 rounded-2xl text-xs font-bold transition-all border ${
-                          newTask.type === type ? 'bg-primary text-white border-primary shadow-lg' : 'bg-surface-container-low border-transparent text-on-surface-variant'
-                        }`}
-                      >
-                        {type === 'video' ? 'Video' : type === 'question' ? 'Soru' : 'Okuma'}
-                      </button>
-                    ))}
+                  {/* Task Type Selector */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Ödev Türü</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { id: 'question', label: 'Soru Çözümü', icon: Target },
+                        { id: 'book', label: 'Kitap Okuma', icon: BookOpen },
+                        { id: 'video', label: 'Konu Videosu', icon: PlayCircle },
+                        { id: 'reading', label: 'Konu Okuma', icon: Sparkles }
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setNewTask(prev => ({ 
+                              ...prev, 
+                              type: t.id as any,
+                              subject: t.id === 'book' 
+                                ? (currentSubjects.find(s => s.toLowerCase().includes('türk') || s.toLowerCase().includes('edebiyat')) || currentSubjects[0] || 'Türkçe')
+                                : prev.subject
+                            }));
+                          }}
+                          className={`py-3 px-2 rounded-2xl text-xs font-black transition-all border flex flex-col items-center gap-1.5 ${
+                            newTask.type === t.id 
+                              ? 'bg-primary text-white border-primary shadow-md scale-[1.02]' 
+                              : 'bg-surface-container-low border-transparent text-on-surface-variant hover:bg-surface-container-high'
+                          }`}
+                        >
+                          <t.icon className="w-4 h-4" />
+                          <span>{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Ders</label>
+                  {/* Subject Selection */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Ders</label>
                     <select 
                       value={newTask.subject}
                       onChange={(e) => setNewTask({ ...newTask, subject: e.target.value })}
-                      className="w-full px-5 py-4 bg-surface-container-low border-none rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/10 rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary text-sm"
                     >
                       {currentSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                      {newTask.type === 'book' && !currentSubjects.includes('Genel Okuma / Kitap') && (
+                        <option value="Genel Okuma / Kitap">Genel Okuma / Kitap</option>
+                      )}
                     </select>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Görev Başlığı / Konu</label>
-                    <input 
-                      type="text" 
-                      value={newTask.title}
-                      onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                      placeholder="Örn: 9. Sınıf Maarif Modeli Konu Adı"
-                      className="w-full px-5 py-4 bg-surface-container-low border-none rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary"
-                    />
-                    {(() => {
-                      const topics = studentSubjectObjects.find(s => s.name === newTask.subject)?.topics || [];
-                      if (topics.length === 0) return null;
-                      return (
+                  {/* Book Reading Specific Block */}
+                  {newTask.type === 'book' && (
+                    <div className="space-y-3 p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/20">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-black uppercase tracking-widest text-emerald-800 flex items-center gap-1.5">
+                          <BookOpen className="w-4 h-4 text-emerald-600" />
+                          Kitap Adı / Eser
+                        </label>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Okuma Görevi</span>
+                      </div>
+
+                      <input 
+                        type="text" 
+                        value={newTask.title}
+                        onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                        placeholder="Örn: Gün Olur Asra Bedel, Çalıkuşu, Suç ve Ceza..."
+                        className="w-full px-4 py-3 bg-white border border-emerald-500/30 rounded-xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm text-sm"
+                      />
+
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-emerald-900/80">Hızlı Eser / Şablon Seçimi:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {['Serbest Kitap Okuma', 'Nutuk', 'Çalıkuşu', 'Suç ve Ceza', 'Gün Olur Asra Bedel', 'Simyacı', 'Kürk Mantolu Madonna', 'Paragraf / Metin Tahlili'].map((bookName) => (
+                            <button
+                              key={bookName}
+                              type="button"
+                              onClick={() => setNewTask({ ...newTask, title: bookName })}
+                              className="px-2.5 py-1 bg-white hover:bg-emerald-100 border border-emerald-500/20 rounded-lg text-[10px] font-bold text-emerald-800 transition-all shadow-xs"
+                            >
+                              {bookName}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 pt-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-emerald-800">
+                          Okunacak Sayfa Sayısı / Süre
+                        </label>
+                        <input 
+                          type="text" 
+                          value={newTask.amount}
+                          onChange={(e) => setNewTask({ ...newTask, amount: e.target.value })}
+                          placeholder="Örn: 25 Sayfa veya 30 Dakika"
+                          className="w-full px-4 py-3 bg-white border border-emerald-500/30 rounded-xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm text-sm"
+                        />
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {['15 Sayfa', '20 Sayfa', '25 Sayfa', '30 Sayfa', '40 Sayfa', '50 Sayfa', '20 Dakika', '30 Dakika'].map((amt) => (
+                            <button
+                              key={amt}
+                              type="button"
+                              onClick={() => setNewTask({ ...newTask, amount: amt })}
+                              className="px-2 py-1 bg-white hover:bg-emerald-200 border border-emerald-500/20 rounded-md text-[10px] font-black text-emerald-800 transition-all"
+                            >
+                              {amt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Standard Subject Task Title (Question / Video / Reading) */}
+                  {newTask.type !== 'book' && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Görev Başlığı / Konu</label>
+                      <input 
+                        type="text" 
+                        value={newTask.title}
+                        onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                        placeholder="Örn: Paragraf Soru Çözümü veya Konu Başlığı"
+                        className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/10 rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary text-sm"
+                      />
+
+                      {newTask.type === 'question' && (
                         <div className="space-y-1.5 pt-1">
-                          <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
-                            <Sparkles className="w-3 h-3 text-amber-500" />
-                            Müfredat Konu Başlıkları (Seçmek için tıklayın):
-                          </span>
-                          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                            {topics.map((topic) => (
+                          <span className="text-[10px] font-bold text-on-surface-variant">Sık Kullanılan Rutinler:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { title: 'Paragraf Soru Çözümü', amount: '30 Soru' },
+                              { title: 'Problem Soru Çözümü', amount: '20 Soru' },
+                              { title: 'Geometri Rutin Test', amount: '15 Soru' },
+                              { title: 'Branş Denemesi', amount: '1 Deneme' }
+                            ].map((preset) => (
                               <button
-                                key={topic}
+                                key={preset.title}
                                 type="button"
-                                onClick={() => setNewTask({ ...newTask, title: topic })}
-                                className="px-2 py-1 bg-surface-container-high hover:bg-primary/10 hover:text-primary rounded-lg text-[10px] font-bold text-on-surface transition-all"
+                                onClick={() => setNewTask({ 
+                                  ...newTask, 
+                                  title: preset.title,
+                                  amount: preset.amount,
+                                  subject: preset.title.includes('Paragraf') ? 'Türkçe' : newTask.subject
+                                })}
+                                className="px-2.5 py-1 bg-primary/5 hover:bg-primary/15 text-primary border border-primary/20 rounded-lg text-[10px] font-bold transition-all"
                               >
-                                {topic}
+                                {preset.title} ({preset.amount})
                               </button>
                             ))}
                           </div>
                         </div>
-                      );
-                    })()}
-                  </div>
+                      )}
+
+                      {(() => {
+                        const topics = studentSubjectObjects.find(s => s.name === newTask.subject)?.topics || [];
+                        if (topics.length === 0) return null;
+                        return (
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-amber-500" />
+                              Müfredat Konuları (Tıklayarak Seçin):
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                              {topics.map((topic) => (
+                                <button
+                                  key={topic}
+                                  type="button"
+                                  onClick={() => setNewTask({ ...newTask, title: topic })}
+                                  className="px-2 py-1 bg-surface-container-high hover:bg-primary/10 hover:text-primary rounded-lg text-[10px] font-bold text-on-surface transition-all"
+                                >
+                                  {topic}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   {newTask.type === 'question' && (
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Soru Sayısı</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Soru Sayısı / Hedef</label>
+                        <span className="text-[10px] font-bold text-primary">Hızlı Seçim</span>
+                      </div>
                       <input 
                         type="text" 
                         value={newTask.amount}
                         onChange={(e) => setNewTask({ ...newTask, amount: e.target.value })}
-                        placeholder="Örn: 50 Soru"
-                        className="w-full px-5 py-4 bg-surface-container-low border-none rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="Örn: 30 Soru"
+                        className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/10 rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary text-sm"
+                      />
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {['20 Soru', '30 Soru', '40 Soru', '50 Soru', '75 Soru', '100 Soru'].map((amt) => (
+                          <button
+                            key={amt}
+                            type="button"
+                            onClick={() => setNewTask({ ...newTask, amount: amt })}
+                            className="px-2.5 py-1 bg-surface-container-high hover:bg-primary/10 hover:text-primary rounded-lg text-[10px] font-bold text-on-surface transition-all"
+                          >
+                            {amt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {newTask.type === 'reading' && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Miktar / Detay</label>
+                      <input 
+                        type="text" 
+                        value={newTask.amount}
+                        onChange={(e) => setNewTask({ ...newTask, amount: e.target.value })}
+                        placeholder="Örn: 15 Sayfa veya 1 Bölüm Özeti"
+                        className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/10 rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary text-sm"
                       />
                     </div>
                   )}
 
                   {newTask.type === 'video' && (
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">YouTube Linki</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">YouTube Linki</label>
                       <input 
                         type="text" 
                         value={newTask.videoUrl}
                         onChange={(e) => setNewTask({ ...newTask, videoUrl: e.target.value })}
                         placeholder="https://youtube.com/..."
-                        className="w-full px-5 py-4 bg-surface-container-low border-none rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary"
+                        className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/10 rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-primary text-sm"
                       />
                     </div>
                   )}
 
+                  {/* Multi-Day Selection Section */}
+                  <div className="space-y-3 pt-3 border-t border-outline-variant/10">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-black uppercase tracking-wider text-on-surface flex items-center gap-1.5">
+                        <Repeat className="w-4 h-4 text-primary" />
+                        Uygulanacak Günler ({selectedDays.length} Gün Seçildi)
+                      </label>
+                      <span className="text-xs font-black text-primary bg-primary/10 px-2.5 py-0.5 rounded-lg">
+                        {selectedDays.length === 7 ? '⭐ Tüm Hafta' : `${selectedDays.length} Gün`}
+                      </span>
+                    </div>
+
+                    {/* Quick Day Presets */}
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays([...DAYS])}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          selectedDays.length === 7 
+                            ? 'bg-primary text-white shadow-sm' 
+                            : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        ⭐ Her Gün (7 Gün)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays(['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma'])}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          selectedDays.length === 5 && !selectedDays.includes('Cumartesi') && !selectedDays.includes('Pazar')
+                            ? 'bg-primary text-white shadow-sm' 
+                            : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        📅 Hafta İçi (Pzt-Cum)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays(['Cumartesi', 'Pazar'])}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          selectedDays.length === 2 && selectedDays.includes('Cumartesi') && selectedDays.includes('Pazar')
+                            ? 'bg-primary text-white shadow-sm' 
+                            : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        🏖️ Hafta Sonu (Cmt-Paz)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays([selectedDay || 'Pazartesi'])}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          selectedDays.length === 1 && selectedDays[0] === (selectedDay || 'Pazartesi')
+                            ? 'bg-primary text-white shadow-sm' 
+                            : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        Sadece {selectedDay || 'Bu Gün'}
+                      </button>
+                    </div>
+
+                    {/* Individual Day Chips */}
+                    <div className="grid grid-cols-7 gap-1.5 pt-1">
+                      {DAYS.map((day) => {
+                        const isSelected = selectedDays.includes(day);
+                        const short = day.slice(0, 3);
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                if (selectedDays.length > 1) {
+                                  setSelectedDays(selectedDays.filter(d => d !== day));
+                                }
+                              } else {
+                                setSelectedDays([...selectedDays, day]);
+                              }
+                            }}
+                            className={`py-2 px-1 text-center rounded-xl text-xs font-black transition-all border ${
+                              isSelected
+                                ? 'bg-primary/15 text-primary border-primary/40 shadow-sm scale-105 font-black'
+                                : 'bg-surface-container-low text-on-surface-variant/60 border-transparent hover:bg-surface-container-high'
+                            }`}
+                            title={day}
+                          >
+                            {short}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {selectedDays.length > 1 && (
+                      <div className="text-[11px] font-medium text-primary bg-primary/5 border border-primary/15 p-2.5 rounded-xl flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                        <span>
+                          Bu ödev seçtiğiniz <strong>{selectedDays.length} güne</strong> ({selectedDays.map(d => d.slice(0,3)).join(', ')}) otomatik olarak kopyalanacaktır.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
                   <button 
                     onClick={addTask}
-                    className="w-full py-5 bg-primary text-white font-black rounded-full shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-4"
+                    disabled={!newTask.title}
+                    className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Plus className="w-6 h-6" />
-                    Görev Ekle
+                    <Plus className="w-5 h-5" />
+                    {selectedDays.length > 1 ? `${selectedDays.length} Güne Birden Görev Ekle` : 'Programa Ekle'}
                   </button>
                 </div>
               </div>

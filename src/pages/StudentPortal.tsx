@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 interface Task {
   id: string;
-  type: 'video' | 'question' | 'reading';
+  type: 'video' | 'question' | 'reading' | 'book';
   title: string;
   subject: string;
   amount?: string;
@@ -363,7 +363,14 @@ export function StudentPortal() {
                       )}>
                         {task.title}
                       </p>
-                      <p className="text-[10px] font-bold text-on-surface-variant uppercase mt-0.5">{task.subject} • {task.type === 'video' ? 'Video' : task.type === 'question' ? `${task.amount} Soru` : 'Okuma'}</p>
+                      <p className="text-[10px] font-bold text-on-surface-variant uppercase mt-0.5">
+                        {task.subject} • {
+                          task.type === 'video' ? 'Video' : 
+                          task.type === 'question' ? `${task.amount || 'Soru'}` : 
+                          task.type === 'book' ? `Kitap Okuma • ${task.amount || 'Okuma'}` : 
+                          'Okuma'
+                        }
+                      </p>
                     </div>
                     {task.type === 'video' && task.videoUrl && (
                       <Youtube className="w-5 h-5 text-red-500 opacity-60 group-hover:opacity-100 transition-opacity shrink-0" />
@@ -417,9 +424,15 @@ export function StudentPortal() {
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <span className={cn(
                                   "text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase",
-                                  task.type === 'video' ? "bg-red-50 text-red-600" : task.type === 'question' ? "bg-secondary/10 text-secondary" : "bg-tertiary/10 text-tertiary"
+                                  task.type === 'video' ? "bg-red-50 text-red-600" : 
+                                  task.type === 'question' ? "bg-secondary/10 text-secondary" : 
+                                  task.type === 'book' ? "bg-emerald-50 text-emerald-700" :
+                                  "bg-tertiary/10 text-tertiary"
                                 )}>
-                                  {task.type === 'video' ? 'Konu Videosu' : task.type === 'question' ? `${task.amount} Soru` : 'Konu Okuma'}
+                                  {task.type === 'video' ? 'Konu Videosu' : 
+                                   task.type === 'question' ? `${task.amount || 'Soru'}` : 
+                                   task.type === 'book' ? `Kitap: ${task.amount || 'Okuma'}` :
+                                   'Konu Okuma'}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center">

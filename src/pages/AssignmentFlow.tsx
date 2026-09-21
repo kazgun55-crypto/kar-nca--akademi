@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, PlayCircle, BookOpen, CheckCircle2, Clock, Plus, User, Send, Trash2, ClipboardCheck, Award } from 'lucide-react';
+import { Calendar, PlayCircle, BookOpen, CheckCircle2, Clock, Plus, User, Send, Trash2, ClipboardCheck, Award, Repeat, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Task {
   id: string;
-  type: 'video' | 'question' | 'test' | 'reading';
+  type: 'video' | 'question' | 'test' | 'reading' | 'book';
   title: string;
   amount?: string; // e.g., "50 soru", "20 dakika"
   videoUrl?: string; // YouTube URL
@@ -19,13 +19,15 @@ const DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartes
 
 export function AssignmentFlow() {
   const userRole = localStorage.getItem('userRole') || 'student';
-  const [selectedDay, setSelectedDay] = useState(DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
+  const initialDay = DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
+  const [selectedDay, setSelectedDay] = useState(initialDay);
+  const [selectedDays, setSelectedDays] = useState<string[]>([initialDay]);
   const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily');
   const [tasks, setTasks] = useState<Task[]>([]);
   
   // Teacher state
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskType, setNewTaskType] = useState<'video' | 'question' | 'test' | 'reading'>('video');
+  const [newTaskType, setNewTaskType] = useState<'video' | 'question' | 'test' | 'reading' | 'book'>('question');
   const [newTaskAmount, setNewTaskAmount] = useState('');
   const [newTaskVideoUrl, setNewTaskVideoUrl] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
@@ -148,16 +150,18 @@ export function AssignmentFlow() {
     const studentId = localStorage.getItem('currentUserId');
     const storageKey = (role === 'student' && studentId) ? `tasks_${studentId}` : 'academic_tasks';
 
-    const newTask: Task = {
+    const daysToApply = selectedDays.length > 0 ? selectedDays : [selectedDay];
+    const newTasks: Task[] = daysToApply.map(d => ({
       id: Math.random().toString(36).substr(2, 9),
       type: newTaskType,
       title: newTaskTitle,
       amount: newTaskAmount,
       videoUrl: newTaskType === 'video' ? newTaskVideoUrl : undefined,
       completed: false,
-      day: selectedDay
-    };
-    const updated = [...tasks, newTask];
+      day: d
+    }));
+
+    const updated = [...tasks, ...newTasks];
     setTasks(updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
     setNewTaskTitle('');
@@ -317,9 +321,10 @@ export function AssignmentFlow() {
                                 <span className={`text-[8px] font-black px-1 rounded ${
                                   task.type === 'video' ? 'bg-blue-100 text-blue-700' :
                                   task.type === 'question' ? 'bg-orange-100 text-orange-700' :
+                                  task.type === 'book' ? 'bg-emerald-100 text-emerald-700' :
                                   task.type === 'test' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'
                                 }`}>
-                                  {task.type === 'video' ? 'Vid' : task.type === 'question' ? 'Sor' : task.type === 'test' ? 'Tst' : 'Oku'}
+                                  {task.type === 'video' ? 'Vid' : task.type === 'question' ? 'Sor' : task.type === 'book' ? 'Kitap' : task.type === 'test' ? 'Tst' : 'Oku'}
                                 </span>
                                 {task.amount && <span className="text-[8px] text-on-surface-variant font-medium">{task.amount}</span>}
                               </div>
@@ -518,10 +523,11 @@ export function AssignmentFlow() {
                           <span className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-lg ${
                             task.type === 'video' ? 'bg-blue-100 text-blue-600' : 
                             task.type === 'question' ? 'bg-orange-100 text-orange-600' : 
+                            task.type === 'book' ? 'bg-emerald-100 text-emerald-700' :
                             task.type === 'test' ? 'bg-emerald-100 text-emerald-600' : 'bg-purple-100 text-purple-600'
                           }`}>
                             {task.type === 'video' ? <PlayCircle className="w-3 h-3" /> : task.type === 'test' ? <ClipboardCheck className="w-3 h-3" /> : <BookOpen className="w-3 h-3" />}
-                            {task.type === 'video' ? 'Video İzle' : task.type === 'question' ? 'Soru Çöz' : task.type === 'test' ? 'Test Çöz' : 'Okuma'}
+                            {task.type === 'video' ? 'Video İzle' : task.type === 'question' ? 'Soru Çöz' : task.type === 'book' ? 'Kitap Okuma' : task.type === 'test' ? 'Test Çöz' : 'Okuma'}
                           </span>
                           {task.amount && <span className="text-xs font-medium text-on-surface-variant">| {task.amount}</span>}
                           {task.completed && (task.correct !== undefined || task.incorrect !== undefined) && (
@@ -572,50 +578,128 @@ export function AssignmentFlow() {
           {/* Right Panel: Teacher Controls or Student Progress */}
           <div className="space-y-6">
             {(userRole === 'teacher' || userRole === 'admin') ? (
-              <div className="bg-surface-container-lowest p-8 rounded-[2.5rem] shadow-ambient border border-outline-variant/10 space-y-6 sticky top-24">
+              <div className="bg-surface-container-lowest p-7 rounded-[2.5rem] shadow-ambient border border-outline-variant/10 space-y-5 sticky top-24">
                 <div className="space-y-1">
-                  <h4 className="text-xl font-bold text-on-surface">Yeni Görev Ekle</h4>
-                  <p className="text-sm text-on-surface-variant font-medium">{selectedDay} programına ekle.</p>
+                  <h4 className="text-xl font-black text-on-surface">Yeni Görev Ekle</h4>
+                  <p className="text-xs text-on-surface-variant font-medium">
+                    {selectedDays.length > 1 
+                      ? `${selectedDays.length} güne toplu görev atayın.` 
+                      : `${selectedDay} programına görev ekleyin.`}
+                  </p>
                 </div>
 
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Görev Başlığı</label>
-                    <input 
-                      type="text" 
-                      value={newTaskTitle}
-                      onChange={(e) => setNewTaskTitle(e.target.value)}
-                      placeholder="Örn: Logaritma Konu Anlatımı"
-                      className="w-full px-5 py-4 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
+                  {/* Task Type */}
+                  <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Görev Türü</label>
-                    <div className="flex gap-2">
-                      {(['video', 'question', 'test', 'reading'] as const).map((type) => (
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[
+                        { type: 'question', label: 'Soru' },
+                        { type: 'book', label: 'Kitap' },
+                        { type: 'test', label: 'Test' },
+                        { type: 'video', label: 'Video' },
+                        { type: 'reading', label: 'Okuma' }
+                      ].map((item) => (
                         <button
-                          key={type}
-                          onClick={() => setNewTaskType(type)}
-                          className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all border ${
-                            newTaskType === type ? 'bg-primary/10 border-primary text-primary' : 'bg-surface-container-high border-transparent text-on-surface-variant'
+                          key={item.type}
+                          type="button"
+                          onClick={() => setNewTaskType(item.type as any)}
+                          className={`py-2.5 rounded-xl text-xs font-bold transition-all border text-center ${
+                            newTaskType === item.type 
+                              ? 'bg-primary text-white border-primary shadow-sm font-black' 
+                              : 'bg-surface-container-high border-transparent text-on-surface-variant hover:text-on-surface'
                           }`}
                         >
-                          {type === 'video' ? 'Video' : type === 'question' ? 'Soru' : type === 'test' ? 'Test' : 'Okuma'}
+                          {item.label}
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Miktar (Opsiyonel)</label>
+                  {/* Task Title & Presets */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">
+                      {newTaskType === 'book' ? 'Kitap / Eser Adı' : 'Görev Başlığı'}
+                    </label>
+                    <input 
+                      type="text" 
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      placeholder={
+                        newTaskType === 'book' 
+                          ? 'Örn: Çalıkuşu, Suç ve Ceza, Nutuk...' 
+                          : newTaskType === 'question' 
+                          ? 'Örn: Paragraf Soru Çözümü' 
+                          : 'Örn: Logaritma Konu Anlatımı'
+                      }
+                      className="w-full px-4 py-3 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-bold text-on-surface outline-none text-sm"
+                    />
+
+                    {/* Quick shortcuts for Title */}
+                    {newTaskType === 'question' && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {['Paragraf Soru Çözümü', 'Problem Soru Çözümü', 'Geometri Soru Çözümü'].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => {
+                              setNewTaskTitle(preset);
+                              if (!newTaskAmount) setNewTaskAmount('30 soru');
+                            }}
+                            className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold rounded-md hover:bg-primary/20 transition-all"
+                          >
+                            + {preset}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {newTaskType === 'book' && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {['Serbest Kitap Okuma', 'Nutuk', 'Çalıkuşu', 'Suç ve Ceza', 'Simyacı'].map((book) => (
+                          <button
+                            key={book}
+                            type="button"
+                            onClick={() => {
+                              setNewTaskTitle(book);
+                              if (!newTaskAmount) setNewTaskAmount('25 sayfa');
+                            }}
+                            className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md hover:bg-emerald-200 transition-all"
+                          >
+                            + {book}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Amount */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">
+                      {newTaskType === 'book' ? 'Okunacak Sayfa Sayısı / Süre' : 'Miktar / Hedef (Opsiyonel)'}
+                    </label>
                     <input 
                       type="text" 
                       value={newTaskAmount}
                       onChange={(e) => setNewTaskAmount(e.target.value)}
-                      placeholder="Örn: 50 soru veya 20 dk"
-                      className="w-full px-5 py-4 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none"
+                      placeholder={newTaskType === 'book' ? 'Örn: 25 sayfa veya 30 dk' : 'Örn: 30 soru veya 20 dk'}
+                      className="w-full px-4 py-3 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-bold text-on-surface outline-none text-sm"
                     />
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {(newTaskType === 'book' 
+                        ? ['15 sayfa', '20 sayfa', '25 sayfa', '30 sayfa', '30 dk'] 
+                        : ['20 soru', '30 soru', '40 soru', '50 soru']
+                      ).map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setNewTaskAmount(amt)}
+                          className="px-2 py-0.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant text-[10px] font-bold rounded-md transition-all"
+                        >
+                          {amt}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {newTaskType === 'video' && (
@@ -626,17 +710,90 @@ export function AssignmentFlow() {
                         value={newTaskVideoUrl}
                         onChange={(e) => setNewTaskVideoUrl(e.target.value)}
                         placeholder="https://www.youtube.com/watch?v=..."
-                        className="w-full px-5 py-4 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none"
+                        className="w-full px-4 py-3 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none text-sm"
                       />
                     </div>
                   )}
 
+                  {/* Multi-Day Selection for AssignmentFlow */}
+                  <div className="space-y-2.5 pt-2 border-t border-outline-variant/10">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-black uppercase tracking-wider text-on-surface flex items-center gap-1">
+                        <Repeat className="w-3.5 h-3.5 text-primary" />
+                        Uygulanacak Günler
+                      </label>
+                      <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                        {selectedDays.length === 7 ? 'Tüm Hafta' : `${selectedDays.length} Gün`}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays([...DAYS])}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                          selectedDays.length === 7 ? 'bg-primary text-white' : 'bg-surface-container-high text-on-surface-variant'
+                        }`}
+                      >
+                        ⭐ Her Gün
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays(['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma'])}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                          selectedDays.length === 5 && !selectedDays.includes('Cumartesi') ? 'bg-primary text-white' : 'bg-surface-container-high text-on-surface-variant'
+                        }`}
+                      >
+                        📅 Hafta İçi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDays([selectedDay])}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                          selectedDays.length === 1 ? 'bg-primary text-white' : 'bg-surface-container-high text-on-surface-variant'
+                        }`}
+                      >
+                        Sadece Bugün
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1">
+                      {DAYS.map((day) => {
+                        const isSelected = selectedDays.includes(day);
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                if (selectedDays.length > 1) {
+                                  setSelectedDays(selectedDays.filter(d => d !== day));
+                                }
+                              } else {
+                                setSelectedDays([...selectedDays, day]);
+                              }
+                            }}
+                            className={`py-1 text-center rounded-lg text-[10px] font-bold transition-all border ${
+                              isSelected
+                                ? 'bg-primary/15 text-primary border-primary/30 font-black'
+                                : 'bg-surface-container-high text-on-surface-variant/70 border-transparent'
+                            }`}
+                            title={day}
+                          >
+                            {day.slice(0, 3)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <button 
                     onClick={addTask}
-                    className="w-full py-4 bg-primary text-white font-bold rounded-full shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-4"
+                    disabled={!newTaskTitle}
+                    className="w-full py-4 bg-primary text-white font-bold rounded-2xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   >
-                    <Plus className="w-5 h-5" />
-                    Programa Ekle
+                    <Plus className="w-4 h-4" />
+                    {selectedDays.length > 1 ? `${selectedDays.length} Güne Birden Ekle` : 'Programa Ekle'}
                   </button>
                 </div>
               </div>
