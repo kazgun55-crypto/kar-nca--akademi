@@ -4,6 +4,7 @@ import { StatCard } from '@/src/components/StatCard';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { subscribeStudents, subscribeTeachers } from '@/src/lib/firestoreService';
+import { calculateMaarifExamCountdown } from '@/src/lib/curriculum';
 
 export function Dashboard() {
   const [studentCount, setStudentCount] = useState<number>(0);
@@ -50,6 +51,7 @@ export function Dashboard() {
 
   const lgsDays = calculateCountdownDays('LGS');
   const yksDays = calculateCountdownDays('YKS');
+  const maarifDays = calculateMaarifExamCountdown();
 
   return (
     <div className="space-y-6 md:space-y-8">
@@ -68,19 +70,31 @@ export function Dashboard() {
       </section>
 
       {/* Sınav Geri Sayım Sayaçları Banner */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 bg-gradient-to-r from-primary/5 to-secondary/5 border border-outline-variant/10 p-4 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm">
-        <div className="flex items-center gap-4 bg-white/60 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
-          <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 bg-gradient-to-r from-primary/5 via-amber-500/5 to-secondary/5 border border-outline-variant/10 p-4 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] shadow-sm">
+        <div className="flex items-center gap-4 bg-white/70 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
+          <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-sm shrink-0">
             <Timer className="w-6 h-6" />
           </div>
           <div>
             <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">LGS Sınav Sayacı</p>
             <p className="text-2xl font-black text-primary mt-0.5">{lgsDays} Gün Kaldı</p>
-            <p className="text-[10px] text-on-surface-variant font-medium">Hedef: LGS Hazırlık Sınavı</p>
+            <p className="text-[10px] text-on-surface-variant font-medium">Hedef: 8. Sınıf LGS Sınavı</p>
           </div>
         </div>
-        <div className="flex items-center gap-4 bg-white/60 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
-          <div className="h-14 w-14 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary shadow-sm">
+
+        <div className="flex items-center gap-4 bg-white/70 backdrop-blur-sm p-6 rounded-[2rem] border border-amber-500/20">
+          <div className="h-14 w-14 rounded-2xl bg-amber-500/15 flex items-center justify-center text-amber-600 shadow-sm shrink-0">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{maarifDays.title}</p>
+            <p className="text-2xl font-black text-amber-600 mt-0.5">{maarifDays.days} Gün Kaldı</p>
+            <p className="text-[10px] text-on-surface-variant font-medium">Hedef: {maarifDays.subtitle}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 bg-white/70 backdrop-blur-sm p-6 rounded-[2rem] border border-outline-variant/5">
+          <div className="h-14 w-14 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary shadow-sm shrink-0">
             <Calendar className="w-6 h-6" />
           </div>
           <div>

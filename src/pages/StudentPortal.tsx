@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, Timer, ClipboardCheck, ArrowRight, Sparkles } from 'lucide-react';
+import { Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getExamCountdownForGrade, GradeExamCountdown } from '../lib/curriculum';
 
 interface Task {
   id: string;
-  type: 'video' | 'question' | 'reading' | 'book';
+  type: 'video' | 'question' | 'test' | 'reading' | 'book';
   title: string;
   subject: string;
   amount?: string;
   videoUrl?: string;
   day: string;
   completed: boolean;
+  correct?: number;
+  incorrect?: number;
+  empty?: number;
+  net?: number;
+  topic?: string;
 }
 
 interface TrialData {
@@ -48,49 +54,16 @@ export function StudentPortal() {
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState<{ days: number, label: string } | null>(null);
+  const [countdown, setCountdown] = useState<GradeExamCountdown | null>(null);
+  const [evaluatingTask, setEvaluatingTask] = useState<Task | null>(null);
+  const [evalCorrect, setEvalCorrect] = useState<number>(0);
+  const [evalIncorrect, setEvalIncorrect] = useState<number>(0);
+  const [evalEmpty, setEvalEmpty] = useState<number>(0);
+  const [showResultModal, setShowResultModal] = useState<boolean>(false);
   const tasksRef = useRef<HTMLDivElement>(null);
 
   const scrollToTasks = () => {
     tasksRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const calculateCountdown = (grade: string) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    let label: string;
-    let examYear = now.getFullYear();
-    let examMonth = 5; // June is 5 (0-indexed)
-    let examDay: number;
-
-    if (grade.includes('8')) {
-      label = 'LGS';
-      examDay = 6; // June 6
-    } else if (grade.includes('9')) {
-      label = '9. Sınıf Maarif Modeli Ortak Sınav';
-      examMonth = 4; // May (MEB 2. Dönem Ortak Yazılı)
-      examDay = 28;
-    } else if (grade.includes('10')) {
-      label = '10. Sınıf Maarif Modeli Ortak Sınav';
-      examMonth = 4; // May (MEB 2. Dönem Ortak Yazılı)
-      examDay = 29;
-    } else if (grade.includes('11') || grade.includes('12') || grade.toLowerCase().includes('mezun')) {
-      label = 'YKS';
-      examDay = 19; // June 19
-    } else {
-      return null;
-    }
-
-    let examDate = new Date(examYear, examMonth, examDay);
-    if (today > examDate) {
-      examDate = new Date(examYear + 1, examMonth, examDay);
-    }
-
-    const diff = examDate.getTime() - today.getTime();
-    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-    
-    return days >= 0 ? { days, label } : null;
   };
 
   const loadData = () => {
@@ -98,14 +71,14 @@ export function StudentPortal() {
     if (id) {
       setStudentId(id);
       
-      // Get student grade for countdown
+      // Sınıfa özel sınav sayacı hesaplama (örn. 10. sınıfa Maarif Modeli sınavı, 8. sınıfa LGS)
       const savedStudents = localStorage.getItem('students');
       if (savedStudents) {
         const students = JSON.parse(savedStudents);
         const currentStudent = students.find((s: any) => s.id === id);
         if (currentStudent) {
-          setStudentGrade(currentStudent.grade);
-          setCountdown(calculateCountdown(currentStudent.grade));
+          setStudentGrade(currentStudent.grade || '');
+          setCountdown(getExamCountdownForGrade(currentStudent.grade || ''));
         }
       }
 
@@ -147,7 +120,7 @@ export function StudentPortal() {
 
   const toggleTask = (taskId: string) => {
     const updatedTasks = tasks.map(t => 
-      t.id === taskId ? { ...t, completed: !t.completed } : t
+      t.id === taskId ? { ...t, completed: !t.completed, correct: undefined, incorrect: undefined, empty: undefined, net: undefined } : t
     );
     setTasks(updatedTasks);
     localStorage.setItem(`tasks_${studentId}`, JSON.stringify(updatedTasks));
@@ -156,6 +129,77 @@ export function StudentPortal() {
     const dayIndex = new Date().getDay();
     const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
     setTodayTasks(updatedTasks.filter((t: Task) => t.day === todayName));
+  };
+
+  const handleTaskClick = (task: Task) => {
+    // Soru ve Test ödevlerinde tıklandığında anında Doğru/Yanlış/Boş giriş penceresi açılır
+    if (task.type === 'question' || task.type === 'test') {
+      setEvaluatingTask(task);
+      setEvalCorrect(task.correct ?? 0);
+      setEvalIncorrect(task.incorrect ?? 0);
+      setEvalEmpty(task.empty ?? 0);
+      setShowResultModal(true);
+    } else {
+      toggleTask(task.id);
+    }
+  };
+
+  const saveTaskEvaluation = () => {
+    if (!evaluatingTask) return;
+    const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5');
+    const penalty = isMiddleSchool ? 3 : 4; // LGS: 3 yanlış 1 doğruyu götürür, Lise/YKS: 4 yanlış 1 doğruyu götürür
+    const calculatedNet = Math.max(0, evalCorrect - (evalIncorrect / penalty));
+
+    const updatedTasks = tasks.map(t => {
+      if (t.id === evaluatingTask.id) {
+        return {
+          ...t,
+          completed: true,
+          correct: Number(evalCorrect),
+          incorrect: Number(evalIncorrect),
+          empty: Number(evalEmpty),
+          net: Number(calculatedNet.toFixed(2))
+        };
+      }
+      return t;
+    });
+
+    setTasks(updatedTasks);
+    localStorage.setItem(`tasks_${studentId}`, JSON.stringify(updatedTasks));
+
+    const dayIndex = new Date().getDay();
+    const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+    setTodayTasks(updatedTasks.filter((t: Task) => t.day === todayName));
+
+    setShowResultModal(false);
+    setEvaluatingTask(null);
+  };
+
+  const resetTaskEvaluation = () => {
+    if (!evaluatingTask) return;
+    const updatedTasks = tasks.map(t => {
+      if (t.id === evaluatingTask.id) {
+        return {
+          ...t,
+          completed: false,
+          correct: undefined,
+          incorrect: undefined,
+          empty: undefined,
+          net: undefined
+        };
+      }
+      return t;
+    });
+
+    setTasks(updatedTasks);
+    localStorage.setItem(`tasks_${studentId}`, JSON.stringify(updatedTasks));
+
+    const dayIndex = new Date().getDay();
+    const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+    setTodayTasks(updatedTasks.filter((t: Task) => t.day === todayName));
+
+    setShowResultModal(false);
+    setEvaluatingTask(null);
   };
 
   const finishProgram = () => {
@@ -347,8 +391,8 @@ export function StudentPortal() {
                 {todayTasks.length > 0 ? todayTasks.map((task) => (
                   <div 
                     key={task.id} 
-                    onClick={() => toggleTask(task.id)}
-                    className="flex items-center p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/5 group hover:scale-[1.01] transition-transform cursor-pointer"
+                    onClick={() => handleTaskClick(task)}
+                    className="flex items-center p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/5 group hover:scale-[1.01] transition-all cursor-pointer relative"
                   >
                     <div className={cn(
                       "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0",
@@ -357,19 +401,34 @@ export function StudentPortal() {
                       {task.completed && <CheckSquare className="w-4 h-4 text-white" />}
                     </div>
                     <div className="ml-4 flex-grow">
-                      <p className={cn(
-                        "font-bold text-sm transition-all",
-                        task.completed ? "text-on-surface/40 line-through" : "text-on-surface"
-                      )}>
-                        {task.title}
-                      </p>
-                      <p className="text-[10px] font-bold text-on-surface-variant uppercase mt-0.5">
-                        {task.subject} • {
-                          task.type === 'video' ? 'Video' : 
-                          task.type === 'question' ? `${task.amount || 'Soru'}` : 
-                          task.type === 'book' ? `Kitap Okuma • ${task.amount || 'Okuma'}` : 
-                          'Okuma'
-                        }
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={cn(
+                          "font-bold text-sm transition-all",
+                          task.completed ? "text-on-surface/50 line-through" : "text-on-surface"
+                        )}>
+                          {task.title}
+                        </p>
+                        {task.completed && (task.type === 'question' || task.type === 'test') && (
+                          <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y {task.empty ? `• ${task.empty} B` : ''} {task.net !== undefined ? `(${task.net} Net)` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] font-bold text-on-surface-variant uppercase mt-0.5 flex items-center gap-2">
+                        <span>{task.subject}</span>
+                        <span>•</span>
+                        <span>
+                          {task.type === 'video' ? 'Video' : 
+                           task.type === 'test' ? `Test • ${task.amount || 'Çözüm'}` :
+                           task.type === 'question' ? `${task.amount || 'Soru'}` : 
+                           task.type === 'book' ? `Kitap Okuma • ${task.amount || 'Okuma'}` : 
+                           'Okuma'}
+                        </span>
+                        {(task.type === 'question' || task.type === 'test') && !task.completed && (
+                          <span className="text-primary font-black lowercase text-[10px] bg-primary/10 px-2 py-0.5 rounded-full">
+                            Tıkla ve D/Y gir
+                          </span>
+                        )}
                       </p>
                     </div>
                     {task.type === 'video' && task.videoUrl && (
@@ -405,10 +464,14 @@ export function StudentPortal() {
                         {[...tasks]
                           .sort((a, b) => DAYS_TR.indexOf(a.day) - DAYS_TR.indexOf(b.day))
                           .map((task) => (
-                            <tr key={task.id} className={cn(
-                              "hover:bg-primary/[0.01] transition-colors",
-                              task.completed ? "opacity-50" : ""
-                            )}>
+                            <tr 
+                              key={task.id} 
+                              onClick={() => handleTaskClick(task)}
+                              className={cn(
+                                "hover:bg-primary/[0.03] transition-colors cursor-pointer",
+                                task.completed ? "bg-tertiary/[0.02]" : ""
+                              )}
+                            >
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <span className={cn(
                                   "text-[10px] font-black uppercase px-3 py-1 rounded-full",
@@ -420,16 +483,36 @@ export function StudentPortal() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap font-bold text-sm text-on-surface">{task.subject}</td>
-                              <td className="px-6 py-4 font-semibold text-sm text-on-surface-variant max-w-xs truncate">{task.title}</td>
+                              <td className="px-6 py-4">
+                                <div className="space-y-1">
+                                  <p className={cn(
+                                    "font-semibold text-sm max-w-xs truncate",
+                                    task.completed ? "text-on-surface/60 line-through" : "text-on-surface"
+                                  )}>
+                                    {task.title}
+                                  </p>
+                                  {task.completed && (task.type === 'question' || task.type === 'test') && (
+                                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-black">
+                                      <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y</span>
+                                      {task.net !== undefined && <span className="text-primary font-black">• {task.net} Net</span>}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <span className={cn(
-                                  "text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase",
+                                  "text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase inline-flex items-center gap-1",
                                   task.type === 'video' ? "bg-red-50 text-red-600" : 
+                                  task.type === 'test' ? "bg-indigo-50 text-indigo-700" :
                                   task.type === 'question' ? "bg-secondary/10 text-secondary" : 
                                   task.type === 'book' ? "bg-emerald-50 text-emerald-700" :
                                   "bg-tertiary/10 text-tertiary"
                                 )}>
+                                  {task.type === 'test' && <ClipboardCheck className="w-3 h-3" />}
+                                  {task.type === 'book' && <BookOpen className="w-3 h-3" />}
+                                  {task.type === 'question' && <Target className="w-3 h-3" />}
                                   {task.type === 'video' ? 'Konu Videosu' : 
+                                   task.type === 'test' ? `Test: ${task.amount || 'Ödev'}` :
                                    task.type === 'question' ? `${task.amount || 'Soru'}` : 
                                    task.type === 'book' ? `Kitap: ${task.amount || 'Okuma'}` :
                                    'Konu Okuma'}
@@ -437,12 +520,16 @@ export function StudentPortal() {
                               </td>
                               <td className="px-6 py-4 text-center">
                                 <button 
-                                  onClick={() => toggleTask(task.id)}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleTaskClick(task);
+                                  }}
                                   className="inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-container-high transition-colors"
                                 >
                                   <div className={cn(
                                     "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
-                                    task.completed ? "bg-tertiary border-tertiary text-white" : "border-outline"
+                                    task.completed ? "bg-tertiary border-tertiary text-white" : "border-outline hover:border-primary"
                                   )}>
                                     {task.completed && <CheckSquare className="w-3.5 h-3.5" />}
                                   </div>
@@ -787,6 +874,223 @@ export function StudentPortal() {
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Test / Soru Ödevi Sonuç Girişi Modalı */}
+      <AnimatePresence>
+        {showResultModal && evaluatingTask && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-white rounded-[2.5rem] p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-6"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-outline-variant/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
+                    evaluatingTask.type === 'test' ? 'bg-indigo-100 text-indigo-700' : 'bg-primary/10 text-primary'
+                  }`}>
+                    {evaluatingTask.type === 'test' ? <ClipboardCheck className="w-6 h-6" /> : <Target className="w-6 h-6" />}
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                      {evaluatingTask.type === 'test' ? 'Test Sonuç Bildirimi' : 'Soru Çözüm Sonucu'}
+                    </span>
+                    <h3 className="text-xl font-black text-on-surface mt-1 leading-snug">
+                      {evaluatingTask.title}
+                    </h3>
+                    <p className="text-xs font-semibold text-on-surface-variant">
+                      {evaluatingTask.subject} {evaluatingTask.amount ? `• Hedef: ${evaluatingTask.amount}` : ''} • {evaluatingTask.day}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowResultModal(false)}
+                  className="p-2 hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Net Score Calculation Banner */}
+              {(() => {
+                const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5');
+                const penalty = isMiddleSchool ? 3 : 4;
+                const net = Math.max(0, evalCorrect - (evalIncorrect / penalty));
+                const totalQuestions = Number(evalCorrect) + Number(evalIncorrect) + Number(evalEmpty);
+                const accuracy = totalQuestions > 0 ? Math.round((evalCorrect / (evalCorrect + evalIncorrect || 1)) * 100) : 0;
+
+                return (
+                  <div className="bg-gradient-to-br from-emerald-500/10 via-primary/5 to-transparent border border-emerald-500/20 p-4 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Hesaplanan Net
+                      </span>
+                      <div className="text-3xl font-black text-emerald-700 mt-0.5">
+                        {net.toFixed(2)} <span className="text-sm font-bold text-emerald-600/80">Net</span>
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">
+                        {isMiddleSchool ? 'LGS kuralı: 3 yanlış 1 doğruyu götürür' : 'Lise / YKS kuralı: 4 yanlış 1 doğruyu götürür'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-black text-on-surface">Toplam Soru: {totalQuestions}</div>
+                      <div className="text-xs font-bold text-emerald-700 mt-0.5">Başarı: %{accuracy}</div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Doğru / Yanlış / Boş Giriş Alanları */}
+              <div className="grid grid-cols-3 gap-3">
+                {/* Doğru */}
+                <div className="bg-emerald-50/70 border border-emerald-500/20 rounded-2xl p-3.5 text-center space-y-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800 block">Doğru</span>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <button 
+                      type="button"
+                      onClick={() => setEvalCorrect(prev => Math.max(0, prev - 1))}
+                      className="w-8 h-8 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 font-black flex items-center justify-center shadow-xs transition-colors"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={evalCorrect}
+                      onChange={(e) => setEvalCorrect(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-14 text-center py-1.5 bg-white rounded-lg font-black text-lg text-emerald-800 outline-none border border-emerald-500/20 focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setEvalCorrect(prev => prev + 1)}
+                      className="w-8 h-8 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 font-black flex items-center justify-center shadow-xs transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Yanlış */}
+                <div className="bg-rose-50/70 border border-rose-500/20 rounded-2xl p-3.5 text-center space-y-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-rose-800 block">Yanlış</span>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <button 
+                      type="button"
+                      onClick={() => setEvalIncorrect(prev => Math.max(0, prev - 1))}
+                      className="w-8 h-8 rounded-lg bg-white hover:bg-rose-100 text-rose-800 font-black flex items-center justify-center shadow-xs transition-colors"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={evalIncorrect}
+                      onChange={(e) => setEvalIncorrect(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-14 text-center py-1.5 bg-white rounded-lg font-black text-lg text-rose-800 outline-none border border-rose-500/20 focus:ring-2 focus:ring-rose-500"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setEvalIncorrect(prev => prev + 1)}
+                      className="w-8 h-8 rounded-lg bg-white hover:bg-rose-100 text-rose-800 font-black flex items-center justify-center shadow-xs transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Boş */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-center space-y-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 block">Boş</span>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <button 
+                      type="button"
+                      onClick={() => setEvalEmpty(prev => Math.max(0, prev - 1))}
+                      className="w-8 h-8 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center shadow-xs transition-colors"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={evalEmpty}
+                      onChange={(e) => setEvalEmpty(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-14 text-center py-1.5 bg-white rounded-lg font-black text-lg text-slate-700 outline-none border border-slate-300 focus:ring-2 focus:ring-slate-400"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setEvalEmpty(prev => prev + 1)}
+                      className="w-8 h-8 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center shadow-xs transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hızlı Yanlış Şablonları */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-on-surface-variant">Hızlı Yanlış Ayarı:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setEvalIncorrect(0)}
+                    className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-bold transition-all"
+                  >
+                    ⭐ 0 Yanlış (Full Doğru)
+                  </button>
+                  {[1, 2, 3, 4, 5].map(cnt => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      onClick={() => setEvalIncorrect(cnt)}
+                      className="px-2.5 py-1 bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant rounded-lg text-xs font-bold transition-all"
+                    >
+                      {cnt} Yanlış
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2 border-t border-outline-variant/10">
+                <button 
+                  onClick={saveTaskEvaluation}
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl shadow-xl shadow-emerald-600/20 hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2 text-sm"
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                  Sonucu Kaydet ve Tamamla
+                </button>
+
+                {evaluatingTask.completed && (
+                  <button 
+                    onClick={resetTaskEvaluation}
+                    type="button"
+                    className="w-full py-3 bg-surface-container-high hover:bg-rose-50 hover:text-rose-700 text-on-surface-variant font-bold rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Görevi Tamamlanmadı Olarak İşaretle (Sıfırla)
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => setShowResultModal(false)}
+                  type="button"
+                  className="w-full py-2.5 text-on-surface-variant/70 hover:text-on-surface text-xs font-semibold"
+                >
+                  İptal
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

@@ -573,3 +573,110 @@ export function calculateMaarifExamCountdown(): { days: number; title: string; s
     subtitle: `Maarif Modeli ${nextMilestone.name}`
   };
 }
+
+export interface GradeExamCountdown {
+  days: number;
+  label: string;
+  shortLabel: string;
+  subtitle: string;
+  category: 'lgs' | 'yks' | 'maarif_9' | 'maarif_10' | 'ortaokul';
+  examType: 'LGS' | 'YKS' | 'MAARIF' | 'ORTAOKUL';
+  themeColor: 'primary' | 'secondary' | 'amber' | 'emerald';
+}
+
+export function getExamCountdownForGrade(grade: string): GradeExamCountdown {
+  const g = (grade || '').toLowerCase().trim();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const currentYear = now.getFullYear();
+
+  // 1) 8. Sınıf / LGS Hazırlık (Sadece 8. sınıf LGS sayacı görür!)
+  if (g.includes('8') || g.includes('lgs')) {
+    let examDate = new Date(currentYear, 5, 6); // 6 Haziran LGS
+    if (today > examDate) examDate = new Date(currentYear + 1, 5, 6);
+    const days = Math.max(0, Math.ceil((examDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+    return {
+      days,
+      label: 'LGS Sınav Sayacı',
+      shortLabel: 'LGS',
+      subtitle: 'Hedef: 8. Sınıf LGS Sınavı (6 Haziran)',
+      category: 'lgs',
+      examType: 'LGS',
+      themeColor: 'primary'
+    };
+  }
+
+  // 2) 10. Sınıf Maarif Modeli (LGS ASLA gösterilmez, 10. sınıf MEB Ortak Sınav Sayacı)
+  if (g.includes('10')) {
+    const maarif = calculateMaarifExamCountdown();
+    return {
+      days: maarif.days,
+      label: '10. Sınıf Maarif Modeli Ortak Sınav Sayacı',
+      shortLabel: '10. Sınıf Maarif',
+      subtitle: `Hedef: 10. Sınıf ${maarif.subtitle}`,
+      category: 'maarif_10',
+      examType: 'MAARIF',
+      themeColor: 'amber'
+    };
+  }
+
+  // 3) 9. Sınıf Maarif Modeli (9. sınıf MEB Ortak Sınav Sayacı)
+  if (g.includes('9')) {
+    const maarif = calculateMaarifExamCountdown();
+    return {
+      days: maarif.days,
+      label: '9. Sınıf Maarif Modeli Ortak Sınav Sayacı',
+      shortLabel: '9. Sınıf Maarif',
+      subtitle: `Hedef: 9. Sınıf ${maarif.subtitle}`,
+      category: 'maarif_9',
+      examType: 'MAARIF',
+      themeColor: 'amber'
+    };
+  }
+
+  // 4) 11. Sınıf, 12. Sınıf, Mezun / YKS
+  if (g.includes('11') || g.includes('12') || g.includes('yks') || g.includes('mezun')) {
+    let examDate = new Date(currentYear, 5, 19); // 19 Haziran YKS
+    if (today > examDate) examDate = new Date(currentYear + 1, 5, 19);
+    const days = Math.max(0, Math.ceil((examDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+    const is11 = g.includes('11');
+    return {
+      days,
+      label: is11 ? '11. Sınıf YKS / TYT Hazırlık Sayacı' : 'YKS (TYT-AYT) Sınav Sayacı',
+      shortLabel: is11 ? '11. Sınıf YKS' : 'YKS',
+      subtitle: is11 ? 'Hedef: YKS 2027 Temel Yeterlilik Testi' : 'Hedef: Yükseköğretim Kurumları Sınavı (19 Haziran)',
+      category: 'yks',
+      examType: 'YKS',
+      themeColor: 'secondary'
+    };
+  }
+
+  // 5) 5, 6, 7. Sınıflar (Ortaokul MEB Ortak Yazılı Sınavı)
+  if (g.includes('5') || g.includes('6') || g.includes('7')) {
+    const maarif = calculateMaarifExamCountdown();
+    const gradeNum = g.includes('5') ? '5' : g.includes('6') ? '6' : '7';
+    return {
+      days: maarif.days,
+      label: `${gradeNum}. Sınıf MEB Ortak Sınav Sayacı`,
+      shortLabel: `${gradeNum}. Sınıf MEB`,
+      subtitle: `Hedef: ${gradeNum}. Sınıf Dönem Ortak Yazılı Sınavları`,
+      category: 'ortaokul',
+      examType: 'ORTAOKUL',
+      themeColor: 'primary'
+    };
+  }
+
+  // Genel / Tanımsız Sınıf Durumu
+  let examDate = new Date(currentYear, 5, 19);
+  if (today > examDate) examDate = new Date(currentYear + 1, 5, 19);
+  const days = Math.max(0, Math.ceil((examDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+  return {
+    days,
+    label: 'Akademik Sınav Sayacı',
+    shortLabel: 'Sınav',
+    subtitle: 'Hedef: Akademik Başarı Sınavı',
+    category: 'yks',
+    examType: 'YKS',
+    themeColor: 'primary'
+  };
+}

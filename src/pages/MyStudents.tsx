@@ -19,7 +19,8 @@ import {
   Archive,
   Timer,
   Trash2,
-  Repeat
+  Repeat,
+  ClipboardCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -31,6 +32,8 @@ import {
   getSubjectsForGrade, 
   getGradeCategory, 
   calculateMaarifExamCountdown,
+  getExamCountdownForGrade,
+  GradeExamCountdown,
   Subject
 } from '../lib/curriculum';
 
@@ -44,13 +47,18 @@ interface Student {
 
 interface Task {
   id: string;
-  type: 'video' | 'question' | 'reading' | 'book';
+  type: 'video' | 'question' | 'test' | 'reading' | 'book';
   title: string;
   subject: string;
   amount?: string;
   videoUrl?: string;
   day: string;
   completed: boolean;
+  correct?: number;
+  incorrect?: number;
+  empty?: number;
+  net?: number;
+  topic?: string;
 }
 
 const DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
@@ -90,17 +98,22 @@ export function MyStudents() {
     ? students
     : students.filter(s => s.grade === selectedClass);
 
+  // Sınıfa özel sınav sayacı (Örn: 10. sınıf seçildiğinde LGS kesinlikle gösterilmez, sadece Maarif Modeli gösterilir)
+  const singleClassCountdown = selectedClass !== 'all' 
+    ? getExamCountdownForGrade(selectedClass) 
+    : null;
+
   const showLgsCounter = selectedClass === 'all'
     ? filteredStudents.some(s => (s.grade || '').includes('8') || (s.grade || '').toLowerCase().includes('lgs'))
-    : (selectedClass.includes('8') || selectedClass.toLowerCase().includes('lgs'));
+    : (singleClassCountdown?.examType === 'LGS');
 
   const showYksCounter = selectedClass === 'all'
     ? filteredStudents.some(s => (s.grade || '').includes('12') || (s.grade || '').includes('11') || (s.grade || '').toLowerCase().includes('yks') || (s.grade || '').toLowerCase().includes('mezun'))
-    : (selectedClass.includes('12') || selectedClass.includes('11') || selectedClass.toLowerCase().includes('yks') || selectedClass.toLowerCase().includes('mezun'));
+    : (singleClassCountdown?.examType === 'YKS');
 
   const showMaarifCounter = selectedClass === 'all'
     ? filteredStudents.some(s => (s.grade || '').includes('9') || (s.grade || '').includes('10'))
-    : (selectedClass.includes('9') || selectedClass.includes('10'));
+    : (singleClassCountdown?.examType === 'MAARIF');
 
   const studentSubjectObjects: Subject[] = selectedStudent 
     ? getSubjectsForGrade(selectedStudent.grade || '')
@@ -114,7 +127,7 @@ export function MyStudents() {
   const [selectedDay, setSelectedDay] = useState('Pazartesi');
   const [selectedDays, setSelectedDays] = useState<string[]>(['Pazartesi']);
   const [newTask, setNewTask] = useState({
-    type: 'question' as 'video' | 'question' | 'reading' | 'book',
+    type: 'question' as 'video' | 'question' | 'test' | 'reading' | 'book',
     subject: '',
     title: '',
     amount: '',
@@ -646,7 +659,7 @@ export function MyStudents() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <button 
                   onClick={() => setShowMeetingModal(true)}
                   className="bg-tertiary text-white px-6 py-4 rounded-3xl font-bold shadow-lg shadow-tertiary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
@@ -654,6 +667,24 @@ export function MyStudents() {
                   <Calendar className="w-5 h-5" />
                   Görüşme Notu Ekle
                 </button>
+
+                {(() => {
+                  const studentCountdown = selectedStudent?.grade ? getExamCountdownForGrade(selectedStudent.grade) : null;
+                  if (!studentCountdown) return null;
+                  return (
+                    <div className="bg-surface-container-low px-5 py-3 rounded-3xl text-left border border-outline-variant/10 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                        <Timer className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-on-surface-variant uppercase tracking-wider">{studentCountdown.label}</p>
+                        <p className="text-xl font-black text-primary leading-tight">{studentCountdown.days} Gün Kaldı</p>
+                        <p className="text-[9px] text-on-surface-variant/80 font-medium">{studentCountdown.subtitle}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="bg-surface-container-low px-6 py-4 rounded-3xl text-center">
                   <p className="text-[10px] font-bold text-on-surface-variant uppercase">Son Net</p>
                   <p className="text-2xl font-black text-primary">{selectedStudent?.lastTrialScore}</p>
@@ -667,8 +698,9 @@ export function MyStudents() {
 
             {activeTab === 'program' ? (
               <div className="space-y-6">
+                {/* Hafta Özeti & Sonuçlar */}
                 <div className="bg-surface-container-low p-6 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-6">
+                  <div className="flex flex-wrap items-center gap-6">
                     <div className="text-center">
                       <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam Ödev</p>
                       <p className="text-2xl font-black text-on-surface">{studentTasks.length}</p>
@@ -678,6 +710,26 @@ export function MyStudents() {
                       <p className="text-[10px] font-bold text-on-surface-variant uppercase">Tamamlanan</p>
                       <p className="text-2xl font-black text-tertiary">{studentTasks.filter(t => t.completed).length}</p>
                     </div>
+
+                    {(() => {
+                      const evaluatedTasks = studentTasks.filter(t => t.completed && (t.correct !== undefined || t.incorrect !== undefined));
+                      if (evaluatedTasks.length === 0) return null;
+                      const totalCorrect = evaluatedTasks.reduce((sum, t) => sum + (t.correct || 0), 0);
+                      const totalIncorrect = evaluatedTasks.reduce((sum, t) => sum + (t.incorrect || 0), 0);
+                      const totalEmpty = evaluatedTasks.reduce((sum, t) => sum + (t.empty || 0), 0);
+
+                      return (
+                        <>
+                          <div className="h-10 w-px bg-outline-variant/30" />
+                          <div className="text-left bg-emerald-500/10 px-3.5 py-1.5 rounded-2xl border border-emerald-500/20">
+                            <p className="text-[9px] font-black text-emerald-800 uppercase tracking-wide">Ödev Soru Çözüm Sonucu</p>
+                            <p className="text-sm font-black text-emerald-700">
+                              {totalCorrect} Doğru • {totalIncorrect} Yanlış {totalEmpty > 0 ? `• ${totalEmpty} Boş` : ''}
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                   <div className="flex-grow max-w-xs mx-4 w-full">
                     <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
@@ -716,11 +768,15 @@ export function MyStudents() {
                           <div className="flex items-center justify-between">
                             <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-1 ${
                               task.type === 'video' ? 'bg-blue-100 text-blue-600' : 
+                              task.type === 'test' ? 'bg-indigo-100 text-indigo-700' :
                               task.type === 'question' ? 'bg-orange-100 text-orange-600' : 
                               task.type === 'book' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-600'
                             }`}>
                               {task.type === 'book' && <BookOpen className="w-2.5 h-2.5" />}
-                              {task.type === 'book' ? 'KİTAP OKUMA' : task.type === 'question' ? 'SORU' : task.type === 'video' ? 'VİDEO' : 'OKUMA'}
+                              {task.type === 'test' && <ClipboardCheck className="w-2.5 h-2.5" />}
+                              {task.type === 'question' && <Target className="w-2.5 h-2.5" />}
+                              {task.type === 'video' && <PlayCircle className="w-2.5 h-2.5" />}
+                              {task.type === 'book' ? 'KİTAP OKUMA' : task.type === 'test' ? 'TEST' : task.type === 'question' ? 'SORU' : task.type === 'video' ? 'VİDEO' : 'OKUMA'}
                             </span>
                             <div className="flex items-center gap-1">
                               {task.completed && <CheckCircle2 className="w-3.5 h-3.5 text-tertiary" />}
@@ -742,6 +798,27 @@ export function MyStudents() {
                               <span className="text-[9px] font-bold text-on-surface-variant/80 bg-surface-container-low px-1.5 py-0.5 rounded">
                                 {task.amount}
                               </span>
+                            </div>
+                          )}
+
+                          {/* Öğrencinin girdiği Doğru / Yanlış / Net Sonuçları (Öğretmen Görünümü) */}
+                          {task.completed && (task.correct !== undefined || task.incorrect !== undefined) && (
+                            <div className="pt-1.5 border-t border-outline-variant/10">
+                              <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-xl space-y-0.5">
+                                <div className="flex items-center justify-between text-[9px] font-black text-emerald-800">
+                                  <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y</span>
+                                  {task.net !== undefined && (
+                                    <span className="text-primary font-black bg-white px-1.5 py-0.5 rounded shadow-xs border border-primary/10">
+                                      {task.net} Net
+                                    </span>
+                                  )}
+                                </div>
+                                {task.empty !== undefined && task.empty > 0 && (
+                                  <span className="text-[8px] text-slate-600 block font-medium">
+                                    {task.empty} Boş
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1264,9 +1341,10 @@ export function MyStudents() {
                   {/* Task Type Selector */}
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Ödev Türü</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {[
                         { id: 'question', label: 'Soru Çözümü', icon: Target },
+                        { id: 'test', label: 'Test / Deneme', icon: ClipboardCheck },
                         { id: 'book', label: 'Kitap Okuma', icon: BookOpen },
                         { id: 'video', label: 'Konu Videosu', icon: PlayCircle },
                         { id: 'reading', label: 'Konu Okuma', icon: Sparkles }
@@ -1283,7 +1361,7 @@ export function MyStudents() {
                                 : prev.subject
                             }));
                           }}
-                          className={`py-3 px-2 rounded-2xl text-xs font-black transition-all border flex flex-col items-center gap-1.5 ${
+                          className={`py-3 px-1.5 rounded-2xl text-[11px] font-black transition-all border flex flex-col items-center gap-1.5 ${
                             newTask.type === t.id 
                               ? 'bg-primary text-white border-primary shadow-md scale-[1.02]' 
                               : 'bg-surface-container-low border-transparent text-on-surface-variant hover:bg-surface-container-high'
@@ -1413,6 +1491,34 @@ export function MyStudents() {
                         </div>
                       )}
 
+                      {newTask.type === 'test' && (
+                        <div className="space-y-1.5 pt-1">
+                          <span className="text-[10px] font-bold text-on-surface-variant">Sık Kullanılan Test Şablonları:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { title: 'Kazanım Tarama Testi', amount: '20 Soru' },
+                              { title: 'Konu Pekiştirme Testi', amount: '25 Soru' },
+                              { title: 'Branş Denemesi', amount: '30 Soru' },
+                              { title: 'Haftalık İzleme Testi', amount: '15 Soru' },
+                              { title: 'Genel Değerlendirme Testi', amount: '40 Soru' }
+                            ].map((preset) => (
+                              <button
+                                key={preset.title}
+                                type="button"
+                                onClick={() => setNewTask({ 
+                                  ...newTask, 
+                                  title: preset.title,
+                                  amount: preset.amount
+                                })}
+                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-bold transition-all shadow-xs"
+                              >
+                                {preset.title} ({preset.amount})
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {(() => {
                         const topics = studentSubjectObjects.find(s => s.name === newTask.subject)?.topics || [];
                         if (topics.length === 0) return null;
@@ -1460,6 +1566,34 @@ export function MyStudents() {
                             type="button"
                             onClick={() => setNewTask({ ...newTask, amount: amt })}
                             className="px-2.5 py-1 bg-surface-container-high hover:bg-primary/10 hover:text-primary rounded-lg text-[10px] font-bold text-on-surface transition-all"
+                          >
+                            {amt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {newTask.type === 'test' && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-indigo-700 ml-1">Soru Sayısı / Test Detayı</label>
+                        <span className="text-[10px] font-bold text-indigo-700">Hızlı Seçim</span>
+                      </div>
+                      <input 
+                        type="text" 
+                        value={newTask.amount}
+                        onChange={(e) => setNewTask({ ...newTask, amount: e.target.value })}
+                        placeholder="Örn: 20 Soru veya 1 Test"
+                        className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/10 rounded-2xl font-bold text-on-surface outline-none focus:ring-2 focus:ring-indigo-600 text-sm"
+                      />
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {['15 Soru', '20 Soru', '25 Soru', '30 Soru', '40 Soru', '1 Branş Denemesi'].map((amt) => (
+                          <button
+                            key={amt}
+                            type="button"
+                            onClick={() => setNewTask({ ...newTask, amount: amt })}
+                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-lg text-[10px] font-bold transition-all shadow-xs"
                           >
                             {amt}
                           </button>
