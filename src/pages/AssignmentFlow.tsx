@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, PlayCircle, BookOpen, CheckCircle2, Clock, Plus, User, Send, Trash2, ClipboardCheck, Award, Repeat, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { saveStudentTasks, getStudentTasks, subscribeStudentTasks } from '../lib/firestoreService';
 
 interface Task {
   id: string;
@@ -61,6 +62,19 @@ export function AssignmentFlow() {
       setTasks(initialTasks);
       localStorage.setItem('academic_tasks', JSON.stringify(initialTasks));
     }
+
+    // Subscribe to Firestore for real-time sync if student
+    if (role === 'student' && studentId) {
+      getStudentTasks(studentId).then(cloudTasks => {
+        if (cloudTasks && cloudTasks.length > 0) {
+          setTasks(cloudTasks);
+        }
+      });
+      const unsubscribe = subscribeStudentTasks(studentId, (cloudTasks) => {
+        setTasks(cloudTasks);
+      });
+      return () => unsubscribe();
+    }
   }, []);
 
   const toggleTask = (id: string) => {
@@ -71,6 +85,9 @@ export function AssignmentFlow() {
     const updated = tasks.map(t => t.id === id ? { ...t, completed: !t.completed, correct: undefined, incorrect: undefined, topic: undefined } : t);
     setTasks(updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
+    if (role === 'student' && studentId) {
+      saveStudentTasks(studentId, updated);
+    }
   };
 
   const handleTaskClick = (task: Task) => {
@@ -114,6 +131,9 @@ export function AssignmentFlow() {
 
     setTasks(updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
+    if (role === 'student' && studentId) {
+      saveStudentTasks(studentId, updated);
+    }
     setShowResultModal(false);
     setModalTaskId(null);
   };
@@ -140,6 +160,9 @@ export function AssignmentFlow() {
     
     setTasks(updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
+    if (role === 'student' && studentId) {
+      saveStudentTasks(studentId, updated);
+    }
     setShowResultModal(false);
     setModalTaskId(null);
   };
@@ -164,6 +187,9 @@ export function AssignmentFlow() {
     const updated = [...tasks, ...newTasks];
     setTasks(updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
+    if (role === 'student' && studentId) {
+      saveStudentTasks(studentId, updated);
+    }
     setNewTaskTitle('');
     setNewTaskAmount('');
     setNewTaskVideoUrl('');
@@ -177,6 +203,9 @@ export function AssignmentFlow() {
     const updated = tasks.filter(t => t.id !== id);
     setTasks(updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
+    if (role === 'student' && studentId) {
+      saveStudentTasks(studentId, updated);
+    }
   };
 
   const filteredTasks = tasks.filter(t => t.day === selectedDay);

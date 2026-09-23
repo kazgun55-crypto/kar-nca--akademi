@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { StudentDirectory } from './pages/StudentDirectory';
@@ -14,9 +14,30 @@ import { Analytics } from './pages/Analytics';
 import { EnterTrial } from './pages/EnterTrial';
 import { MyStudents } from './pages/MyStudents';
 
+function DirectStudentRedirect() {
+  const { studentId } = useParams();
+  if (studentId) {
+    localStorage.setItem('userRole', 'student');
+    localStorage.setItem('currentUserId', studentId);
+    return <Navigate to={`/portal?studentId=${studentId}`} replace />;
+  }
+  return <Navigate to="/portal" replace />;
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const userRole = localStorage.getItem('userRole');
   const location = useLocation();
+
+  // If a studentId/id is in query params (e.g. shared link via WhatsApp/SMS/Web), grant instant access
+  const searchParams = new URLSearchParams(location.search);
+  const directStudentId = searchParams.get('studentId') || searchParams.get('id') || searchParams.get('student');
+  if (directStudentId) {
+    if (localStorage.getItem('currentUserId') !== directStudentId || localStorage.getItem('userRole') !== 'student') {
+      localStorage.setItem('userRole', 'student');
+      localStorage.setItem('currentUserId', directStudentId);
+    }
+    return <>{children}</>;
+  }
 
   if (!userRole) {
     return <Navigate to="/login" state={{ from: location }} replace />;
@@ -29,6 +50,9 @@ export default function App() {
   return (
     <Router>
       <Routes>
+        {/* Direct Public Student Sharing Routes (Zero-barrier for students & parents) */}
+        <Route path="/p/:studentId" element={<DirectStudentRedirect />} />
+        <Route path="/program/:studentId" element={<DirectStudentRedirect />} />
         <Route path="/login" element={<Login />} />
         <Route path="/*" element={
           <ProtectedRoute>

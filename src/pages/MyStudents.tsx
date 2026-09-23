@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { subscribeStudents, updateStudentTeacherId, deleteStudentFromFirestore } from '../lib/firestoreService';
+import { subscribeStudents, updateStudentTeacherId, deleteStudentFromFirestore, saveStudentTasks, getStudentTasks, subscribeStudentTasks } from '../lib/firestoreService';
 import { 
   Users, 
   Search, 
@@ -20,7 +20,10 @@ import {
   Timer,
   Trash2,
   Repeat,
-  ClipboardCheck
+  ClipboardCheck,
+  Share2,
+  Copy,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -36,6 +39,7 @@ import {
   GradeExamCountdown,
   Subject
 } from '../lib/curriculum';
+import { getDailyMotivationQuote, getAgeGroupBadge } from '../lib/motivationQuotes';
 
 interface Student {
   id: string;
@@ -43,6 +47,7 @@ interface Student {
   grade: string;
   lastTrialScore: number;
   avatar: string;
+  tasks?: Task[];
 }
 
 interface Task {
@@ -66,10 +71,13 @@ const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981'
 
 export function MyStudents() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [allDirectoryStudents, setAllDirectoryStudents] = useState<any[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [view, setView] = useState<'list' | 'details'>('list');
   const [activeTab, setActiveTab] = useState<'program' | 'analytics'>('program');
   const [selectedClass, setSelectedClass] = useState<string>('all');
+  
+  const [studentScope, setStudentScope] = useState<'my' | 'all'>('my');
   
   const calculateCountdownDays = (examType: 'LGS' | 'YKS') => {
     const now = new Date();
@@ -92,11 +100,12 @@ export function MyStudents() {
   const yksDays = calculateCountdownDays('YKS');
   const maarifDays = calculateMaarifExamCountdown();
   
-  const uniqueClasses = Array.from(new Set(students.map(s => s.grade).filter(Boolean)));
+  const activeStudentList = studentScope === 'all' ? allDirectoryStudents : students;
+  const uniqueClasses = Array.from(new Set(activeStudentList.map(s => s.grade).filter(Boolean)));
   
   const filteredStudents = selectedClass === 'all'
-    ? students
-    : students.filter(s => s.grade === selectedClass);
+    ? activeStudentList
+    : activeStudentList.filter(s => s.grade === selectedClass);
 
   // Sınıfa özel sınav sayacı (Örn: 10. sınıf seçildiğinde LGS kesinlikle gösterilmez, sadece Maarif Modeli gösterilir)
   const singleClassCountdown = selectedClass !== 'all' 
@@ -157,7 +166,6 @@ export function MyStudents() {
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [deletingStudentTarget, setDeletingStudentTarget] = useState<Student | null>(null);
   const [showDeleteStudentModal, setShowDeleteStudentModal] = useState(false);
-  const [allDirectoryStudents, setAllDirectoryStudents] = useState<any[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -171,10 +179,42 @@ export function MyStudents() {
       const teacherId = localStorage.getItem('currentUserId') || '1';
       const myStudents = allList.filter((s: any) => s.teacherId === teacherId);
       setStudents(myStudents);
+      // If teacher has no assigned students, automatically show all students
+      if (myStudents.length === 0 && allList.length > 0) {
+        setStudentScope('all');
+      }
     });
 
     return () => unsub();
   }, []);
+
+  // Real-time synchronization of selected student's tasks
+  useEffect(() => {
+    if (!selectedStudent) return;
+    const unsubTasks = subscribeStudentTasks(selectedStudent.id, (fresh) => {
+      if (fresh) {
+        setStudentTasks(fresh);
+      }
+    });
+    return () => unsubTasks();
+  }, [selectedStudent]);
+
+  const copyStudentLink = (studentId: string, studentName: string) => {
+    const url = `${window.location.origin}/portal?studentId=${studentId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      showToast(`${studentName} için program bağlantısı kopyalandı! 📋`);
+    }).catch(() => {
+      prompt(`${studentName} Program Linki:`, url);
+    });
+  };
+
+  const shareStudentWhatsApp = (student: Student) => {
+    const url = `${window.location.origin}/portal?studentId=${student.id}`;
+    const text = encodeURIComponent(
+      `Merhaba ${student.name}! Öğretmeniniz tarafından hazırlanan güncel ders ve ödev programınıza aşağıdaki bağlantıdan anında ulaşabilirsiniz:\n\n${url}`
+    );
+    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+  };
 
   const claimStudent = async (studentId: string) => {
     const teacherId = localStorage.getItem('currentUserId') || '1';
@@ -227,7 +267,15 @@ export function MyStudents() {
     else setStudentErrors([]);
 
     if (savedTasks) setStudentTasks(JSON.parse(savedTasks));
-    else setStudentTasks([]);
+    else if (student.tasks && Array.isArray(student.tasks)) {
+      setStudentTasks(student.tasks);
+      localStorage.setItem(`tasks_${student.id}`, JSON.stringify(student.tasks));
+    } else setStudentTasks([]);
+
+    // Trigger instant cloud fetch for student tasks to ensure fresh sync
+    getStudentTasks(student.id).then(tasks => {
+      if (tasks && tasks.length > 0) setStudentTasks(tasks);
+    });
 
     const savedArchives = localStorage.getItem(`archived_programs_${student.id}`);
     if (savedArchives) setArchivedPrograms(JSON.parse(savedArchives));
@@ -339,8 +387,17 @@ export function MyStudents() {
     }
   };
 
-  const addTask = () => {
-    if (!newTask.title) return;
+  // Subscribe to real-time updates for selected student's tasks
+  useEffect(() => {
+    if (!selectedStudent?.id) return;
+    const unsubscribe = subscribeStudentTasks(selectedStudent.id, (freshTasks) => {
+      setStudentTasks(freshTasks);
+    });
+    return () => unsubscribe();
+  }, [selectedStudent?.id]);
+
+  const addTask = async () => {
+    if (!newTask.title || !selectedStudent) return;
     
     const daysToApply = selectedDays.length > 0 ? selectedDays : [selectedDay || DAYS[0]];
 
@@ -353,7 +410,7 @@ export function MyStudents() {
 
     const updatedTasks = [...studentTasks, ...newTasks];
     setStudentTasks(updatedTasks);
-    localStorage.setItem(`tasks_${selectedStudent?.id}`, JSON.stringify(updatedTasks));
+    await saveStudentTasks(selectedStudent.id, updatedTasks);
     
     setNewTask({ 
       type: 'question', 
@@ -365,10 +422,20 @@ export function MyStudents() {
     setShowProgramModal(false);
   };
 
-  const deleteTask = (taskId: string) => {
+  const deleteTask = async (taskId: string) => {
+    if (!selectedStudent) return;
     const updatedTasks = studentTasks.filter((t: Task) => t.id !== taskId);
     setStudentTasks(updatedTasks);
-    localStorage.setItem(`tasks_${selectedStudent?.id}`, JSON.stringify(updatedTasks));
+    await saveStudentTasks(selectedStudent.id, updatedTasks);
+  };
+
+  const toggleStudentTask = async (taskId: string) => {
+    if (!selectedStudent) return;
+    const updatedTasks = studentTasks.map((t: Task) => 
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    );
+    setStudentTasks(updatedTasks);
+    await saveStudentTasks(selectedStudent.id, updatedTasks);
   };
 
   const getStudentTasksByDay = (day: string) => {
@@ -434,6 +501,46 @@ export function MyStudents() {
               </div>
             </div>
 
+            {/* Scope Switcher: Danışmanlığım vs Tüm Sistem Öğrencileri */}
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-surface-container-low p-2 rounded-2xl border border-outline-variant/10">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setStudentScope('my');
+                    setSelectedClass('all');
+                  }}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                    studentScope === 'my'
+                      ? 'bg-primary text-white shadow-md shadow-primary/20 scale-102'
+                      : 'text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  Danışman Olduğum Öğrenciler ({students.length})
+                </button>
+                <button
+                  onClick={() => {
+                    setStudentScope('all');
+                    setSelectedClass('all');
+                  }}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                    studentScope === 'all'
+                      ? 'bg-primary text-white shadow-md shadow-primary/20 scale-102'
+                      : 'text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  Tüm Sistem Öğrencileri ({allDirectoryStudents.length})
+                </button>
+              </div>
+
+              {studentScope === 'all' && (
+                <span className="text-[11px] font-bold text-amber-700 bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20">
+                  Tüm kayıtlı öğrenciler listeleniyor • Dilediğiniz öğrenciye program hazırlayabilir veya linkini paylaşabilirsiniz
+                </span>
+              )}
+            </div>
+
             {/* Sınıf Filtreleri */}
             {uniqueClasses.length > 0 && (
               <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-none">
@@ -445,10 +552,10 @@ export function MyStudents() {
                       : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
                   }`}
                 >
-                  Tüm Sınıflar ({students.length})
+                  Tüm Sınıflar ({activeStudentList.length})
                 </button>
                 {uniqueClasses.map((cls) => {
-                  const count = students.filter(s => s.grade === cls).length;
+                  const count = activeStudentList.filter(s => s.grade === cls).length;
                   return (
                     <button
                       key={cls}
@@ -584,7 +691,27 @@ export function MyStudents() {
                       </div>
                     </div>
 
-                    <div className="mt-6 flex items-center justify-between text-xs font-bold text-primary">
+                    {/* Paylaşım Butonları */}
+                    <div className="mt-4 pt-3 border-t border-outline-variant/10 flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => copyStudentLink(student.id, student.name)}
+                        className="flex-1 py-2 px-2.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        title="Öğrencinin şifresiz girebileceği program linkini kopyala"
+                      >
+                        <Copy className="w-3.5 h-3.5 text-primary" />
+                        <span>Linki Kopyala</span>
+                      </button>
+                      <button
+                        onClick={() => shareStudentWhatsApp(student)}
+                        className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs shadow-emerald-600/20"
+                        title="WhatsApp ile Öğrenciye Gönder"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>WhatsApp</span>
+                      </button>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between text-xs font-bold text-primary">
                       <span>Detayları ve Programı Gör</span>
                       <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>
@@ -696,8 +823,81 @@ export function MyStudents() {
               </div>
             </div>
 
+            {/* Öğrencinin Yaş Grubuna Özel Günün Motivasyonu Kartı */}
+            {selectedStudent && (() => {
+              const quote = getDailyMotivationQuote(selectedStudent.grade || '');
+              const badge = getAgeGroupBadge(selectedStudent.grade || '');
+              return (
+                <div className="bg-gradient-to-r from-surface-container-lowest via-surface-container-low to-surface-container-lowest p-5 sm:p-6 rounded-[2.5rem] border border-outline-variant/15 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-secondary">
+                        Öğrencinin Günlük Motivasyonu
+                      </span>
+                      <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border ${badge.color}`}>
+                        {badge.label} ({badge.ageRange})
+                      </span>
+                    </div>
+                    <p className="text-sm sm:text-base font-bold text-on-surface italic">
+                      "{quote.quote}"
+                    </p>
+                    <p className="text-xs font-semibold text-primary">
+                      — {quote.author} {quote.theme ? `• #${quote.theme}` : ''}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right hidden sm:block">
+                    <span className="text-[10px] font-bold text-on-surface-variant/70 bg-surface-container-high px-3 py-1 rounded-full">
+                      📅 Günlük Otomatik Değişir
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
             {activeTab === 'program' ? (
               <div className="space-y-6">
+                {/* Student Direct Link & Cloud Sync Bar */}
+                {selectedStudent && (
+                  <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-surface-container-low border border-primary/20 p-4 sm:p-5 rounded-[2rem] flex flex-wrap items-center justify-between gap-4 shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-primary text-white flex items-center justify-center shadow-sm">
+                        <Share2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Öğrenciye Özel Canlı Program Linki</p>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Bulutta Canlı
+                          </span>
+                        </div>
+                        <p className="text-xs text-on-surface font-mono font-bold truncate max-w-xs sm:max-w-md">
+                          {window.location.origin}/portal?studentId={selectedStudent.id}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => copyStudentLink(selectedStudent.id, selectedStudent.name)}
+                        className="px-4 py-2.5 bg-white hover:bg-surface-container-high text-on-surface border border-outline-variant/20 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+                        title="Öğrencinin şifresiz girebileceği bağlantıyı kopyala"
+                      >
+                        <Copy className="w-4 h-4 text-primary" />
+                        Linki Kopyala
+                      </button>
+                      <button
+                        onClick={() => shareStudentWhatsApp(selectedStudent)}
+                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-600/20"
+                        title="WhatsApp ile Öğrenciye Gönder"
+                      >
+                        <Share2 className="w-4 h-4" />
+                        WhatsApp ile Gönder
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Hafta Özeti & Sonuçlar */}
                 <div className="bg-surface-container-low p-6 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-4">
                   <div className="flex flex-wrap items-center gap-6">

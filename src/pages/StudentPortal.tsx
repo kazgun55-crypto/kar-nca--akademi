@@ -1,7 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus } from 'lucide-react';
+import { 
+  Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, 
+  ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, 
+  Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus, Quote,
+  RefreshCw, Cloud, Smartphone, LayoutGrid, ListFilter, Check, Share2, Copy, Users, ExternalLink
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getExamCountdownForGrade, GradeExamCountdown } from '../lib/curriculum';
+import { getDailyMotivationQuote, getAgeGroupBadge, MotivationQuote } from '../lib/motivationQuotes';
+import { 
+  saveStudentTasks, 
+  getStudentTasks, 
+  subscribeStudentTasks, 
+  saveStudentArchivedPrograms,
+  getStudentById,
+  subscribeStudents
+} from '../lib/firestoreService';
+import { db } from '../lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface Task {
   id: string;
@@ -50,7 +66,11 @@ export function StudentPortal() {
   const [archivedPrograms, setArchivedPrograms] = useState<ArchivedProgram[]>([]);
   const [trialHistory, setTrialHistory] = useState<TrialData[]>([]);
   const [selectedTrial, setSelectedTrial] = useState<TrialData | null>(null);
-  const [viewMode, setViewMode] = useState<'today' | 'weekly'>('today');
+  const [viewMode, setViewMode] = useState<'today' | 'weekly' | 'all'>('all');
+  const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
+  const [displayLayout, setDisplayLayout] = useState<'cards' | 'table'>('cards');
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncToast, setSyncToast] = useState<string | null>(null);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
@@ -62,68 +82,188 @@ export function StudentPortal() {
   const [showResultModal, setShowResultModal] = useState<boolean>(false);
   const tasksRef = useRef<HTMLDivElement>(null);
 
+  const [allStudents, setAllStudents] = useState<any[]>([]);
+  const [showStudentMenu, setShowStudentMenu] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
   const scrollToTasks = () => {
     tasksRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const loadData = () => {
-    const id = localStorage.getItem('currentUserId');
-    if (id) {
-      setStudentId(id);
-      
-      // Sınıfa özel sınav sayacı hesaplama (örn. 10. sınıfa Maarif Modeli sınavı, 8. sınıfa LGS)
+  const loadData = async (forceCloud = false, targetId?: string) => {
+    const params = new URLSearchParams(window.location.search);
+    const queryStudentId = params.get('studentId') || params.get('id') || params.get('student');
+    
+    let id = targetId || queryStudentId || localStorage.getItem('currentUserId');
+    if (!id) {
+      const email = localStorage.getItem('currentUserEmail');
+      const name = localStorage.getItem('currentUserName');
       const savedStudents = localStorage.getItem('students');
       if (savedStudents) {
-        const students = JSON.parse(savedStudents);
-        const currentStudent = students.find((s: any) => s.id === id);
-        if (currentStudent) {
-          setStudentGrade(currentStudent.grade || '');
-          setCountdown(getExamCountdownForGrade(currentStudent.grade || ''));
+        try {
+          const students = JSON.parse(savedStudents);
+          const currentStudent = students.find((s: any) => (email && s.email === email) || (name && s.name === name));
+          if (currentStudent) {
+            id = currentStudent.id;
+          }
+        } catch {}
+      }
+    }
+
+    if (!id) {
+      id = '1';
+    }
+
+    localStorage.setItem('currentUserId', id);
+    setStudentId(id);
+
+    // 1. Fetch student info from Firestore or cache
+    try {
+      const studentDoc = await getStudentById(id);
+      if (studentDoc) {
+        setStudentName(studentDoc.name || 'Öğrenci');
+        setStudentGrade(studentDoc.grade || '');
+        setCountdown(getExamCountdownForGrade(studentDoc.grade || ''));
+        if (Array.isArray(studentDoc.tasks) && studentDoc.tasks.length > 0) {
+          setTasks(studentDoc.tasks);
+          const dayIndex = new Date().getDay();
+          const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+          setTodayTasks(studentDoc.tasks.filter((t: Task) => t.day === todayName));
         }
       }
+    } catch (err) {
+      console.warn('Student profile fetch error:', err);
+    }
 
-      const savedTasks = localStorage.getItem(`tasks_${id}`);
-      if (savedTasks) {
-        const allTasks = JSON.parse(savedTasks);
-        setTasks(allTasks);
-        
-        // Filter for today
-        const dayIndex = new Date().getDay(); // 0 is Sunday
+    // 2. Fetch tasks directly from Firestore (and cache)
+    try {
+      const freshTasks = await getStudentTasks(id);
+      if (freshTasks && freshTasks.length > 0) {
+        setTasks(freshTasks);
+        const dayIndex = new Date().getDay();
         const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
-        setTodayTasks(allTasks.filter((t: Task) => t.day === todayName));
+        setTodayTasks(freshTasks.filter((t: Task) => t.day === todayName));
       } else {
-        setTasks([]);
-        setTodayTasks([]);
+        const savedTasks = localStorage.getItem(`tasks_${id}`);
+        if (savedTasks) {
+          const localTasks = JSON.parse(savedTasks);
+          setTasks(localTasks);
+          const dayIndex = new Date().getDay();
+          const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+          setTodayTasks(localTasks.filter((t: Task) => t.day === todayName));
+        }
       }
+    } catch (err) {
+      console.warn('Error loading student tasks:', err);
+    }
 
-      const savedArchives = localStorage.getItem(`archived_programs_${id}`);
-      if (savedArchives) {
+    const savedArchives = localStorage.getItem(`archived_programs_${id}`);
+    if (savedArchives) {
+      try {
         setArchivedPrograms(JSON.parse(savedArchives));
-      }
+      } catch {}
+    }
 
-      const savedTrials = localStorage.getItem(`trial_results_detailed_${id}`);
-      if (savedTrials) {
+    const savedTrials = localStorage.getItem(`trial_results_detailed_${id}`);
+    if (savedTrials) {
+      try {
         setTrialHistory(JSON.parse(savedTrials));
-      }
+      } catch {}
     }
   };
 
   useEffect(() => {
-    const name = localStorage.getItem('currentUserName');
-    if (name) setStudentName(name);
-    loadData();
+    const params = new URLSearchParams(window.location.search);
+    const queryStudentId = params.get('studentId') || params.get('id') || params.get('student');
+    const initialId = queryStudentId || localStorage.getItem('currentUserId') || '1';
+    
+    loadData(true, initialId);
 
-    // Listen for storage changes (e.g. from teacher panel in another tab)
-    window.addEventListener('storage', loadData);
-    return () => window.removeEventListener('storage', loadData);
+    // Subscribe to all students for easy switcher
+    const unsubStudents = subscribeStudents((list) => {
+      setAllStudents(list);
+    });
+
+    // Real-time Firestore listener for tasks
+    const unsubscribeTasks = subscribeStudentTasks(initialId, (freshTasks) => {
+      if (freshTasks) {
+        setTasks(freshTasks);
+        const dayIndex = new Date().getDay();
+        const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+        setTodayTasks(freshTasks.filter((t: Task) => t.day === todayName));
+      }
+    });
+
+    const handleStorage = () => loadData(false);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      unsubStudents();
+      unsubscribeTasks();
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
-  const toggleTask = (taskId: string) => {
+  const switchStudent = (newId: string) => {
+    localStorage.setItem('currentUserId', newId);
+    setStudentId(newId);
+    setShowStudentMenu(false);
+    // Update URL query parameter without full reload
+    const newUrl = `${window.location.pathname}?studentId=${newId}`;
+    window.history.pushState({ path: newUrl }, '', newUrl);
+    loadData(true, newId);
+  };
+
+  const getShareUrl = () => {
+    return `${window.location.origin}/portal?studentId=${studentId}`;
+  };
+
+  const copyShareLink = () => {
+    const url = getShareUrl();
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedLink(true);
+      setSyncToast('Öğrenci program bağlantısı kopyalandı! 📋');
+      setTimeout(() => {
+        setCopiedLink(false);
+        setSyncToast(null);
+      }, 3000);
+    }).catch(() => {
+      // Fallback
+      prompt('Öğrenci Program Linki:', url);
+    });
+  };
+
+  const shareViaWhatsApp = () => {
+    const url = getShareUrl();
+    const text = encodeURIComponent(
+      `Merhaba ${studentName}! Haftalık ders ve ödev programın güncellendi. Aşağıdaki bağlantıdan güncel programını ve ödevlerini doğrudan görüntüleyebilirsin:\n\n${url}`
+    );
+    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+  };
+
+  const handleSyncCloud = async () => {
+    setIsSyncing(true);
+    try {
+      const id = studentId || localStorage.getItem('currentUserId') || '1';
+      const fresh = await getStudentTasks(id);
+      setTasks(fresh);
+      const dayIndex = new Date().getDay();
+      const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+      setTodayTasks(fresh.filter((t: Task) => t.day === todayName));
+      setSyncToast('Ödevler güncellendi! ✨');
+      setTimeout(() => setSyncToast(null), 3000);
+    } catch (err) {
+      console.error('Cloud sync error:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const toggleTask = async (taskId: string) => {
     const updatedTasks = tasks.map(t => 
       t.id === taskId ? { ...t, completed: !t.completed, correct: undefined, incorrect: undefined, empty: undefined, net: undefined } : t
     );
     setTasks(updatedTasks);
-    localStorage.setItem(`tasks_${studentId}`, JSON.stringify(updatedTasks));
+    await saveStudentTasks(studentId, updatedTasks);
     
     // Update today's tasks view
     const dayIndex = new Date().getDay();
@@ -144,7 +284,7 @@ export function StudentPortal() {
     }
   };
 
-  const saveTaskEvaluation = () => {
+  const saveTaskEvaluation = async () => {
     if (!evaluatingTask) return;
     const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5');
     const penalty = isMiddleSchool ? 3 : 4; // LGS: 3 yanlış 1 doğruyu götürür, Lise/YKS: 4 yanlış 1 doğruyu götürür
@@ -165,7 +305,7 @@ export function StudentPortal() {
     });
 
     setTasks(updatedTasks);
-    localStorage.setItem(`tasks_${studentId}`, JSON.stringify(updatedTasks));
+    await saveStudentTasks(studentId, updatedTasks);
 
     const dayIndex = new Date().getDay();
     const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
@@ -175,7 +315,7 @@ export function StudentPortal() {
     setEvaluatingTask(null);
   };
 
-  const resetTaskEvaluation = () => {
+  const resetTaskEvaluation = async () => {
     if (!evaluatingTask) return;
     const updatedTasks = tasks.map(t => {
       if (t.id === evaluatingTask.id) {
@@ -192,7 +332,7 @@ export function StudentPortal() {
     });
 
     setTasks(updatedTasks);
-    localStorage.setItem(`tasks_${studentId}`, JSON.stringify(updatedTasks));
+    await saveStudentTasks(studentId, updatedTasks);
 
     const dayIndex = new Date().getDay();
     const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
@@ -202,7 +342,7 @@ export function StudentPortal() {
     setEvaluatingTask(null);
   };
 
-  const finishProgram = () => {
+  const finishProgram = async () => {
     if (tasks.length === 0) return;
 
     const completedCount = tasks.filter(t => t.completed).length;
@@ -217,31 +357,29 @@ export function StudentPortal() {
 
     const updatedArchives = [newArchive, ...archivedPrograms];
     setArchivedPrograms(updatedArchives);
-    localStorage.setItem(`archived_programs_${studentId}`, JSON.stringify(updatedArchives));
+    await saveStudentArchivedPrograms(studentId, updatedArchives);
 
-    // Clear current tasks
+    // Clear current tasks in state and Firestore
     setTasks([]);
     setTodayTasks([]);
-    localStorage.removeItem(`tasks_${studentId}`);
+    await saveStudentTasks(studentId, []);
     setShowFinishConfirm(false);
   };
 
-  const deleteArchive = (id: string) => {
+  const deleteArchive = async (id: string) => {
     const updated = archivedPrograms.filter(a => a.id !== id);
     setArchivedPrograms(updated);
-    localStorage.setItem(`archived_programs_${studentId}`, JSON.stringify(updated));
+    await saveStudentArchivedPrograms(studentId, updated);
   };
 
-  const restoreArchive = (archive: ArchivedProgram) => {
-    // If there are current tasks, we might want to ask or just merge
-    // For "accidental" archive, we replace current tasks
+  const restoreArchive = async (archive: ArchivedProgram) => {
     setTasks(archive.tasks);
-    localStorage.setItem(`tasks_${studentId}`, JSON.stringify(archive.tasks));
+    await saveStudentTasks(studentId, archive.tasks);
     
     // Remove from archive
     const updatedArchives = archivedPrograms.filter(a => a.id !== archive.id);
     setArchivedPrograms(updatedArchives);
-    localStorage.setItem(`archived_programs_${studentId}`, JSON.stringify(updatedArchives));
+    await saveStudentArchivedPrograms(studentId, updatedArchives);
 
     // Update today's tasks view
     const dayIndex = new Date().getDay();
@@ -259,7 +397,90 @@ export function StudentPortal() {
   const progressPercent = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
 
   return (
-    <div className="space-y-12 pb-20">
+    <div className="space-y-8 pb-20">
+      {/* Top Bar: Cloud Sync, Student Switcher & Direct Sharing Link */}
+      <div className="bg-surface-container-low border border-outline-variant/15 p-4 rounded-2xl sm:rounded-3xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Aktif Öğrenci:</span>
+              <span className="text-sm font-extrabold text-on-surface">{studentName}</span>
+              {studentGrade && (
+                <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  {studentGrade}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-on-surface-variant flex items-center gap-1 mt-0.5">
+              <Cloud className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Bulut Senkronize • Canlı Öğretmen Programı</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Action Buttons: Switcher, Copy Link, WhatsApp, Refresh */}
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
+          {allStudents.length > 1 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowStudentMenu(!showStudentMenu)}
+                className="px-3.5 py-2 bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <Users className="w-3.5 h-3.5 text-primary" />
+                Öğrenci Değiştir
+              </button>
+              {showStudentMenu && (
+                <div className="absolute right-0 mt-2 w-56 bg-surface-container-lowest border border-outline-variant/20 rounded-2xl shadow-xl z-50 p-2 space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant px-3 py-1 uppercase">Öğrenci Seçin</p>
+                  {allStudents.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => switchStudent(s.id)}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${
+                        s.id === studentId ? 'bg-primary text-white' : 'hover:bg-surface-container-high text-on-surface'
+                      }`}
+                    >
+                      <span className="truncate">{s.name}</span>
+                      <span className="text-[10px] opacity-75">{s.grade}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <button
+            onClick={copyShareLink}
+            className="px-3.5 py-2 bg-white hover:bg-surface-container-high text-on-surface border border-outline-variant/20 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+            title="Öğrencinin şifresiz doğrudan girebileceği program linkini kopyala"
+          >
+            {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-primary" />}
+            {copiedLink ? 'Kopyalandı!' : 'Linki Kopyala'}
+          </button>
+
+          <button
+            onClick={shareViaWhatsApp}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-600/20"
+            title="WhatsApp ile Öğrenciye Gönder"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            WhatsApp ile Gönder
+          </button>
+
+          <button
+            onClick={handleSyncCloud}
+            disabled={isSyncing}
+            className="p-2 bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant rounded-xl text-xs font-bold transition-all"
+            title="Buluttan Yenile"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-primary' : ''}`} />
+          </button>
+        </div>
+      </div>
+
       {/* Banner Section */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8 relative overflow-hidden bg-gradient-to-br from-primary to-primary-container rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-8 md:p-12 text-white shadow-lg">
@@ -347,209 +568,453 @@ export function StudentPortal() {
         {/* Left Column - Main Ödev Akışı and Learning Content */}
         <div className="lg:col-span-8 flex flex-col gap-8" ref={tasksRef}>
           {/* Ödev Akışı Card */}
-          <div className="bg-surface-container-low rounded-[2.5rem] p-10 border border-outline-variant/10 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div className="bg-surface-container-low rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-7 md:p-10 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+            {/* Sync Feedback Toast */}
+            <AnimatePresence>
+              {syncToast && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute top-4 right-4 z-20 bg-primary text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{syncToast}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div className="flex flex-col">
-                <span className="text-primary font-black text-[10px] uppercase tracking-widest mb-1">Ders & Görev Takibi</span>
-                <h3 className="text-3xl font-extrabold font-manrope text-on-surface">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="text-primary font-black text-[10px] uppercase tracking-widest">Ders & Görev Takibi</span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Canlı Senkronize
+                  </span>
+                </div>
+                <h3 className="text-2xl sm:text-3xl font-extrabold font-manrope text-on-surface">
                   Ödev Akışı
                 </h3>
-                <div className="flex gap-4 mt-3">
-                  <button 
-                    onClick={() => setViewMode('today')}
-                    className={`text-[11px] font-bold uppercase tracking-wider pb-1 transition-colors border-b-2 ${viewMode === 'today' ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent hover:text-on-surface'}`}
-                  >
-                    Günlük Program
-                  </button>
-                  <button 
-                    onClick={() => setViewMode('weekly')}
-                    className={`text-[11px] font-bold uppercase tracking-wider pb-1 transition-colors border-b-2 ${viewMode === 'weekly' ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent hover:text-on-surface'}`}
-                  >
-                    Haftalık Tablo
-                  </button>
-                </div>
               </div>
-              <div className="flex items-center gap-3 self-start sm:self-center">
+              <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleSyncCloud()}
+                  disabled={isSyncing}
+                  title="Öğretmenin güncel ödevlerini buluttan yenile"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-surface-container-lowest text-on-surface border border-outline-variant/15 rounded-xl text-xs font-bold hover:bg-surface-container-high transition-all shadow-xs active:scale-95"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5 text-primary", isSyncing && "animate-spin")} />
+                  <span>{isSyncing ? "Yenileniyor..." : "Yenile"}</span>
+                </button>
                 {tasks.length > 0 && (
                   <button 
                     onClick={() => setShowFinishConfirm(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 text-primary rounded-xl text-xs font-bold hover:bg-primary hover:text-white transition-all shadow-sm"
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-primary/10 text-primary rounded-xl text-xs font-bold hover:bg-primary hover:text-white transition-all shadow-xs"
                   >
-                    <Archive className="w-4 h-4" />
+                    <Archive className="w-3.5 h-3.5" />
                     Programı Bitir
                   </button>
                 )}
-                <span className="text-primary font-bold text-xs bg-white border border-outline-variant/10 px-4 py-2 rounded-xl shadow-sm">
+                <span className="text-primary font-bold text-xs bg-white border border-outline-variant/10 px-3 py-2 rounded-xl shadow-xs whitespace-nowrap">
                   Bugün: {DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]}
                 </span>
               </div>
             </div>
 
-            {viewMode === 'today' ? (
-              /* Günlük Akış Görünümü */
-              <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                {todayTasks.length > 0 ? todayTasks.map((task) => (
-                  <div 
-                    key={task.id} 
-                    onClick={() => handleTaskClick(task)}
-                    className="flex items-center p-5 bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/5 group hover:scale-[1.01] transition-all cursor-pointer relative"
-                  >
-                    <div className={cn(
-                      "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0",
-                      task.completed ? "bg-tertiary border-tertiary" : "border-outline group-hover:border-primary"
-                    )}>
-                      {task.completed && <CheckSquare className="w-4 h-4 text-white" />}
+            {/* Quick Stats on Mobile & Desktop */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-5 p-3 bg-surface-container-lowest rounded-2xl border border-outline-variant/10 text-center">
+              <div className="p-1">
+                <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam</p>
+                <p className="text-sm sm:text-lg font-extrabold text-on-surface">{tasks.length} Ödev</p>
+              </div>
+              <div className="p-1 border-x border-outline-variant/10">
+                <p className="text-[10px] font-bold text-tertiary uppercase">Tamamlanan</p>
+                <p className="text-sm sm:text-lg font-extrabold text-tertiary">{completedCount}</p>
+              </div>
+              <div className="p-1">
+                <p className="text-[10px] font-bold text-primary uppercase">Kalan</p>
+                <p className="text-sm sm:text-lg font-extrabold text-primary">{tasks.length - completedCount}</p>
+              </div>
+            </div>
+
+            {/* Day Filter Chips (Horizontal Touch Scroll on Phone) */}
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-5">
+              <div className="flex items-center gap-1.5 overflow-x-auto py-1 w-full sm:w-auto scroll-smooth no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDayFilter('all')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0",
+                    selectedDayFilter === 'all'
+                      ? "bg-primary text-white shadow-sm ring-2 ring-primary/20"
+                      : "bg-surface-container-highest/60 text-on-surface-variant hover:bg-surface-container-highest"
+                  )}
+                >
+                  <span>Tüm Hafta</span>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.2 rounded-md font-black",
+                    selectedDayFilter === 'all' ? "bg-white/20 text-white" : "bg-outline-variant/15 text-on-surface-variant"
+                  )}>
+                    {tasks.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDayFilter('today')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0",
+                    selectedDayFilter === 'today'
+                      ? "bg-primary text-white shadow-sm ring-2 ring-primary/20"
+                      : "bg-surface-container-highest/60 text-on-surface-variant hover:bg-surface-container-highest"
+                  )}
+                >
+                  <span>Bugün</span>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.2 rounded-md font-black",
+                    selectedDayFilter === 'today' ? "bg-white/20 text-white" : "bg-outline-variant/15 text-on-surface-variant"
+                  )}>
+                    {todayTasks.length}
+                  </span>
+                </button>
+                {DAYS_TR.map(day => {
+                  const count = tasks.filter(t => t.day === day).length;
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => setSelectedDayFilter(day)}
+                      className={cn(
+                        "px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 shrink-0",
+                        selectedDayFilter === day
+                          ? "bg-primary text-white shadow-sm ring-2 ring-primary/20"
+                          : "bg-surface-container-highest/60 text-on-surface-variant hover:bg-surface-container-highest"
+                      )}
+                    >
+                      <span>{day.slice(0, 3)}</span>
+                      {count > 0 && (
+                        <span className={cn(
+                          "text-[9px] px-1 rounded font-black",
+                          selectedDayFilter === day ? "bg-white/20 text-white" : "bg-outline-variant/15 text-on-surface-variant"
+                        )}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Layout Switcher (Cards vs Table) */}
+              <div className="hidden sm:flex items-center gap-1 bg-surface-container-highest/50 p-1 rounded-xl self-end">
+                <button
+                  type="button"
+                  onClick={() => setDisplayLayout('cards')}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all",
+                    displayLayout === 'cards' ? "bg-white text-on-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+                  )}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  Kartlar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDisplayLayout('table')}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all",
+                    displayLayout === 'table' ? "bg-white text-on-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+                  )}
+                >
+                  <ListFilter className="w-3.5 h-3.5" />
+                  Tablo
+                </button>
+              </div>
+            </div>
+
+            {/* Tasks Rendering */}
+            {(() => {
+              const currentFilteredTasks = (() => {
+                if (selectedDayFilter === 'all') {
+                  return [...tasks].sort((a, b) => DAYS_TR.indexOf(a.day) - DAYS_TR.indexOf(b.day));
+                }
+                if (selectedDayFilter === 'today') {
+                  const dayIndex = new Date().getDay();
+                  const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+                  return tasks.filter(t => t.day === todayName);
+                }
+                return tasks.filter(t => t.day === selectedDayFilter);
+              })();
+
+              if (currentFilteredTasks.length === 0) {
+                // Empty state logic
+                if (selectedDayFilter === 'today' && tasks.length > 0) {
+                  return (
+                    <div className="text-center p-6 sm:p-8 bg-surface-container-lowest rounded-2xl sm:rounded-3xl border border-primary/20 shadow-sm space-y-4">
+                      <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                        <Calendar className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-manrope font-bold text-base text-on-surface">Bugün İçin Planlanmış Ödev Yok</h4>
+                        <p className="text-xs text-on-surface-variant mt-1 max-w-sm mx-auto">
+                          Bugün için atanmış bir ödevin bulunmuyor. Ancak bu hafta öğretmeninin senin için tanımladığı <strong className="text-primary font-bold">{tasks.length} adet ödev</strong> var.
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setSelectedDayFilter('all')}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 transition-all shadow-md active:scale-95"
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        Tüm Haftalık Ödevlerimi Gör ({tasks.length})
+                      </button>
                     </div>
-                    <div className="ml-4 flex-grow">
-                      <div className="flex items-center gap-2 flex-wrap">
+                  );
+                }
+
+                if (selectedDayFilter !== 'all' && tasks.length > 0) {
+                  return (
+                    <div className="text-center p-6 sm:p-8 bg-surface-container-lowest rounded-2xl sm:rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                      <div className="w-10 h-10 rounded-xl bg-surface-container-high text-on-surface-variant flex items-center justify-center mx-auto">
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-manrope font-bold text-sm text-on-surface">{selectedDayFilter} günü için ödev bulunmuyor</h4>
+                        <p className="text-xs text-on-surface-variant mt-1">Haftalık programındaki diğer günleri kontrol edebilirsin.</p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setSelectedDayFilter('all')}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high text-on-surface text-xs font-bold hover:bg-surface-container-highest transition-all"
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        Tüm Haftayı Göster ({tasks.length})
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="text-center p-8 bg-surface-container-lowest rounded-2xl sm:rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+                      <ClipboardCheck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-manrope font-bold text-base text-on-surface">Atanmış Ödev Bulunamadı</h4>
+                      <p className="text-xs text-on-surface-variant mt-1 max-w-sm mx-auto">
+                        Öğretmenin henüz sana bir ödev atamamış olabilir veya yeni verilen ödevler aktarılıyor olabilir.
+                      </p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => handleSyncCloud()}
+                      disabled={isSyncing}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 transition-all shadow-md active:scale-95"
+                    >
+                      <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
+                      Buluttan Şimdi Yenile
+                    </button>
+                  </div>
+                );
+              }
+
+              // When tasks exist:
+              if (displayLayout === 'table') {
+                return (
+                  <div className="overflow-x-auto rounded-2xl border border-outline-variant/10 shadow-sm bg-surface-container-lowest">
+                    <table className="w-full text-left border-collapse min-w-[550px]">
+                      <thead>
+                        <tr className="bg-surface-container-high/40 text-on-surface-variant font-black text-[10px] uppercase tracking-widest border-b border-outline-variant/10">
+                          <th className="px-5 py-3.5">Gün</th>
+                          <th className="px-5 py-3.5">Ders</th>
+                          <th className="px-5 py-3.5">Görev / Ödev Detayı</th>
+                          <th className="px-5 py-3.5">Tip / Miktar</th>
+                          <th className="px-5 py-3.5 text-center">Durum</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant/5">
+                        {currentFilteredTasks.map((task) => (
+                          <tr 
+                            key={task.id} 
+                            onClick={() => handleTaskClick(task)}
+                            className={cn(
+                              "hover:bg-primary/[0.03] transition-colors cursor-pointer",
+                              task.completed ? "bg-tertiary/[0.02]" : ""
+                            )}
+                          >
+                            <td className="px-5 py-3.5 whitespace-nowrap">
+                              <span className={cn(
+                                "text-[10px] font-black uppercase px-2.5 py-1 rounded-full",
+                                task.day === DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]
+                                  ? "bg-primary text-white shadow-sm"
+                                  : "bg-surface-container-high text-on-surface-variant"
+                              )}>
+                                {task.day}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 whitespace-nowrap font-bold text-xs sm:text-sm text-on-surface">{task.subject}</td>
+                            <td className="px-5 py-3.5">
+                              <div className="space-y-1">
+                                <p className={cn(
+                                  "font-semibold text-xs sm:text-sm max-w-xs",
+                                  task.completed ? "text-on-surface/60 line-through" : "text-on-surface"
+                                )}>
+                                  {task.title}
+                                </p>
+                                {task.completed && (task.type === 'question' || task.type === 'test') && (
+                                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-black">
+                                    <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y</span>
+                                    {task.net !== undefined && <span className="text-primary font-black">• {task.net} Net</span>}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3.5 whitespace-nowrap">
+                              <span className={cn(
+                                "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase inline-flex items-center gap-1",
+                                task.type === 'video' ? "bg-red-50 text-red-600" : 
+                                task.type === 'test' ? "bg-indigo-50 text-indigo-700" :
+                                task.type === 'question' ? "bg-amber-50 text-amber-700" : 
+                                task.type === 'book' ? "bg-emerald-50 text-emerald-700" :
+                                "bg-tertiary/10 text-tertiary"
+                              )}>
+                                {task.type === 'test' && <ClipboardCheck className="w-3 h-3" />}
+                                {task.type === 'book' && <BookOpen className="w-3 h-3" />}
+                                {task.type === 'question' && <Target className="w-3 h-3" />}
+                                {task.type === 'video' ? 'Video' : 
+                                 task.type === 'test' ? `Test: ${task.amount || 'Ödev'}` :
+                                 task.type === 'question' ? `${task.amount || 'Soru'}` : 
+                                 task.type === 'book' ? `Kitap: ${task.amount || 'Okuma'}` :
+                                 'Okuma'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 text-center">
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleTaskClick(task);
+                                }}
+                                className="inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-container-high transition-colors"
+                              >
+                                <div className={cn(
+                                  "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
+                                  task.completed ? "bg-tertiary border-tertiary text-white shadow-xs" : "border-outline hover:border-primary"
+                                )}>
+                                  {task.completed && <CheckSquare className="w-4 h-4" />}
+                                </div>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              }
+
+              // Card Layout (Optimized for Mobile Phone & Touch Screen)
+              return (
+                <div className="space-y-3 max-h-[650px] overflow-y-auto pr-1 custom-scrollbar">
+                  {currentFilteredTasks.map((task) => (
+                    <div 
+                      key={task.id} 
+                      onClick={() => handleTaskClick(task)}
+                      className={cn(
+                        "flex items-start sm:items-center p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer relative gap-3 sm:gap-4 group",
+                        task.completed 
+                          ? "bg-tertiary/[0.04] border-tertiary/25" 
+                          : "bg-surface-container-lowest border-outline-variant/15 hover:border-primary/40 shadow-xs"
+                      )}
+                    >
+                      {/* Checkbox Touch Target */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleTask(task.id);
+                        }}
+                        aria-label="Görevi tamamla"
+                        className={cn(
+                          "w-7 h-7 sm:w-8 sm:h-8 rounded-xl border-2 flex items-center justify-center transition-all shrink-0 mt-0.5 sm:mt-0 active:scale-95",
+                          task.completed 
+                            ? "bg-tertiary border-tertiary text-white shadow-xs" 
+                            : "border-outline-variant/60 hover:border-primary text-transparent"
+                        )}
+                      >
+                        <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                      </button>
+
+                      {/* Content Area */}
+                      <div className="flex-grow min-w-0">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mb-1">
+                          {selectedDayFilter === 'all' && (
+                            <span className={cn(
+                              "text-[9px] font-black uppercase px-2 py-0.5 rounded-md",
+                              task.day === DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]
+                                ? "bg-primary text-white shadow-xs"
+                                : "bg-surface-container-high text-on-surface-variant"
+                            )}>
+                              {task.day}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-primary/10 text-primary">
+                            {task.subject}
+                          </span>
+                          <span className={cn(
+                            "text-[9px] font-bold px-2 py-0.5 rounded-md uppercase inline-flex items-center gap-1",
+                            task.type === 'video' ? "bg-red-50 text-red-600" : 
+                            task.type === 'test' ? "bg-indigo-50 text-indigo-700" :
+                            task.type === 'question' ? "bg-amber-50 text-amber-700" : 
+                            task.type === 'book' ? "bg-emerald-50 text-emerald-700" : "bg-purple-50 text-purple-700"
+                          )}>
+                            {task.type === 'video' ? 'Video' : 
+                             task.type === 'test' ? `Test • ${task.amount || 'Çözüm'}` :
+                             task.type === 'question' ? `${task.amount || 'Soru'}` : 
+                             task.type === 'book' ? `Kitap • ${task.amount || 'Okuma'}` : 
+                             'Okuma'}
+                          </span>
+                        </div>
+
                         <p className={cn(
-                          "font-bold text-sm transition-all",
+                          "font-bold text-xs sm:text-sm leading-snug break-words",
                           task.completed ? "text-on-surface/50 line-through" : "text-on-surface"
                         )}>
                           {task.title}
                         </p>
+
+                        {/* Completed Stats Tag */}
                         {task.completed && (task.type === 'question' || task.type === 'test') && (
-                          <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                            🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y {task.empty ? `• ${task.empty} B` : ''} {task.net !== undefined ? `(${task.net} Net)` : ''}
-                          </span>
+                          <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-100/90 text-emerald-800 rounded-lg text-[10px] font-black">
+                            <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y {task.empty ? `• ${task.empty} B` : ''}</span>
+                            {task.net !== undefined && <span className="text-primary font-black">• {task.net} Net</span>}
+                          </div>
+                        )}
+
+                        {/* Prompt to Enter D/Y Score */}
+                        {!task.completed && (task.type === 'question' || task.type === 'test') && (
+                          <div className="mt-1.5">
+                            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md inline-flex items-center gap-1 hover:bg-primary/20 transition-colors">
+                              <Target className="w-3 h-3" />
+                              Sonuç Gir (D / Y)
+                            </span>
+                          </div>
                         )}
                       </div>
-                      <p className="text-[10px] font-bold text-on-surface-variant uppercase mt-0.5 flex items-center gap-2">
-                        <span>{task.subject}</span>
-                        <span>•</span>
-                        <span>
-                          {task.type === 'video' ? 'Video' : 
-                           task.type === 'test' ? `Test • ${task.amount || 'Çözüm'}` :
-                           task.type === 'question' ? `${task.amount || 'Soru'}` : 
-                           task.type === 'book' ? `Kitap Okuma • ${task.amount || 'Okuma'}` : 
-                           'Okuma'}
-                        </span>
-                        {(task.type === 'question' || task.type === 'test') && !task.completed && (
-                          <span className="text-primary font-black lowercase text-[10px] bg-primary/10 px-2 py-0.5 rounded-full">
-                            Tıkla ve D/Y gir
-                          </span>
-                        )}
-                      </p>
+
+                      {/* Video Button */}
+                      {task.type === 'video' && task.videoUrl && (
+                        <div className="shrink-0 self-center">
+                          <Youtube className="w-6 h-6 text-red-500 opacity-80 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      )}
                     </div>
-                    {task.type === 'video' && task.videoUrl && (
-                      <Youtube className="w-5 h-5 text-red-500 opacity-60 group-hover:opacity-100 transition-opacity shrink-0" />
-                    )}
-                  </div>
-                )) : (
-                  <div className="text-center py-12 bg-surface-container-lowest rounded-3xl border border-outline-variant/5">
-                    <CheckCircle2 className="w-12 h-12 text-tertiary/20 mx-auto mb-4" />
-                    <p className="text-sm font-bold text-on-surface-variant">
-                      Bugün için atanmış bir görev yok.
-                    </p>
-                    <p className="text-xs text-on-surface-variant/70 mt-1">Haftalık tablodan tüm günlerin programını inceleyebilirsin.</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Haftalık Tablo Görünümü */
-              <div className="space-y-4">
-                {tasks.length > 0 ? (
-                  <div className="overflow-x-auto rounded-3xl border border-outline-variant/10 shadow-sm bg-surface-container-lowest">
-                    <table className="w-full text-left border-collapse min-w-[600px]">
-                      <thead>
-                        <tr className="bg-surface-container-high/40 text-on-surface-variant font-black text-[10px] uppercase tracking-widest border-b border-outline-variant/10">
-                          <th className="px-6 py-4">Gün</th>
-                          <th className="px-6 py-4">Ders</th>
-                          <th className="px-6 py-4">Görev / Ödev Detayı</th>
-                          <th className="px-6 py-4">Tip / Miktar</th>
-                          <th className="px-6 py-4 text-center">Durum</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-outline-variant/5">
-                        {[...tasks]
-                          .sort((a, b) => DAYS_TR.indexOf(a.day) - DAYS_TR.indexOf(b.day))
-                          .map((task) => (
-                            <tr 
-                              key={task.id} 
-                              onClick={() => handleTaskClick(task)}
-                              className={cn(
-                                "hover:bg-primary/[0.03] transition-colors cursor-pointer",
-                                task.completed ? "bg-tertiary/[0.02]" : ""
-                              )}
-                            >
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={cn(
-                                  "text-[10px] font-black uppercase px-3 py-1 rounded-full",
-                                  task.day === DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]
-                                    ? "bg-primary text-white shadow-sm"
-                                    : "bg-surface-container-high text-on-surface-variant"
-                                )}>
-                                  {task.day}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap font-bold text-sm text-on-surface">{task.subject}</td>
-                              <td className="px-6 py-4">
-                                <div className="space-y-1">
-                                  <p className={cn(
-                                    "font-semibold text-sm max-w-xs truncate",
-                                    task.completed ? "text-on-surface/60 line-through" : "text-on-surface"
-                                  )}>
-                                    {task.title}
-                                  </p>
-                                  {task.completed && (task.type === 'question' || task.type === 'test') && (
-                                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-black">
-                                      <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y</span>
-                                      {task.net !== undefined && <span className="text-primary font-black">• {task.net} Net</span>}
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={cn(
-                                  "text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase inline-flex items-center gap-1",
-                                  task.type === 'video' ? "bg-red-50 text-red-600" : 
-                                  task.type === 'test' ? "bg-indigo-50 text-indigo-700" :
-                                  task.type === 'question' ? "bg-secondary/10 text-secondary" : 
-                                  task.type === 'book' ? "bg-emerald-50 text-emerald-700" :
-                                  "bg-tertiary/10 text-tertiary"
-                                )}>
-                                  {task.type === 'test' && <ClipboardCheck className="w-3 h-3" />}
-                                  {task.type === 'book' && <BookOpen className="w-3 h-3" />}
-                                  {task.type === 'question' && <Target className="w-3 h-3" />}
-                                  {task.type === 'video' ? 'Konu Videosu' : 
-                                   task.type === 'test' ? `Test: ${task.amount || 'Ödev'}` :
-                                   task.type === 'question' ? `${task.amount || 'Soru'}` : 
-                                   task.type === 'book' ? `Kitap: ${task.amount || 'Okuma'}` :
-                                   'Konu Okuma'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <button 
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleTaskClick(task);
-                                  }}
-                                  className="inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-container-high transition-colors"
-                                >
-                                  <div className={cn(
-                                    "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
-                                    task.completed ? "bg-tertiary border-tertiary text-white" : "border-outline hover:border-primary"
-                                  )}>
-                                    {task.completed && <CheckSquare className="w-3.5 h-3.5" />}
-                                  </div>
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-12 bg-surface-container-lowest rounded-3xl border border-outline-variant/5">
-                    <CheckCircle2 className="w-12 h-12 text-tertiary/20 mx-auto mb-4" />
-                    <p className="text-sm font-bold text-on-surface-variant">
-                      Henüz atanmış bir haftalık program bulunmuyor.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Video Lesson Card */}
@@ -592,19 +1057,64 @@ export function StudentPortal() {
             </div>
           )}
 
-          {/* Motivation Card */}
-          <div className="bg-gradient-to-r from-secondary-container/20 to-secondary/10 rounded-[2.5rem] p-10 relative overflow-hidden group border border-secondary/10">
-            <div className="relative z-10">
-              <span className="text-secondary font-bold text-xs uppercase tracking-widest block mb-4">Günün Motivasyonu</span>
-              <blockquote className="text-3xl font-bold text-on-surface leading-tight font-manrope">
-                "Başarı, her gün tekrarlanan küçük çabaların toplamıdır."
-              </blockquote>
-              <p className="mt-6 text-sm font-bold text-on-surface-variant">— Robert Collier</p>
-            </div>
-            <div className="absolute -bottom-10 -right-10 opacity-5 group-hover:scale-110 transition-transform duration-700">
-              <BookOpen className="w-64 h-64 text-secondary" />
-            </div>
-          </div>
+          {/* Motivation Card - Yaş Grubuna ve Sınıf Seviyesine Özel Günlük Değişen Motivasyon */}
+          {(() => {
+            const dailyQuote = getDailyMotivationQuote(studentGrade);
+            const badge = getAgeGroupBadge(studentGrade);
+            const todayFormatted = new Date().toLocaleDateString('tr-TR', { 
+              weekday: 'long', 
+              day: 'numeric', 
+              month: 'long' 
+            });
+
+            return (
+              <div className="bg-gradient-to-br from-surface-container-low via-surface to-secondary-container/20 rounded-[2.5rem] p-8 sm:p-10 relative overflow-hidden group border border-outline-variant/15 shadow-sm">
+                <div className="relative z-10 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/10 pb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-secondary animate-pulse" />
+                      <span className="text-secondary font-black text-xs uppercase tracking-widest">
+                        Günün Motivasyonu
+                      </span>
+                      <span className="text-xs text-on-surface-variant font-medium">
+                        • {todayFormatted}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {dailyQuote.theme && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-surface-container-high text-on-surface-variant">
+                          #{dailyQuote.theme}
+                        </span>
+                      )}
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${badge.color}`}>
+                        {badge.label} ({badge.ageRange})
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <blockquote className="text-2xl sm:text-3xl font-black text-on-surface leading-snug font-manrope">
+                      "{dailyQuote.quote}"
+                    </blockquote>
+                    <div className="mt-5 flex items-center justify-between">
+                      <p className="text-sm font-black text-primary flex items-center gap-1.5">
+                        <span className="inline-block w-4 h-0.5 bg-primary/40 rounded-full" />
+                        {dailyQuote.author}
+                      </p>
+                      <span className="text-[11px] font-bold text-on-surface-variant/70 italic">
+                        Her gün otomatik yenilenir
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="absolute -bottom-10 -right-10 opacity-5 group-hover:scale-110 transition-transform duration-700 pointer-events-none">
+                  <BookOpen className="w-64 h-64 text-secondary" />
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Right Column - Secondary Actions, Results & History */}

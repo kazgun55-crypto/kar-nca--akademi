@@ -22,10 +22,20 @@ export function Login() {
   const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
+    // Check if user came with a student link ?studentId=... or ?id=...
+    const params = new URLSearchParams(window.location.search);
+    const directStudentId = params.get('studentId') || params.get('id') || params.get('student');
+    if (directStudentId) {
+      localStorage.setItem('userRole', 'student');
+      localStorage.setItem('currentUserId', directStudentId);
+      navigate(`/portal?studentId=${directStudentId}`);
+      return;
+    }
+
     // Sync Firestore data & Seed defaults ONCE if database is fresh
     seedFirestoreIfEmpty();
     syncFirestoreToLocalStorage();
-  }, []);
+  }, [navigate]);
 
   const handleForgotSearch = (e: React.FormEvent) => {
     e.preventDefault();

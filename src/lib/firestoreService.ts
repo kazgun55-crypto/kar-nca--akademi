@@ -549,6 +549,178 @@ export async function updateStudentTeacherId(studentId: string, teacherId: strin
   }
 }
 
+// Helper function to sanitize any object for Firestore (strips undefined fields to prevent Firestore errors)
+export function cleanForFirestore<T>(data: T): T {
+  if (data === undefined) return null as any;
+  return JSON.parse(JSON.stringify(data));
+}
+
+// 6. Student Tasks Persistence & Realtime Cloud Sync
+export async function saveStudentTasks(studentId: string, tasks: any[]) {
+  if (!studentId) return;
+  const sanitizedTasks = cleanForFirestore(tasks);
+  try {
+    // 1. Save in Firestore students collection doc
+    await setDoc(doc(db, 'students', studentId), { 
+      tasks: sanitizedTasks, 
+      lastTaskUpdate: new Date().toISOString() 
+    }, { merge: true });
+
+    // 2. Also save in student_tasks collection doc for dual resilience
+    await setDoc(doc(db, 'student_tasks', studentId), { 
+      tasks: sanitizedTasks, 
+      studentId, 
+      updatedAt: new Date().toISOString() 
+    }, { merge: true });
+    
+    console.log(`[Firestore] Successfully saved ${sanitizedTasks.length} tasks for student ${studentId}`);
+  } catch (err) {
+    console.error('Error saving tasks to Firestore:', err);
+  } finally {
+    // Local cache update
+    localStorage.setItem(`tasks_${studentId}`, JSON.stringify(sanitizedTasks));
+    window.dispatchEvent(new Event('storage'));
+  }
+}
+
+export async function getStudentById(studentId: string): Promise<any | null> {
+  if (!studentId) return null;
+  try {
+    const sDoc = await getDoc(doc(db, 'students', studentId));
+    if (sDoc.exists()) {
+      return { id: sDoc.id, ...sDoc.data() };
+    }
+  } catch (err) {
+    console.warn(`Error fetching student ${studentId} from Firestore:`, err);
+  }
+  const saved = localStorage.getItem('students');
+  if (saved) {
+    try {
+      const list = JSON.parse(saved);
+      return list.find((s: any) => s.id === studentId) || null;
+    } catch {}
+  }
+  return null;
+}
+
+export async function saveGlobalAcademicTasks(tasks: any[]) {
+  const sanitized = cleanForFirestore(tasks);
+  try {
+    await setDoc(doc(db, 'system_data', 'academic_tasks'), { 
+      tasks: sanitized, 
+      updatedAt: new Date().toISOString() 
+    }, { merge: true });
+  } catch (err) {
+    console.error('Error saving global academic tasks:', err);
+  } finally {
+    localStorage.setItem('academic_tasks', JSON.stringify(sanitized));
+  }
+}
+
+export async function getGlobalAcademicTasks(): Promise<any[]> {
+  try {
+    const docSnap = await getDoc(doc(db, 'system_data', 'academic_tasks'));
+    if (docSnap.exists() && Array.isArray(docSnap.data()?.tasks)) {
+      const tasks = docSnap.data().tasks;
+      localStorage.setItem('academic_tasks', JSON.stringify(tasks));
+      return tasks;
+    }
+  } catch (err) {
+    console.warn('Error reading global academic tasks from Firestore:', err);
+  }
+  try {
+    const local = localStorage.getItem('academic_tasks');
+    return local ? JSON.parse(local) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getStudentTasks(studentId: string): Promise<any[]> {
+  if (!studentId) return [];
+  try {
+    const sDoc = await getDoc(doc(db, 'students', studentId));
+    if (sDoc.exists() && Array.isArray(sDoc.data()?.tasks)) {
+      const tasks = sDoc.data().tasks;
+      localStorage.setItem(`tasks_${studentId}`, JSON.stringify(tasks));
+      return tasks;
+    }
+
+    const tDoc = await getDoc(doc(db, 'student_tasks', studentId));
+    if (tDoc.exists() && Array.isArray(tDoc.data()?.tasks)) {
+      const tasks = tDoc.data().tasks;
+      localStorage.setItem(`tasks_${studentId}`, JSON.stringify(tasks));
+      return tasks;
+    }
+  } catch (err) {
+    console.warn('Error reading tasks from Firestore:', err);
+  }
+
+  // Fallback to local cache
+  try {
+    const local = localStorage.getItem(`tasks_${studentId}`);
+    return local ? JSON.parse(local) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function subscribeStudentTasks(studentId: string, callback: (tasks: any[]) => void): () => void {
+  if (!studentId) {
+    callback([]);
+    return () => {};
+  }
+
+  // Immediate cached return so UI never flickers
+  try {
+    const cached = localStorage.getItem(`tasks_${studentId}`);
+    if (cached) {
+      callback(JSON.parse(cached));
+    }
+  } catch {}
+
+  // 1. Realtime listener on student document
+  const unsubscribe = onSnapshot(doc(db, 'students', studentId), (snap) => {
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && Array.isArray(data.tasks)) {
+        localStorage.setItem(`tasks_${studentId}`, JSON.stringify(data.tasks));
+        callback(data.tasks);
+        return;
+      }
+    }
+
+    // 2. Check student_tasks fallback if not in student doc
+    getDoc(doc(db, 'student_tasks', studentId)).then((tSnap) => {
+      if (tSnap.exists() && Array.isArray(tSnap.data()?.tasks)) {
+        const tasks = tSnap.data().tasks;
+        localStorage.setItem(`tasks_${studentId}`, JSON.stringify(tasks));
+        callback(tasks);
+      }
+    }).catch(() => {});
+  }, (err) => {
+    console.warn('Tasks realtime snapshot error, falling back to local cache:', err);
+    try {
+      const cached = localStorage.getItem(`tasks_${studentId}`);
+      if (cached) callback(JSON.parse(cached));
+    } catch {}
+  });
+
+  return unsubscribe;
+}
+
+// 7. Student Archived Programs Cloud Sync
+export async function saveStudentArchivedPrograms(studentId: string, archives: any[]) {
+  if (!studentId) return;
+  try {
+    await setDoc(doc(db, 'students', studentId), { archivedPrograms: archives }, { merge: true });
+  } catch (err) {
+    console.error('Error saving archived programs to Firestore:', err);
+  } finally {
+    localStorage.setItem(`archived_programs_${studentId}`, JSON.stringify(archives));
+  }
+}
+
 export function syncFirestoreToLocalStorage() {
   // Sync Teachers
   onSnapshot(collection(db, 'teachers'), (snap) => {
@@ -556,9 +728,31 @@ export function syncFirestoreToLocalStorage() {
     localStorage.setItem('teachers', JSON.stringify(list));
   });
 
-  // Sync Students
+  // Sync Students & Auto-migrate any local tasks to cloud
   onSnapshot(collection(db, 'students'), (snap) => {
     const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     localStorage.setItem('students', JSON.stringify(list));
+
+    list.forEach((s: any) => {
+      if (s.tasks && Array.isArray(s.tasks) && s.tasks.length > 0) {
+        localStorage.setItem(`tasks_${s.id}`, JSON.stringify(s.tasks));
+      } else {
+        // If Firestore doc has no tasks yet, but localStorage has tasks for this student, push to Firestore
+        const local = localStorage.getItem(`tasks_${s.id}`);
+        if (local) {
+          try {
+            const parsed = JSON.parse(local);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setDoc(doc(db, 'students', s.id), { tasks: parsed }, { merge: true });
+            }
+          } catch {}
+        }
+      }
+
+      if (s.archivedPrograms && Array.isArray(s.archivedPrograms)) {
+        localStorage.setItem(`archived_programs_${s.id}`, JSON.stringify(s.archivedPrograms));
+      }
+    });
   });
 }
+
