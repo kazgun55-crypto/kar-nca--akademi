@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, PlayCircle, BookOpen, CheckCircle2, Clock, Plus, User, Send, Trash2, ClipboardCheck, Award, Repeat, Sparkles } from 'lucide-react';
+import { 
+  Calendar, PlayCircle, BookOpen, CheckCircle2, Clock, Plus, User, Send, 
+  Trash2, ClipboardCheck, Award, Repeat, Sparkles, Users, Check, Share2, Copy 
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { saveStudentTasks, getStudentTasks, subscribeStudentTasks } from '../lib/firestoreService';
+import { 
+  saveStudentTasks, 
+  getStudentTasks, 
+  subscribeStudentTasks, 
+  subscribeStudents, 
+  getStudentById,
+  saveGlobalAcademicTasks, 
+  getGlobalAcademicTasks 
+} from '../lib/firestoreService';
 
 interface Task {
   id: string;
@@ -26,6 +37,18 @@ export function AssignmentFlow() {
   const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily');
   const [tasks, setTasks] = useState<Task[]>([]);
   
+  // Real-time Firestore Sync & Student Selection States
+  const [allStudents, setAllStudents] = useState<any[]>([]);
+  const [assignedStudentId, setAssignedStudentId] = useState<string>('all');
+  const [currentStudentName, setCurrentStudentName] = useState<string>('');
+  const [activeStudentId, setActiveStudentId] = useState<string>('');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
   // Teacher state
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskType, setNewTaskType] = useState<'video' | 'question' | 'test' | 'reading' | 'book'>('question');
@@ -40,53 +63,66 @@ export function AssignmentFlow() {
   const [modalIncorrect, setModalIncorrect] = useState<number>(0);
   const [modalTopic, setModalTopic] = useState<string>('');
 
+  // 1. Subscribe to students collection if teacher or admin
   useEffect(() => {
-    const role = localStorage.getItem('userRole');
-    const studentId = localStorage.getItem('currentUserId');
-    
-    let storageKey = 'academic_tasks';
-    if (role === 'student' && studentId) {
-      storageKey = `tasks_${studentId}`;
+    if (userRole === 'teacher' || userRole === 'admin') {
+      const unsub = subscribeStudents((list) => {
+        setAllStudents(list);
+      });
+      return () => unsub();
     }
+  }, [userRole]);
 
-    const savedTasks = localStorage.getItem(storageKey);
-    if (savedTasks) {
-      setTasks(JSON.parse(savedTasks));
-    } else if (storageKey === 'academic_tasks') {
-      // Default tasks for demo
-      const initialTasks: Task[] = [
-        { id: '1', type: 'video', title: 'Türev Giriş Videosu', amount: '15 dk', completed: false, day: 'Çarşamba' },
-        { id: '2', type: 'question', title: 'Polinomlar Test 1', amount: '40 soru', completed: true, day: 'Çarşamba' },
-        { id: '3', type: 'reading', title: 'Cumhuriyet Dönemi Edebiyatı', amount: '10 sayfa', completed: false, day: 'Perşembe' },
-      ];
-      setTasks(initialTasks);
-      localStorage.setItem('academic_tasks', JSON.stringify(initialTasks));
-    }
+  // 2. Real-time onSnapshot listener from Firebase Firestore
+  useEffect(() => {
+    if (userRole === 'student') {
+      const params = new URLSearchParams(window.location.search);
+      const queryId = params.get('studentId') || params.get('id') || params.get('student');
+      const studentId = queryId || localStorage.getItem('currentUserId') || '1';
+      setActiveStudentId(studentId);
+      localStorage.setItem('currentUserId', studentId);
 
-    // Subscribe to Firestore for real-time sync if student
-    if (role === 'student' && studentId) {
-      getStudentTasks(studentId).then(cloudTasks => {
-        if (cloudTasks && cloudTasks.length > 0) {
+      getStudentById(studentId).then(s => {
+        if (s) setCurrentStudentName(s.name);
+      });
+
+      // Anlık Firebase onSnapshot dinleyicisi: Öğretmen ödev eklediği anda öğrenci ekranı güncellenir
+      const unsubscribe = subscribeStudentTasks(studentId, (cloudTasks) => {
+        if (cloudTasks) {
           setTasks(cloudTasks);
         }
       });
-      const unsubscribe = subscribeStudentTasks(studentId, (cloudTasks) => {
-        setTasks(cloudTasks);
-      });
       return () => unsubscribe();
+    } else {
+      // Öğretmen modu
+      if (assignedStudentId === 'all') {
+        getGlobalAcademicTasks().then(cloudTasks => {
+          if (cloudTasks && cloudTasks.length > 0) setTasks(cloudTasks);
+        });
+      } else {
+        // Seçilen öğrencinin Firebase'deki ödevlerini anlık onSnapshot ile dinle
+        const unsubscribe = subscribeStudentTasks(assignedStudentId, (cloudTasks) => {
+          if (cloudTasks) {
+            setTasks(cloudTasks);
+          }
+        });
+        return () => unsubscribe();
+      }
     }
-  }, []);
+  }, [userRole, assignedStudentId]);
 
-  const toggleTask = (id: string) => {
-    const role = localStorage.getItem('userRole');
-    const studentId = localStorage.getItem('currentUserId');
-    const storageKey = (role === 'student' && studentId) ? `tasks_${studentId}` : 'academic_tasks';
-
+  const toggleTask = async (id: string) => {
     const updated = tasks.map(t => t.id === id ? { ...t, completed: !t.completed, correct: undefined, incorrect: undefined, topic: undefined } : t);
     setTasks(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    if (role === 'student' && studentId) {
-      saveStudentTasks(studentId, updated);
+
+    const sId = (userRole === 'teacher' || userRole === 'admin')
+      ? (assignedStudentId !== 'all' ? assignedStudentId : null)
+      : (activeStudentId || localStorage.getItem('currentUserId'));
+
+    if (sId) {
+      await saveStudentTasks(sId, updated);
+    } else if (assignedStudentId === 'all') {
+      await saveGlobalAcademicTasks(updated);
     }
   };
 
@@ -100,7 +136,6 @@ export function AssignmentFlow() {
       setModalCorrect(task.correct || 0);
       setModalIncorrect(task.incorrect || 0);
       
-      // Smart default topic from task title
       const guessedTopic = task.title.replace(/test/gi, '').replace(/\d+/g, '').replace(/soru/gi, '').trim() || task.title;
       setModalTopic(task.topic || guessedTopic);
       setShowResultModal(true);
@@ -109,12 +144,8 @@ export function AssignmentFlow() {
     }
   };
 
-  const resetTaskResult = () => {
+  const resetTaskResult = async () => {
     if (!modalTaskId) return;
-
-    const role = localStorage.getItem('userRole');
-    const studentId = localStorage.getItem('currentUserId');
-    const storageKey = (role === 'student' && studentId) ? `tasks_${studentId}` : 'academic_tasks';
 
     const updated = tasks.map(t => {
       if (t.id === modalTaskId) {
@@ -130,20 +161,16 @@ export function AssignmentFlow() {
     });
 
     setTasks(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    if (role === 'student' && studentId) {
-      saveStudentTasks(studentId, updated);
+    const sId = activeStudentId || localStorage.getItem('currentUserId');
+    if (sId) {
+      await saveStudentTasks(sId, updated);
     }
     setShowResultModal(false);
     setModalTaskId(null);
   };
 
-  const saveTaskResult = () => {
+  const saveTaskResult = async () => {
     if (!modalTaskId) return;
-    
-    const role = localStorage.getItem('userRole');
-    const studentId = localStorage.getItem('currentUserId');
-    const storageKey = (role === 'student' && studentId) ? `tasks_${studentId}` : 'academic_tasks';
 
     const updated = tasks.map(t => {
       if (t.id === modalTaskId) {
@@ -159,52 +186,79 @@ export function AssignmentFlow() {
     });
     
     setTasks(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    if (role === 'student' && studentId) {
-      saveStudentTasks(studentId, updated);
+    const sId = activeStudentId || localStorage.getItem('currentUserId');
+    if (sId) {
+      await saveStudentTasks(sId, updated);
+      showToast('Soru sonucu Firebase Firestore veritabanına kaydedildi! ✨');
     }
     setShowResultModal(false);
     setModalTaskId(null);
   };
 
-  const addTask = () => {
-    if (!newTaskTitle) return;
-    const role = localStorage.getItem('userRole');
-    const studentId = localStorage.getItem('currentUserId');
-    const storageKey = (role === 'student' && studentId) ? `tasks_${studentId}` : 'academic_tasks';
+  const addTask = async () => {
+    if (!newTaskTitle.trim()) return;
 
     const daysToApply = selectedDays.length > 0 ? selectedDays : [selectedDay];
     const newTasks: Task[] = daysToApply.map(d => ({
       id: Math.random().toString(36).substr(2, 9),
       type: newTaskType,
-      title: newTaskTitle,
-      amount: newTaskAmount,
-      videoUrl: newTaskType === 'video' ? newTaskVideoUrl : undefined,
+      title: newTaskTitle.trim(),
+      amount: newTaskAmount.trim() || undefined,
+      videoUrl: newTaskType === 'video' ? newTaskVideoUrl.trim() : undefined,
       completed: false,
       day: d
     }));
 
-    const updated = [...tasks, ...newTasks];
-    setTasks(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    if (role === 'student' && studentId) {
-      saveStudentTasks(studentId, updated);
+    if (userRole === 'teacher' || userRole === 'admin') {
+      if (assignedStudentId === 'all') {
+        // Tüm öğrencilerin Firestore dökümanına kaydet
+        for (const s of allStudents) {
+          const studentExisting = s.tasks || [];
+          const updated = [...studentExisting, ...newTasks];
+          await saveStudentTasks(s.id, updated);
+        }
+        const updatedLocal = [...tasks, ...newTasks];
+        setTasks(updatedLocal);
+        await saveGlobalAcademicTasks(updatedLocal);
+        showToast(`✅ Ödev başarıyla tüm öğrencilerin (${allStudents.length}) Firebase Firestore hesabına kaydedildi!`);
+      } else {
+        // Seçilen öğrencinin Firestore dökümanına kaydet
+        const targetStudent = allStudents.find(s => s.id === assignedStudentId);
+        const studentExisting = targetStudent?.tasks || tasks;
+        const updated = [...studentExisting, ...newTasks];
+        setTasks(updated);
+        await saveStudentTasks(assignedStudentId, updated);
+        showToast(`✅ Ödev ${targetStudent?.name || 'öğrenciye'} Firebase Firestore ile kaydedildi ve öğrenci ekranına anında aktarıldı!`);
+      }
+    } else {
+      // Öğrencinin kendi oluşturduğu ödev
+      const updated = [...tasks, ...newTasks];
+      setTasks(updated);
+      if (activeStudentId) {
+        await saveStudentTasks(activeStudentId, updated);
+        showToast('✅ Ödev Firebase Firestore veritabanına kaydedildi!');
+      }
     }
+
     setNewTaskTitle('');
     setNewTaskAmount('');
     setNewTaskVideoUrl('');
   };
 
-  const deleteTask = (id: string) => {
-    const role = localStorage.getItem('userRole');
-    const studentId = localStorage.getItem('currentUserId');
-    const storageKey = (role === 'student' && studentId) ? `tasks_${studentId}` : 'academic_tasks';
-
+  const deleteTask = async (id: string) => {
     const updated = tasks.filter(t => t.id !== id);
     setTasks(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    if (role === 'student' && studentId) {
-      saveStudentTasks(studentId, updated);
+
+    if (userRole === 'teacher' || userRole === 'admin') {
+      if (assignedStudentId !== 'all') {
+        await saveStudentTasks(assignedStudentId, updated);
+        showToast('Ödev silindi ve Firestore güncellendi.');
+      } else {
+        await saveGlobalAcademicTasks(updated);
+        showToast('Ödev silindi.');
+      }
+    } else if (activeStudentId) {
+      await saveStudentTasks(activeStudentId, updated);
     }
   };
 
@@ -218,6 +272,21 @@ export function AssignmentFlow() {
 
   return (
     <div className="space-y-8 pb-12">
+      {/* Toast Bildirim Kutusu */}
+      <AnimatePresence>
+        {toastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-20 right-6 z-50 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-xl font-bold text-sm flex items-center gap-2"
+          >
+            <Check className="w-5 h-5" />
+            <span>{toastMsg}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {selectedVideo && (
           <motion.div 
@@ -284,6 +353,66 @@ export function AssignmentFlow() {
           <span className="text-sm font-bold text-on-surface pr-2">{new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
       </div>
+
+      {/* Öğretmen için Öğrenci Hedef Seçim ve Canlı Senkron Çubuğu */}
+      {(userRole === 'teacher' || userRole === 'admin') && (
+        <div className="bg-surface-container-low p-4 sm:p-5 rounded-3xl border border-outline-variant/15 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Ödev Yönetilen Öğrenci</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <select
+                  value={assignedStudentId}
+                  onChange={(e) => setAssignedStudentId(e.target.value)}
+                  className="bg-surface-container-lowest font-black text-sm text-primary px-3.5 py-1.5 rounded-xl border border-primary/20 outline-none focus:ring-2 focus:ring-primary cursor-pointer shadow-xs"
+                >
+                  <option value="all">🌟 Tüm Öğrenciler ({allStudents.length} Kayıtlı)</option>
+                  {allStudents.map(s => (
+                    <option key={s.id} value={s.id}>
+                      👤 {s.name} ({s.grade || 'Sınıf belirtilmemiş'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Firebase Firestore Canlı Senkronizasyon (onSnapshot)
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Öğrenci için Canlı Bağlantı Bilgi Çubuğu */}
+      {userRole === 'student' && (
+        <div className="bg-gradient-to-r from-emerald-500/10 via-surface-container-low to-surface-container-lowest p-4 rounded-3xl border border-emerald-500/20 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+              <Check className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-black text-emerald-900">
+                {currentStudentName ? `${currentStudentName} • Ödev Akışı` : 'Ödev Akışım'}
+              </p>
+              <p className="text-[11px] text-emerald-700 font-medium">
+                Öğretmeninin atadığı ödevler anlık (onSnapshot) olarak Firebase veritabanından akmaktadır.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Bulut Bağlantısı Aktif
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Day Selector */}
       {viewMode === 'daily' && (
@@ -398,6 +527,22 @@ export function AssignmentFlow() {
                 </div>
 
                 <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Ödev Verilecek Öğrenci</label>
+                    <select
+                      value={assignedStudentId}
+                      onChange={(e) => setAssignedStudentId(e.target.value)}
+                      className="w-full px-4 py-3 bg-surface-container-high border border-outline-variant/10 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-bold text-on-surface outline-none text-xs"
+                    >
+                      <option value="all">🌟 Tüm Öğrencilere Kaydet ({allStudents.length})</option>
+                      {allStudents.map(s => (
+                        <option key={s.id} value={s.id}>
+                          👤 {s.name} ({s.grade || 'Öğrenci'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Gün Seçin</label>
                     <select
@@ -470,6 +615,11 @@ export function AssignmentFlow() {
                     <Plus className="w-5 h-5" />
                     Programa Ekle
                   </button>
+
+                  <p className="text-[10px] text-center text-on-surface-variant/80 font-bold flex items-center justify-center gap-1 mt-2">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    Firebase Firestore bulutuna doğrudan yazılır, öğrenci ekranına anında (onSnapshot) aktarılır.
+                  </p>
                 </div>
               </div>
             ) : (
@@ -618,6 +768,23 @@ export function AssignmentFlow() {
                 </div>
 
                 <div className="space-y-4">
+                  {/* Ödev Verilecek Öğrenci */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Ödev Verilecek Öğrenci</label>
+                    <select
+                      value={assignedStudentId}
+                      onChange={(e) => setAssignedStudentId(e.target.value)}
+                      className="w-full px-4 py-3 bg-surface-container-high border border-outline-variant/10 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-bold text-on-surface outline-none text-xs"
+                    >
+                      <option value="all">🌟 Tüm Öğrencilere Kaydet ({allStudents.length})</option>
+                      {allStudents.map(s => (
+                        <option key={s.id} value={s.id}>
+                          👤 {s.name} ({s.grade || 'Öğrenci'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   {/* Task Type */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Görev Türü</label>
@@ -824,6 +991,11 @@ export function AssignmentFlow() {
                     <Plus className="w-4 h-4" />
                     {selectedDays.length > 1 ? `${selectedDays.length} Güne Birden Ekle` : 'Programa Ekle'}
                   </button>
+
+                  <p className="text-[10px] text-center text-on-surface-variant/80 font-bold flex items-center justify-center gap-1 mt-2">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    Firebase Firestore bulutuna doğrudan yazılır, öğrenci ekranına anında (onSnapshot) aktarılır.
+                  </p>
                 </div>
               </div>
             ) : (

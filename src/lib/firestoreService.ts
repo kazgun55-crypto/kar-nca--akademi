@@ -679,34 +679,47 @@ export function subscribeStudentTasks(studentId: string, callback: (tasks: any[]
     }
   } catch {}
 
-  // 1. Realtime listener on student document
-  const unsubscribe = onSnapshot(doc(db, 'students', studentId), (snap) => {
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data && Array.isArray(data.tasks)) {
-        localStorage.setItem(`tasks_${studentId}`, JSON.stringify(data.tasks));
-        callback(data.tasks);
-        return;
-      }
-    }
+  let unsub1 = () => {};
+  let unsub2 = () => {};
 
-    // 2. Check student_tasks fallback if not in student doc
-    getDoc(doc(db, 'student_tasks', studentId)).then((tSnap) => {
-      if (tSnap.exists() && Array.isArray(tSnap.data()?.tasks)) {
-        const tasks = tSnap.data().tasks;
-        localStorage.setItem(`tasks_${studentId}`, JSON.stringify(tasks));
-        callback(tasks);
+  // 1. Realtime onSnapshot listener on 'students' document
+  try {
+    unsub1 = onSnapshot(doc(db, 'students', studentId), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && Array.isArray(data.tasks)) {
+          localStorage.setItem(`tasks_${studentId}`, JSON.stringify(data.tasks));
+          callback(data.tasks);
+        }
       }
-    }).catch(() => {});
-  }, (err) => {
-    console.warn('Tasks realtime snapshot error, falling back to local cache:', err);
-    try {
-      const cached = localStorage.getItem(`tasks_${studentId}`);
-      if (cached) callback(JSON.parse(cached));
-    } catch {}
-  });
+    }, (err) => {
+      console.warn(`[Firestore] onSnapshot error on students/${studentId}:`, err);
+    });
+  } catch (err) {
+    console.warn(`[Firestore] Error subscribing to students/${studentId}:`, err);
+  }
 
-  return unsubscribe;
+  // 2. Realtime onSnapshot listener on 'student_tasks' document
+  try {
+    unsub2 = onSnapshot(doc(db, 'student_tasks', studentId), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && Array.isArray(data.tasks)) {
+          localStorage.setItem(`tasks_${studentId}`, JSON.stringify(data.tasks));
+          callback(data.tasks);
+        }
+      }
+    }, (err) => {
+      console.warn(`[Firestore] onSnapshot error on student_tasks/${studentId}:`, err);
+    });
+  } catch (err) {
+    console.warn(`[Firestore] Error subscribing to student_tasks/${studentId}:`, err);
+  }
+
+  return () => {
+    unsub1();
+    unsub2();
+  };
 }
 
 // 7. Student Archived Programs Cloud Sync

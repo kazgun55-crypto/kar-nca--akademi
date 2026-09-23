@@ -177,6 +177,7 @@ export function StudentPortal() {
     const queryStudentId = params.get('studentId') || params.get('id') || params.get('student');
     const initialId = queryStudentId || localStorage.getItem('currentUserId') || '1';
     
+    setStudentId(initialId);
     loadData(true, initialId);
 
     // Subscribe to all students for easy switcher
@@ -184,8 +185,19 @@ export function StudentPortal() {
       setAllStudents(list);
     });
 
-    // Real-time Firestore listener for tasks
-    const unsubscribeTasks = subscribeStudentTasks(initialId, (freshTasks) => {
+    const handleStorage = () => loadData(false);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      unsubStudents();
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  // Real-time Firestore onSnapshot listener for active student tasks
+  useEffect(() => {
+    if (!studentId) return;
+
+    const unsubscribeTasks = subscribeStudentTasks(studentId, (freshTasks) => {
       if (freshTasks) {
         setTasks(freshTasks);
         const dayIndex = new Date().getDay();
@@ -194,14 +206,8 @@ export function StudentPortal() {
       }
     });
 
-    const handleStorage = () => loadData(false);
-    window.addEventListener('storage', handleStorage);
-    return () => {
-      unsubStudents();
-      unsubscribeTasks();
-      window.removeEventListener('storage', handleStorage);
-    };
-  }, []);
+    return () => unsubscribeTasks();
+  }, [studentId]);
 
   const switchStudent = (newId: string) => {
     localStorage.setItem('currentUserId', newId);
