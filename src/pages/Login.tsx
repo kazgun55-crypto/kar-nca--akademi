@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogIn, User, Lock, ArrowRight, ShieldCheck, Sparkles, Mail, CheckCircle2, AlertTriangle, X, KeyRound, Loader2 } from 'lucide-react';
+import { LogIn, User, Lock, ArrowRight, ShieldCheck, Sparkles, Mail, CheckCircle2, AlertTriangle, X, KeyRound, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { authenticateUser, seedFirestoreIfEmpty, syncFirestoreToLocalStorage, saveStudentToFirestore, saveTeacherToFirestore } from '../lib/firestoreService';
@@ -8,6 +8,7 @@ export function Login() {
   const [role, setRole] = useState<'teacher' | 'student' | 'admin'>('student');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -149,23 +150,23 @@ export function Login() {
     if (demoRole === 'gokce') {
       setRole('teacher');
       setUsername('gokce');
-      setPassword('123');
+      setPassword('Ogretmen.2026!');
     } else if (demoRole === 'teacher') {
       setRole('teacher');
       setUsername('ahmet_y');
-      setPassword('password123');
+      setPassword('Ogretmen.2026!');
     } else if (demoRole === 'teacher2') {
       setRole('teacher');
       setUsername('ayse_d');
-      setPassword('password123');
+      setPassword('Ogretmen.2026!');
     } else if (demoRole === 'student') {
       setRole('student');
       setUsername('ahmet');
-      setPassword('123');
+      setPassword('Ogrenci.2026!');
     } else if (demoRole === 'admin') {
       setRole('admin');
       setUsername('köksal');
-      setPassword('köksal123');
+      setPassword('Yonetici.2026!');
     }
   };
 
@@ -258,6 +259,8 @@ export function Login() {
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
                   <input 
                     type="text" 
+                    name="username"
+                    autoComplete="username"
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
@@ -272,13 +275,24 @@ export function Login() {
                 <div className="relative group">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
                   <input 
-                    type="password" 
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    autoComplete="current-password"
+                    data-lpignore="true"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••" 
-                    className="w-full pl-12 pr-4 py-3.5 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none"
+                    className="w-full pl-12 pr-12 py-3.5 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface transition-colors p-1"
+                    title={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
                 </div>
               </div>
 
