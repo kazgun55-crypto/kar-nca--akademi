@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar, PlayCircle, BookOpen, CheckCircle2, Clock, Plus, User, Send, 
-  Trash2, ClipboardCheck, Award, Repeat, Sparkles, Users, Check, Share2, Copy 
+  Trash2, ClipboardCheck, Award, Repeat, Sparkles, Users, Check, Share2, Copy,
+  ExternalLink, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { parseVideoUrl, getYoutubeId } from '../lib/videoUtils';
 import { 
   saveStudentTasks, 
   getStudentTasks, 
@@ -55,6 +57,7 @@ export function AssignmentFlow() {
   const [newTaskAmount, setNewTaskAmount] = useState('');
   const [newTaskVideoUrl, setNewTaskVideoUrl] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [selectedVideoTask, setSelectedVideoTask] = useState<Task | null>(null);
 
   // Student Task Result Entry states
   const [showResultModal, setShowResultModal] = useState(false);
@@ -127,8 +130,9 @@ export function AssignmentFlow() {
   };
 
   const handleTaskClick = (task: Task) => {
-    if (task.type === 'video' && task.videoUrl) {
-      setSelectedVideo(task.videoUrl);
+    if (task.type === 'video') {
+      setSelectedVideo(task.videoUrl || task.title);
+      setSelectedVideoTask(task);
       return;
     }
 
@@ -269,12 +273,6 @@ export function AssignmentFlow() {
 
   const filteredTasks = tasks.filter(t => t.day === selectedDay);
 
-  const getYoutubeId = (url: string) => {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
-  };
-
   return (
     <div className="space-y-8 pb-12">
       {/* Toast Bildirim Kutusu */}
@@ -298,25 +296,113 @@ export function AssignmentFlow() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-            onClick={() => setSelectedVideo(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md"
+            onClick={() => {
+              setSelectedVideo(null);
+              setSelectedVideoTask(null);
+            }}
           >
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-4xl aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl"
+              className="w-full max-w-4xl bg-surface-container-lowest rounded-3xl overflow-hidden shadow-2xl flex flex-col"
               onClick={e => e.stopPropagation()}
             >
-              <iframe 
-                width="100%" 
-                height="100%" 
-                src={`https://www.youtube.com/embed/${getYoutubeId(selectedVideo)}?autoplay=1`}
-                title="YouTube video player" 
-                frameBorder="0" 
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                allowFullScreen
-              ></iframe>
+              {(() => {
+                const parsed = parseVideoUrl(selectedVideo, selectedVideoTask?.title);
+                return (
+                  <>
+                    <div className="p-4 sm:p-5 border-b border-outline-variant/10 flex items-center justify-between bg-surface-container-low">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                          <PlayCircle className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm sm:text-base font-extrabold text-on-surface line-clamp-1">
+                            {selectedVideoTask?.title || 'Ders Videosu'}
+                          </h4>
+                          <p className="text-[11px] font-bold text-on-surface-variant flex items-center gap-1.5">
+                            {selectedVideoTask?.day && <span>{selectedVideoTask.day}</span>}
+                            {selectedVideoTask?.amount && <span>• {selectedVideoTask.amount}</span>}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {parsed.directUrl && (
+                          <a
+                            href={parsed.directUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-colors"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>YouTube'da Aç</span>
+                          </a>
+                        )}
+                        <button 
+                          onClick={() => {
+                            setSelectedVideo(null);
+                            setSelectedVideoTask(null);
+                          }}
+                          className="p-2 hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant"
+                          title="Kapat"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="aspect-video w-full bg-black">
+                      <iframe 
+                        width="100%" 
+                        height="100%" 
+                        src={parsed.embedUrl}
+                        title="Ders Videosu" 
+                        frameBorder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                        allowFullScreen
+                      ></iframe>
+                    </div>
+
+                    {selectedVideoTask && (
+                      <div className="p-4 bg-surface-container-lowest border-t border-outline-variant/10 flex flex-wrap items-center justify-between gap-3">
+                        <span className="text-xs font-bold text-on-surface-variant">
+                          {selectedVideoTask.completed ? '✅ Bu video tamamlandı olarak işaretlendi.' : 'Videoyu izledikten sonra tek tıkla tamamlandı yapabilirsiniz.'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {parsed.directUrl && (
+                            <a
+                              href={parsed.directUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="sm:hidden inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-red-50 text-red-700 text-xs font-bold"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Yeni Sekmede</span>
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              toggleTask(selectedVideoTask.id);
+                              setSelectedVideoTask(prev => prev ? { ...prev, completed: !prev.completed } : null);
+                            }}
+                            className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 active:scale-95 ${
+                              selectedVideoTask.completed
+                                ? 'bg-tertiary/10 text-tertiary hover:bg-tertiary/20'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20'
+                            }`}
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>{selectedVideoTask.completed ? 'Tamamlandı (Geri Al)' : 'Tamamlandı Olarak İşaretle'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </motion.div>
           </motion.div>
         )}
@@ -719,16 +805,17 @@ export function AssignmentFlow() {
                               <Award className="w-3.5 h-3.5" /> Doğru: {task.correct || 0} • Yanlış: {task.incorrect || 0} {task.topic && `• Konu: ${task.topic}`}
                             </span>
                           )}
-                          {task.videoUrl && (
+                          {task.type === 'video' && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedVideo(task.videoUrl!);
+                                setSelectedVideo(task.videoUrl || task.title);
+                                setSelectedVideoTask(task);
                               }}
-                              className="text-xs font-bold text-primary hover:underline flex items-center gap-1 animate-pulse"
+                              className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1 hover:underline"
                             >
-                              <PlayCircle className="w-3 h-3" />
-                              Videoyu İzle
+                              <PlayCircle className="w-3.5 h-3.5 text-red-600 fill-current" />
+                              <span>Videoyu İzle</span>
                             </button>
                           )}
                         </div>

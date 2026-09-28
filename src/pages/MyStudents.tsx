@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { parseVideoUrl } from '../lib/videoUtils';
 import { subscribeStudents, updateStudentTeacherId, deleteStudentFromFirestore, saveStudentTasks, getStudentTasks, subscribeStudentTasks } from '../lib/firestoreService';
 import { 
   Users, 
@@ -998,6 +999,20 @@ export function MyStudents() {
                               <span className="text-[9px] font-bold text-on-surface-variant/80 bg-surface-container-low px-1.5 py-0.5 rounded">
                                 {task.amount}
                               </span>
+                            </div>
+                          )}
+
+                          {task.type === 'video' && (
+                            <div className="pt-0.5">
+                              <a
+                                href={parseVideoUrl(task.videoUrl, task.title).directUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[9px] font-black text-red-600 hover:text-red-700 hover:underline bg-red-50 px-1.5 py-0.5 rounded"
+                              >
+                                <PlayCircle className="w-2.5 h-2.5 fill-current" />
+                                <span>Videoyu Aç</span>
+                              </a>
                             </div>
                           )}
 

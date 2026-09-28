@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight, Eye, Grid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { parseVideoUrl, getYoutubeId } from '../lib/videoUtils';
 import { getExamCountdownForGrade, GradeExamCountdown } from '../lib/curriculum';
 import { getDailyMotivationQuote, getAgeGroupBadge, MotivationQuote } from '../lib/motivationQuotes';
 import { 
@@ -69,7 +70,7 @@ export function StudentPortal() {
   const [selectedTrial, setSelectedTrial] = useState<TrialData | null>(null);
   const [viewMode, setViewMode] = useState<'today' | 'weekly'>('today');
   const [weeklyTableStyle, setWeeklyTableStyle] = useState<'grid' | 'table'>('grid');
-  const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
+  const [selectedDayFilter, setSelectedDayFilter] = useState<string>('today');
   const [displayLayout, setDisplayLayout] = useState<'cards' | 'table'>('cards');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
@@ -78,6 +79,7 @@ export function StudentPortal() {
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
   const [activeVideoTask, setActiveVideoTask] = useState<Task | null>(null);
   const [selectedVideoIndex, setSelectedVideoIndex] = useState<number>(0);
+  const [videoTabFilter, setVideoTabFilter] = useState<'all' | 'today'>('all');
   const [countdown, setCountdown] = useState<GradeExamCountdown | null>(null);
   const [evaluatingTask, setEvaluatingTask] = useState<Task | null>(null);
   const [evalCorrect, setEvalCorrect] = useState<number>(0);
@@ -288,18 +290,15 @@ export function StudentPortal() {
   };
 
   const openVideo = (task: Task) => {
-    if (!task.videoUrl) return;
-    const vid = getYoutubeId(task.videoUrl);
-    if (vid) {
-      setActiveVideo(vid);
-      setActiveVideoTask(task);
-      setShowVideoModal(true);
-    }
+    setActiveVideoTask(task);
+    const parsed = parseVideoUrl(task.videoUrl, `${task.subject || ''} ${task.title || ''}`);
+    setActiveVideo(parsed.videoId || parsed.embedUrl);
+    setShowVideoModal(true);
   };
 
   const handleTaskClick = (task: Task) => {
     // Video görevine tıklandığında anında video oynatıcı penceresi açılır
-    if (task.type === 'video' && task.videoUrl) {
+    if (task.type === 'video') {
       openVideo(task);
       return;
     }
@@ -416,12 +415,6 @@ export function StudentPortal() {
     const dayIndex = new Date().getDay();
     const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
     setTodayTasks(archive.tasks.filter((t: Task) => t.day === todayName));
-  };
-
-  const getYoutubeId = (url: string) => {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
   };
 
   const completedCount = tasks.filter(t => t.completed).length;
@@ -791,27 +784,35 @@ export function StudentPortal() {
             {/* Day Filter Chips (Horizontal Touch Scroll on Phone) */}
             <div className="flex items-center justify-between gap-2 flex-wrap mb-5">
               <div className="flex items-center gap-1.5 overflow-x-auto py-1 w-full sm:w-auto scroll-smooth no-scrollbar">
+                {viewMode === 'weekly' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDayFilter('all');
+                      setSelectedVideoIndex(0);
+                    }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0",
+                      selectedDayFilter === 'all'
+                        ? "bg-primary text-white shadow-sm ring-2 ring-primary/20"
+                        : "bg-surface-container-highest/60 text-on-surface-variant hover:bg-surface-container-highest"
+                    )}
+                  >
+                    <span>Tüm Hafta</span>
+                    <span className={cn(
+                      "text-[10px] px-1.5 py-0.2 rounded-md font-black",
+                      selectedDayFilter === 'all' ? "bg-white/20 text-white" : "bg-outline-variant/15 text-on-surface-variant"
+                    )}>
+                      {tasks.length}
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => setSelectedDayFilter('all')}
-                  className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0",
-                    selectedDayFilter === 'all'
-                      ? "bg-primary text-white shadow-sm ring-2 ring-primary/20"
-                      : "bg-surface-container-highest/60 text-on-surface-variant hover:bg-surface-container-highest"
-                  )}
-                >
-                  <span>Tüm Hafta</span>
-                  <span className={cn(
-                    "text-[10px] px-1.5 py-0.2 rounded-md font-black",
-                    selectedDayFilter === 'all' ? "bg-white/20 text-white" : "bg-outline-variant/15 text-on-surface-variant"
-                  )}>
-                    {tasks.length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedDayFilter('today')}
+                  onClick={() => {
+                    setSelectedDayFilter('today');
+                    setSelectedVideoIndex(0);
+                  }}
                   className={cn(
                     "px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0",
                     selectedDayFilter === 'today'
@@ -833,7 +834,10 @@ export function StudentPortal() {
                     <button
                       key={day}
                       type="button"
-                      onClick={() => setSelectedDayFilter(day)}
+                      onClick={() => {
+                        setSelectedDayFilter(day);
+                        setSelectedVideoIndex(0);
+                      }}
                       className={cn(
                         "px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 shrink-0",
                         selectedDayFilter === day
@@ -1196,12 +1200,9 @@ export function StudentPortal() {
 
               // --- 2. DAILY VIEW MODE (GÜNLÜK AKIŞ) ---
               const currentFilteredTasks = (() => {
-                if (selectedDayFilter === 'all') {
-                  return [...tasks].sort((a, b) => DAYS_TR.indexOf(a.day) - DAYS_TR.indexOf(b.day));
-                }
-                if (selectedDayFilter === 'today') {
-                  const dayIndex = new Date().getDay();
-                  const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+                const dayIndex = new Date().getDay();
+                const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+                if (selectedDayFilter === 'today' || selectedDayFilter === 'all') {
                   return tasks.filter(t => t.day === todayName);
                 }
                 return tasks.filter(t => t.day === selectedDayFilter);
@@ -1483,18 +1484,18 @@ export function StudentPortal() {
                       </div>
 
                       {/* Video Button */}
-                      {task.type === 'video' && task.videoUrl && (
+                      {task.type === 'video' && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             openVideo(task);
                           }}
-                          className="shrink-0 self-center p-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors flex items-center gap-1 text-xs font-bold"
-                          title="Videoyu Aç"
+                          className="shrink-0 self-center p-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors flex items-center gap-1.5 text-xs font-bold active:scale-95"
+                          title="Videoyu Aç ve İzle"
                         >
                           <Youtube className="w-5 h-5 text-red-600" />
-                          <span className="hidden sm:inline">İzle</span>
+                          <span>İzle</span>
                         </button>
                       )}
                     </div>
@@ -1504,80 +1505,157 @@ export function StudentPortal() {
             })()}
           </div>
 
-          {/* Video Hub Section (Günün ve Haftanın Videoları - Birden Fazla Video Desteği) */}
+          {/* Video Hub Section (Günün Videoları ve Tüm Hafta Desteği) */}
           {(() => {
             const dayIndex = new Date().getDay();
             const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
-            
-            // Eğer bir gün filtresi seçilmişse o günün videolarını, değilse bugünün videolarını; bugünde video yoksa haftanın videolarını göster
-            const targetDay = (selectedDayFilter !== 'all' && selectedDayFilter !== 'today')
+            const isDailyMode = viewMode === 'today';
+
+            const activeDay = (selectedDayFilter && selectedDayFilter !== 'all' && selectedDayFilter !== 'today') 
               ? selectedDayFilter 
               : todayName;
-            
-            const currentDayVideos = tasks.filter(t => t.day === targetDay && t.type === 'video' && t.videoUrl);
-            const allAssignedVideos = tasks.filter(t => t.type === 'video' && t.videoUrl);
-            
-            const displayVideos = currentDayVideos.length > 0 ? currentDayVideos : allAssignedVideos;
-            
+
+            // Tüm atanan videolar (öğrencinin haftalık programındaki tüm video görevleri)
+            const allAssignedVideos = tasks.filter(t => t.type === 'video');
+            if (allAssignedVideos.length === 0) return null;
+
+            // O güne (seçili güne / bugüne) ait videolar
+            const targetDayVideos = tasks.filter(t => t.day === activeDay && t.type === 'video');
+
+            // Kullanıcı kuralı: Öğrenci günlük görünümü seçmişse o gün verilen videoları görsün, geçmiş videoların görünmesine gerek yok!
+            if (isDailyMode && targetDayVideos.length === 0) {
+              // O gün için atanmış video yoksa, günlük görünümde video hub'ı gizlenir (geçmiş videolar çıkmaz)
+              return null;
+            }
+
+            // Görüntülenecek video listesi
+            let displayVideos: Task[] = [];
+            if (isDailyMode) {
+              // Günlük görünüm: Kesinlikle SADECE o gün verilen tüm videolar (birden fazla varsa hepsi)
+              displayVideos = targetDayVideos;
+            } else {
+              // Haftalık mod: Öğrenci haftalık program tablosunu inceliyor
+              if (selectedDayFilter === 'all') {
+                const currentDayVideos = tasks.filter(t => t.day === todayName && t.type === 'video');
+                const activeTab = (videoTabFilter === 'today' && currentDayVideos.length > 0) ? 'today' : 'all';
+                displayVideos = activeTab === 'today' ? currentDayVideos : allAssignedVideos;
+              } else {
+                displayVideos = targetDayVideos.length > 0 ? targetDayVideos : allAssignedVideos;
+              }
+            }
+
             if (displayVideos.length === 0) return null;
 
             const safeIndex = selectedVideoIndex < displayVideos.length ? selectedVideoIndex : 0;
             const currentVideo = displayVideos[safeIndex] || displayVideos[0];
-            const isTodayVideos = currentDayVideos.length > 0;
             const completedCount = displayVideos.filter(v => v.completed).length;
+            const currentParsed = parseVideoUrl(currentVideo.videoUrl, `${currentVideo.subject || ''} ${currentVideo.title || ''}`);
 
             return (
               <div className="bg-surface-container-lowest rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-ambient border border-outline-variant/15 p-6 sm:p-8 space-y-6">
                 {/* Video Hub Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-outline-variant/10 pb-5">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <span className="text-tertiary font-black text-xs uppercase tracking-widest bg-tertiary/10 px-3.5 py-1 rounded-full">
-                        {isTodayVideos ? (targetDay === todayName ? 'Bugünün Videoları' : `${targetDay} Günü Videoları`) : 'Haftalık Video Dersleri'}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-tertiary font-black text-xs uppercase tracking-widest bg-tertiary/10 px-3.5 py-1 rounded-full flex items-center gap-1.5">
+                        <Youtube className="w-3.5 h-3.5 text-red-600" />
+                        {isDailyMode ? (activeDay === todayName ? 'Günün Video Dersleri' : `${activeDay} Videoları`) : 'Video Dersleri'}
                       </span>
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-red-100 text-red-700">
-                        <Youtube className="w-3.5 h-3.5" />
-                        {displayVideos.length} Video Atandı
+                        {displayVideos.length} Video {isDailyMode ? (activeDay === todayName ? 'Bugün Verildi' : 'Bu Gün İçin') : 'Programda'}
                       </span>
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
                         <Check className="w-3 h-3" />
                         {completedCount} / {displayVideos.length} İzlendi
                       </span>
                     </div>
-                    <h2 className="text-xl sm:text-2xl font-black font-manrope text-on-surface">
-                      {currentVideo.title}
-                    </h2>
-                    <p className="text-xs font-bold text-on-surface-variant mt-0.5">
-                      {currentVideo.subject} • {currentVideo.day} {currentVideo.amount ? `• Süre: ${currentVideo.amount}` : ''}
-                    </p>
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-black font-manrope text-on-surface">
+                        {currentVideo.title}
+                      </h2>
+                      <p className="text-xs font-bold text-on-surface-variant mt-0.5 flex items-center gap-1.5">
+                        <span className="text-primary font-black uppercase">{currentVideo.subject || 'Ders'}</span>
+                        <span>• {currentVideo.day}</span>
+                        {currentVideo.day === todayName && (
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0.2 rounded-md">Bugün</span>
+                        )}
+                        {currentVideo.amount && <span>• {currentVideo.amount}</span>}
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Previous / Next Controls if multiple videos */}
-                  {displayVideos.length > 1 && (
-                    <div className="flex items-center gap-2 self-start sm:self-center">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedVideoIndex(prev => Math.max(0, prev - 1))}
-                        disabled={safeIndex === 0}
-                        className="p-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest disabled:opacity-40 text-on-surface transition-all"
-                        title="Önceki Video"
-                      >
-                        <ChevronLeft className="w-5 h-5" />
-                      </button>
-                      <span className="text-xs font-black text-on-surface px-2">
-                        {safeIndex + 1} / {displayVideos.length}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedVideoIndex(prev => Math.min(displayVideos.length - 1, prev + 1))}
-                        disabled={safeIndex === displayVideos.length - 1}
-                        className="p-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest disabled:opacity-40 text-on-surface transition-all"
-                        title="Sonraki Video"
-                      >
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
+                  {/* Switcher & Navigation Controls */}
+                  <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+                    {/* Weekly Mode Filter Tabs (only in weekly mode) */}
+                    {!isDailyMode && (
+                      <div className="flex items-center p-1 bg-surface-container-high rounded-xl text-xs font-black">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVideoTabFilter('all');
+                            setSelectedVideoIndex(0);
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg transition-all flex items-center gap-1",
+                            videoTabFilter === 'all'
+                              ? "bg-white text-on-surface shadow-xs"
+                              : "text-on-surface-variant hover:text-on-surface"
+                          )}
+                        >
+                          <span>Tüm Videolar</span>
+                          <span className="text-[10px] bg-surface-container-highest px-1.5 py-0.2 rounded-full">{allAssignedVideos.length}</span>
+                        </button>
+
+                        {tasks.filter(t => t.day === todayName && t.type === 'video').length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVideoTabFilter('today');
+                              setSelectedVideoIndex(0);
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 rounded-lg transition-all flex items-center gap-1",
+                              videoTabFilter === 'today'
+                                ? "bg-white text-on-surface shadow-xs"
+                                : "text-on-surface-variant hover:text-on-surface"
+                            )}
+                          >
+                            <span>Bugün</span>
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full">
+                              {tasks.filter(t => t.day === todayName && t.type === 'video').length}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Previous / Next Controls if multiple videos given */}
+                    {displayVideos.length > 1 && (
+                      <div className="flex items-center gap-1 bg-surface-container-high p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedVideoIndex(prev => Math.max(0, prev - 1))}
+                          disabled={safeIndex === 0}
+                          className="p-1.5 rounded-lg hover:bg-white disabled:opacity-30 text-on-surface transition-all"
+                          title="Önceki Video"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="text-xs font-black text-on-surface px-1.5">
+                          {safeIndex + 1}/{displayVideos.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedVideoIndex(prev => Math.min(displayVideos.length - 1, prev + 1))}
+                          disabled={safeIndex === displayVideos.length - 1}
+                          className="p-1.5 rounded-lg hover:bg-white disabled:opacity-30 text-on-surface transition-all"
+                          title="Sonraki Video"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Main Video Player Preview */}
@@ -1586,13 +1664,12 @@ export function StudentPortal() {
                   className="aspect-video w-full rounded-2xl sm:rounded-3xl overflow-hidden bg-black relative group shadow-lg cursor-pointer"
                 >
                   <img 
-                    src={`https://img.youtube.com/vi/${getYoutubeId(currentVideo.videoUrl || '')}/maxresdefault.jpg`} 
+                    src={currentParsed.thumbnailUrl} 
                     alt={currentVideo.title} 
-                    className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-700"
+                    className="w-full h-full object-cover opacity-85 group-hover:scale-105 transition-transform duration-700"
                     referrerPolicy="no-referrer"
                     onError={(e: any) => {
-                      // Fallback thumbnail if maxres is unavailable
-                      e.target.src = `https://img.youtube.com/vi/${getYoutubeId(currentVideo.videoUrl || '')}/mqdefault.jpg`;
+                      e.target.src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80';
                     }}
                   />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition-all">
@@ -1602,19 +1679,26 @@ export function StudentPortal() {
                   </div>
                   
                   {/* Floating Video Info Bar */}
-                  <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-between text-white">
-                    <span className="text-xs font-black truncate max-w-sm">
-                      {currentVideo.title}
-                    </span>
-                    <span className="text-[11px] font-bold bg-red-600 px-2.5 py-0.5 rounded-full shrink-0">
-                      ▶️ Şimdi İzle
+                  <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-between text-white">
+                    <div className="min-w-0 pr-3">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-white/80 uppercase">
+                        <span>{currentVideo.subject}</span>
+                        <span>• {currentVideo.day}</span>
+                      </div>
+                      <span className="text-xs sm:text-sm font-black truncate block">
+                        {currentVideo.title}
+                      </span>
+                    </div>
+                    <span className="text-xs font-black bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-xl shrink-0 flex items-center gap-1 shadow-md">
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Şimdi İzle</span>
                     </span>
                   </div>
                 </div>
 
                 {/* Primary Actions for the active video */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => openVideo(currentVideo)}
@@ -1636,6 +1720,17 @@ export function StudentPortal() {
                       <Check className="w-4 h-4" />
                       <span>{currentVideo.completed ? 'İzlendi (Geri Al)' : 'İzlendi Olarak İşaretle'}</span>
                     </button>
+                    {currentParsed.directUrl && (
+                      <a
+                        href={currentParsed.directUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-2.5 rounded-xl text-xs font-black bg-surface-container-high hover:bg-surface-container-highest text-on-surface transition-all flex items-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>YouTube'da Aç</span>
+                      </a>
+                    )}
                   </div>
 
                   {displayVideos.length > 1 && (
@@ -1645,21 +1740,31 @@ export function StudentPortal() {
                   )}
                 </div>
 
-                {/* Playlist of ALL Videos assigned for this day (Birden Fazla Video Oynatma Listesi) */}
-                {displayVideos.length > 1 && (
-                  <div className="space-y-3 pt-3 border-t border-outline-variant/10">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black uppercase tracking-wider text-on-surface flex items-center gap-1.5">
-                        <Youtube className="w-4 h-4 text-red-600" />
-                        Günün Diğer Videoları ({displayVideos.length} Video)
+                {/* Playlist & Video Gallery: Shows ONLY that day's videos in Daily Mode, and weekly in Weekly Mode */}
+                <div className="space-y-3 pt-4 border-t border-outline-variant/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-on-surface flex items-center gap-2">
+                      <Youtube className="w-4 h-4 text-red-600" />
+                      <span>
+                        {isDailyMode 
+                          ? `${activeDay === todayName ? 'Bugünün' : activeDay + ' Günü'} Video Dersleri (${displayVideos.length} Video)`
+                          : `Ders Videoları Listesi (${displayVideos.length} Video)`}
                       </span>
-                      <span className="text-[11px] font-bold text-on-surface-variant">
-                        İzlemek istediğiniz videoya tıklayın
-                      </span>
-                    </div>
+                    </span>
+                    <span className="text-[11px] font-bold text-on-surface-variant">
+                      {isDailyMode 
+                        ? 'Öğretmeninizin bugün için verdiği tüm videolar aşağıdadır. İstediğinize tıklayıp izleyebilirsiniz.' 
+                        : 'Herhangi bir videoya tıklayarak doğrudan izleyebilirsiniz.'}
+                    </span>
+                  </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {displayVideos.map((vid, idx) => (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {displayVideos.map((vid, idx) => {
+                      const isSelected = vid.id === currentVideo.id;
+                      const parsed = parseVideoUrl(vid.videoUrl, `${vid.subject || ''} ${vid.title || ''}`);
+                      const isToday = vid.day === todayName;
+
+                      return (
                         <div
                           key={vid.id}
                           onClick={() => {
@@ -1667,58 +1772,74 @@ export function StudentPortal() {
                             openVideo(vid);
                           }}
                           className={cn(
-                            "p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-2 text-left group",
-                            safeIndex === idx
+                            "p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-2.5 text-left group active:scale-98",
+                            isSelected
                               ? "bg-primary/5 border-primary shadow-sm ring-2 ring-primary/20"
-                              : "bg-surface-container-low border-outline-variant/15 hover:border-primary/40 hover:bg-surface-container-high"
+                              : "bg-surface-container-low border-outline-variant/15 hover:border-primary/50 hover:bg-surface-container-high"
                           )}
                         >
                           <div className="flex items-start gap-2.5">
                             {/* Mini Thumbnail */}
-                            <div className="w-20 h-14 rounded-xl overflow-hidden bg-black shrink-0 relative">
+                            <div className="w-24 h-16 rounded-xl overflow-hidden bg-black shrink-0 relative shadow-xs">
                               <img
-                                src={`https://img.youtube.com/vi/${getYoutubeId(vid.videoUrl || '')}/mqdefault.jpg`}
+                                src={parsed.thumbnailUrl}
                                 alt={vid.title}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                 referrerPolicy="no-referrer"
+                                onError={(e: any) => {
+                                  e.target.src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80';
+                                }}
                               />
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                                <Play className="w-4 h-4 text-white fill-current" />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/35 group-hover:bg-black/15 transition-all">
+                                <div className="w-7 h-7 rounded-full bg-white/30 backdrop-blur-xs flex items-center justify-center">
+                                  <Play className="w-3.5 h-3.5 text-white fill-current translate-x-0.2" />
+                                </div>
                               </div>
                             </div>
 
                             <div className="flex-grow min-w-0">
-                              <div className="flex items-center gap-1 mb-0.5">
-                                <span className="text-[9px] font-black uppercase text-primary bg-primary/10 px-1.5 py-0.2 rounded">
+                              <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                {isToday ? (
+                                  <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded">
+                                    Bugün
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-bold uppercase bg-surface-container-high text-on-surface-variant px-1.5 py-0.2 rounded">
+                                    {vid.day}
+                                  </span>
+                                )}
+                                <span className="text-[9px] font-black uppercase text-primary bg-primary/10 px-1.5 py-0.2 rounded truncate max-w-[85px]">
                                   {vid.subject || 'Ders'}
                                 </span>
-                                <span className="text-[9px] font-bold text-on-surface-variant">
-                                  Video {idx + 1}
-                                </span>
                               </div>
-                              <p className="font-extrabold text-xs text-on-surface line-clamp-2 leading-tight">
+                              <p className="font-extrabold text-xs text-on-surface line-clamp-2 leading-tight group-hover:text-primary transition-colors">
                                 {vid.title}
                               </p>
+                              {vid.amount && (
+                                <span className="text-[10px] text-on-surface-variant/80 font-medium block mt-0.5">
+                                  {vid.amount}
+                                </span>
+                              )}
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between pt-1 border-t border-outline-variant/10 text-[10px]">
+                          <div className="flex items-center justify-between pt-1.5 border-t border-outline-variant/10 text-[11px]">
                             <span className={cn(
-                              "font-black flex items-center gap-1",
+                              "font-black flex items-center gap-1 text-[10px]",
                               vid.completed ? "text-emerald-700" : "text-on-surface-variant"
                             )}>
                               {vid.completed ? '✅ İzlendi' : '⭕ İzlenmedi'}
                             </span>
                             <span className="font-black text-red-600 group-hover:underline flex items-center gap-1">
                               <span>İzle</span>
-                              <ChevronRight className="w-3 h-3" />
+                              <ChevronRight className="w-3.5 h-3.5" />
                             </span>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-                )}
+                </div>
               </div>
             );
           })()}
@@ -2023,75 +2144,112 @@ export function StudentPortal() {
         )}
       </AnimatePresence>
 
-      {/* Video Modal */}
+      {/* Video Modal - Gelişmiş Video Oynatıcı & Canlı Firestore Senkronizasyon */}
       <AnimatePresence>
-        {showVideoModal && activeVideo && (
+        {showVideoModal && activeVideoTask && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md"
+            onClick={() => setShowVideoModal(false)}
           >
             <motion.div 
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.9 }}
+              onClick={e => e.stopPropagation()}
               className="relative w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl bg-surface-container-lowest flex flex-col"
             >
-              <div className="p-4 sm:p-5 border-b border-outline-variant/10 flex items-center justify-between bg-surface-container-low">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
-                    <Youtube className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm sm:text-base font-extrabold text-on-surface line-clamp-1">
-                      {activeVideoTask?.title || 'Ders Videosu'}
-                    </h4>
-                    <p className="text-[11px] font-bold text-on-surface-variant">
-                      {activeVideoTask?.subject || 'Ders'} {activeVideoTask?.amount ? `• Süre: ${activeVideoTask.amount}` : ''} {activeVideoTask?.day ? `• ${activeVideoTask.day}` : ''}
-                    </p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setShowVideoModal(false)}
-                  className="p-2 hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              {(() => {
+                const parsed = parseVideoUrl(activeVideoTask.videoUrl, `${activeVideoTask.subject || ''} ${activeVideoTask.title || ''}`);
 
-              <div className="aspect-video w-full bg-black">
-                <iframe 
-                  src={`https://www.youtube.com/embed/${activeVideo}?autoplay=1`}
-                  className="w-full h-full border-none"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
+                return (
+                  <>
+                    <div className="p-4 sm:p-5 border-b border-outline-variant/10 flex items-center justify-between bg-surface-container-low">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                          <Youtube className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm sm:text-base font-extrabold text-on-surface line-clamp-1">
+                            {activeVideoTask.title || 'Ders Videosu'}
+                          </h4>
+                          <p className="text-[11px] font-bold text-on-surface-variant flex items-center gap-1.5 flex-wrap">
+                            <span className="text-primary font-black uppercase">{activeVideoTask.subject || 'Ders'}</span>
+                            {activeVideoTask.day && <span>• {activeVideoTask.day}</span>}
+                            {activeVideoTask.amount && <span>• Süre: {activeVideoTask.amount}</span>}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {parsed.directUrl && (
+                          <a
+                            href={parsed.directUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-colors"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>YouTube'da Aç</span>
+                          </a>
+                        )}
+                        <button 
+                          onClick={() => setShowVideoModal(false)}
+                          className="p-2 hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant"
+                          title="Kapat"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
 
-              {activeVideoTask && (
-                <div className="p-4 bg-surface-container-lowest border-t border-outline-variant/10 flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-xs font-bold text-on-surface-variant">
-                    {activeVideoTask.completed ? '✅ Bu video izlendi olarak işaretlendi.' : 'Videoyu izledikten sonra tek tıkla tamamlandı olarak işaretleyebilirsiniz.'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      toggleTask(activeVideoTask.id);
-                      setActiveVideoTask(prev => prev ? { ...prev, completed: !prev.completed } : null);
-                    }}
-                    className={cn(
-                      "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 active:scale-95",
-                      activeVideoTask.completed
-                        ? "bg-tertiary/10 text-tertiary hover:bg-tertiary/20"
-                        : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
-                    )}
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>{activeVideoTask.completed ? 'İzlendi (Geri Al)' : 'Videoyu İzlendi Olarak İşaretle'}</span>
-                  </button>
-                </div>
-              )}
+                    <div className="aspect-video w-full bg-black">
+                      <iframe 
+                        src={parsed.embedUrl}
+                        className="w-full h-full border-none"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                      />
+                    </div>
+
+                    <div className="p-4 bg-surface-container-lowest border-t border-outline-variant/10 flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-xs font-bold text-on-surface-variant">
+                        {activeVideoTask.completed ? '✅ Bu video izlendi olarak işaretlendi.' : 'Videoyu izledikten sonra tek tıkla tamamlandı olarak işaretleyebilirsiniz.'}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {parsed.directUrl && (
+                          <a
+                            href={parsed.directUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="sm:hidden inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-red-50 text-red-700 text-xs font-bold"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Yeni Sekmede Aç</span>
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleTask(activeVideoTask.id);
+                            setActiveVideoTask(prev => prev ? { ...prev, completed: !prev.completed } : null);
+                          }}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 active:scale-95",
+                            activeVideoTask.completed
+                              ? "bg-tertiary/10 text-tertiary hover:bg-tertiary/20"
+                              : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
+                          )}
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>{activeVideoTask.completed ? 'İzlendi (Geri Al)' : 'Videoyu İzlendi Olarak İşaretle'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </motion.div>
           </motion.div>
         )}
