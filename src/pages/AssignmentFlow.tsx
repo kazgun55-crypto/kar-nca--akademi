@@ -127,6 +127,11 @@ export function AssignmentFlow() {
   };
 
   const handleTaskClick = (task: Task) => {
+    if (task.type === 'video' && task.videoUrl) {
+      setSelectedVideo(task.videoUrl);
+      return;
+    }
+
     if (userRole === 'teacher' || userRole === 'admin') {
       return;
     }

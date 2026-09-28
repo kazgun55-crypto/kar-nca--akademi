@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
@@ -13,6 +13,7 @@ import { AssignmentFlow } from './pages/AssignmentFlow';
 import { Analytics } from './pages/Analytics';
 import { EnterTrial } from './pages/EnterTrial';
 import { MyStudents } from './pages/MyStudents';
+import { initGlobalCloudSync } from './lib/firestoreService';
 
 function DirectStudentRedirect() {
   const { studentId } = useParams();
@@ -47,12 +48,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Start real-time cloud synchronization on every device
+    initGlobalCloudSync();
+  }, []);
+
   return (
     <Router>
       <Routes>
-        {/* Direct Public Student Sharing Routes (Zero-barrier for students & parents) */}
+        {/* Direct Public Student Sharing Routes (Zero-barrier for students & parents on any device) */}
         <Route path="/p/:studentId" element={<DirectStudentRedirect />} />
         <Route path="/program/:studentId" element={<DirectStudentRedirect />} />
+        <Route path="/ogrenci/:studentId" element={<DirectStudentRedirect />} />
         <Route path="/login" element={<Login />} />
         <Route path="/*" element={
           <ProtectedRoute>

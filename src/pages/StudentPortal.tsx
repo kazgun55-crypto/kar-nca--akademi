@@ -3,7 +3,8 @@ import {
   Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, 
   ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, 
   Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus, Quote,
-  RefreshCw, Cloud, Smartphone, LayoutGrid, ListFilter, Check, Share2, Copy, Users, ExternalLink
+  RefreshCw, Cloud, Smartphone, LayoutGrid, ListFilter, Check, Share2, Copy, Users, ExternalLink,
+  ChevronLeft, ChevronRight, Eye, Grid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getExamCountdownForGrade, GradeExamCountdown } from '../lib/curriculum';
@@ -66,7 +67,8 @@ export function StudentPortal() {
   const [archivedPrograms, setArchivedPrograms] = useState<ArchivedProgram[]>([]);
   const [trialHistory, setTrialHistory] = useState<TrialData[]>([]);
   const [selectedTrial, setSelectedTrial] = useState<TrialData | null>(null);
-  const [viewMode, setViewMode] = useState<'today' | 'weekly' | 'all'>('all');
+  const [viewMode, setViewMode] = useState<'today' | 'weekly'>('today');
+  const [weeklyTableStyle, setWeeklyTableStyle] = useState<'grid' | 'table'>('grid');
   const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
   const [displayLayout, setDisplayLayout] = useState<'cards' | 'table'>('cards');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -74,6 +76,8 @@ export function StudentPortal() {
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
+  const [activeVideoTask, setActiveVideoTask] = useState<Task | null>(null);
+  const [selectedVideoIndex, setSelectedVideoIndex] = useState<number>(0);
   const [countdown, setCountdown] = useState<GradeExamCountdown | null>(null);
   const [evaluatingTask, setEvaluatingTask] = useState<Task | null>(null);
   const [evalCorrect, setEvalCorrect] = useState<number>(0);
@@ -84,6 +88,7 @@ export function StudentPortal() {
 
   const [allStudents, setAllStudents] = useState<any[]>([]);
   const [showStudentMenu, setShowStudentMenu] = useState<boolean>(false);
+  const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
   const scrollToTasks = () => {
@@ -124,6 +129,11 @@ export function StudentPortal() {
         setStudentName(studentDoc.name || 'Öğrenci');
         setStudentGrade(studentDoc.grade || '');
         setCountdown(getExamCountdownForGrade(studentDoc.grade || ''));
+        if (studentDoc.id && studentDoc.id !== id) {
+          id = studentDoc.id;
+          setStudentId(studentDoc.id);
+          localStorage.setItem('currentUserId', studentDoc.id);
+        }
         if (Array.isArray(studentDoc.tasks) && studentDoc.tasks.length > 0) {
           setTasks(studentDoc.tasks);
           const dayIndex = new Date().getDay();
@@ -277,7 +287,22 @@ export function StudentPortal() {
     setTodayTasks(updatedTasks.filter((t: Task) => t.day === todayName));
   };
 
+  const openVideo = (task: Task) => {
+    if (!task.videoUrl) return;
+    const vid = getYoutubeId(task.videoUrl);
+    if (vid) {
+      setActiveVideo(vid);
+      setActiveVideoTask(task);
+      setShowVideoModal(true);
+    }
+  };
+
   const handleTaskClick = (task: Task) => {
+    // Video görevine tıklandığında anında video oynatıcı penceresi açılır
+    if (task.type === 'video' && task.videoUrl) {
+      openVideo(task);
+      return;
+    }
     // Soru ve Test ödevlerinde tıklandığında anında Doğru/Yanlış/Boş giriş penceresi açılır
     if (task.type === 'question' || task.type === 'test') {
       setEvaluatingTask(task);
@@ -439,20 +464,44 @@ export function StudentPortal() {
                 Öğrenci Değiştir
               </button>
               {showStudentMenu && (
-                <div className="absolute right-0 mt-2 w-56 bg-surface-container-lowest border border-outline-variant/20 rounded-2xl shadow-xl z-50 p-2 space-y-1">
-                  <p className="text-[10px] font-bold text-on-surface-variant px-3 py-1 uppercase">Öğrenci Seçin</p>
-                  {allStudents.map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => switchStudent(s.id)}
-                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${
-                        s.id === studentId ? 'bg-primary text-white' : 'hover:bg-surface-container-high text-on-surface'
-                      }`}
-                    >
-                      <span className="truncate">{s.name}</span>
-                      <span className="text-[10px] opacity-75">{s.grade}</span>
-                    </button>
-                  ))}
+                <div className="absolute right-0 mt-2 w-72 bg-surface-container-lowest border border-outline-variant/20 rounded-2xl shadow-xl z-50 p-2 space-y-2">
+                  <div className="px-2 pt-1">
+                    <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1.5">Öğrenci Seç / Değiştir</p>
+                    <input
+                      type="text"
+                      placeholder="Öğrenci ara (örn: Rüzgar)..."
+                      value={studentSearchQuery}
+                      onChange={(e) => setStudentSearchQuery(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface focus:outline-none focus:border-primary placeholder:text-on-surface-variant/50"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                    {allStudents
+                      .filter((s) => {
+                        if (!studentSearchQuery.trim()) return true;
+                        const q = studentSearchQuery.toLowerCase();
+                        return (s.name || '').toLowerCase().includes(q) || (s.username || '').toLowerCase().includes(q);
+                      })
+                      .map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => {
+                            switchStudent(s.id);
+                            setStudentSearchQuery('');
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${
+                            s.id === studentId ? 'bg-primary text-white' : 'hover:bg-surface-container-high text-on-surface'
+                          }`}
+                        >
+                          <span className="truncate">{s.name}</span>
+                          <span className="text-[10px] opacity-75">{s.grade}</span>
+                        </button>
+                      ))}
+                    {allStudents.filter((s) => (s.name || '').toLowerCase().includes(studentSearchQuery.toLowerCase())).length === 0 && (
+                      <p className="text-xs text-on-surface-variant text-center py-3">Eşleşen öğrenci bulunamadı.</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -503,15 +552,30 @@ export function StudentPortal() {
             <p className="text-sm sm:text-base md:text-lg text-white/80 mb-6 sm:mb-10 font-medium">
               Bugün yapman gereken {todayTasks.length} görev var. {tasks.length > todayTasks.length && `Haftalık programında toplam ${tasks.length} görev bulunuyor.`} Haftalık programının %{progressPercent} kısmını tamamladın!
             </p>
-            <button 
-              onClick={() => {
-                setViewMode('today');
-                scrollToTasks();
-              }}
-              className="bg-white text-primary font-bold px-6 sm:px-10 py-3.5 sm:py-4 rounded-full hover:scale-105 active:scale-95 transition-all shadow-lg text-sm sm:text-base"
-            >
-              Öğrenmeye Devam Et
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button 
+                onClick={() => {
+                  setViewMode('today');
+                  setSelectedDayFilter('today');
+                  scrollToTasks();
+                }}
+                className="bg-white text-primary font-bold px-6 sm:px-8 py-3.5 rounded-full hover:scale-105 active:scale-95 transition-all shadow-lg text-sm sm:text-base flex items-center gap-2"
+              >
+                <CheckSquare className="w-4 h-4" />
+                Bugünkü Görevlerim ({todayTasks.length})
+              </button>
+              <button 
+                onClick={() => {
+                  setViewMode('weekly');
+                  setSelectedDayFilter('all');
+                  scrollToTasks();
+                }}
+                className="bg-white/20 hover:bg-white/30 text-white font-bold px-6 sm:px-8 py-3.5 rounded-full backdrop-blur-md transition-all shadow-lg text-sm sm:text-base flex items-center gap-2 border border-white/30 hover:scale-105 active:scale-95"
+              >
+                <Calendar className="w-4 h-4" />
+                Haftalık Program Tablosu ({tasks.length})
+              </button>
+            </div>
           </div>
           
           <div className="absolute top-[-20%] right-[-10%] w-96 h-96 bg-white/10 rounded-full blur-3xl" />
@@ -591,7 +655,7 @@ export function StudentPortal() {
             </AnimatePresence>
 
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
               <div className="flex flex-col">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-primary font-black text-[10px] uppercase tracking-widest">Ders & Görev Takibi</span>
@@ -601,7 +665,7 @@ export function StudentPortal() {
                   </span>
                 </div>
                 <h3 className="text-2xl sm:text-3xl font-extrabold font-manrope text-on-surface">
-                  Ödev Akışı
+                  {viewMode === 'weekly' ? 'Haftalık Program Tablosu' : 'Ödev Akışı'}
                 </h3>
               </div>
               <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
@@ -644,6 +708,84 @@ export function StudentPortal() {
                 <p className="text-[10px] font-bold text-primary uppercase">Kalan</p>
                 <p className="text-sm sm:text-lg font-extrabold text-primary">{tasks.length - completedCount}</p>
               </div>
+            </div>
+
+            {/* Primary View Mode Switcher: Günlük Akış (Bugün) vs Haftalık Program Tablosu */}
+            <div className="bg-surface-container-highest/60 p-1 rounded-2xl mb-5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('today');
+                    setSelectedDayFilter('today');
+                  }}
+                  className={cn(
+                    "flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-2",
+                    viewMode === 'today'
+                      ? "bg-white text-primary shadow-sm ring-1 ring-black/5"
+                      : "text-on-surface-variant hover:text-on-surface"
+                  )}
+                >
+                  <CheckSquare className="w-4 h-4 text-primary" />
+                  <span>Günlük Görevler</span>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.2 rounded-md font-black",
+                    viewMode === 'today' ? "bg-primary/10 text-primary" : "bg-outline-variant/20 text-on-surface-variant"
+                  )}>
+                    {todayTasks.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('weekly');
+                    setSelectedDayFilter('all');
+                  }}
+                  className={cn(
+                    "flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-2",
+                    viewMode === 'weekly'
+                      ? "bg-primary text-white shadow-md shadow-primary/25 ring-2 ring-primary/20"
+                      : "text-on-surface-variant hover:text-on-surface"
+                  )}
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>Haftalık Tablo Programı</span>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.2 rounded-md font-black",
+                    viewMode === 'weekly' ? "bg-white/20 text-white" : "bg-outline-variant/20 text-on-surface-variant"
+                  )}>
+                    {tasks.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* Sub-style Switcher for Weekly: Grid vs Table */}
+              {viewMode === 'weekly' && (
+                <div className="hidden sm:flex items-center gap-1 bg-surface-container-low p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyTableStyle('grid')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all",
+                      weeklyTableStyle === 'grid' ? "bg-white text-on-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+                    )}
+                  >
+                    <Grid className="w-3.5 h-3.5 text-primary" />
+                    <span>7 Günlük Çizelge</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyTableStyle('table')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all",
+                      weeklyTableStyle === 'table' ? "bg-white text-on-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+                    )}
+                  >
+                    <ListFilter className="w-3.5 h-3.5 text-primary" />
+                    <span>Liste Tablosu</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Day Filter Chips (Horizontal Touch Scroll on Phone) */}
@@ -713,35 +855,346 @@ export function StudentPortal() {
                 })}
               </div>
 
-              {/* Layout Switcher (Cards vs Table) */}
-              <div className="hidden sm:flex items-center gap-1 bg-surface-container-highest/50 p-1 rounded-xl self-end">
-                <button
-                  type="button"
-                  onClick={() => setDisplayLayout('cards')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all",
-                    displayLayout === 'cards' ? "bg-white text-on-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface"
-                  )}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  Kartlar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDisplayLayout('table')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all",
-                    displayLayout === 'table' ? "bg-white text-on-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface"
-                  )}
-                >
-                  <ListFilter className="w-3.5 h-3.5" />
-                  Tablo
-                </button>
-              </div>
+              {/* Layout Switcher (Cards vs Table) for daily view mode */}
+              {viewMode === 'today' && (
+                <div className="flex items-center gap-1 bg-surface-container-highest/50 p-1 rounded-xl self-end">
+                  <button
+                    type="button"
+                    onClick={() => setDisplayLayout('cards')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all",
+                      displayLayout === 'cards' ? "bg-white text-on-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+                    )}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Kartlar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisplayLayout('table')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all",
+                      displayLayout === 'table' ? "bg-white text-on-surface shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+                    )}
+                  >
+                    <ListFilter className="w-3.5 h-3.5" />
+                    <span>Tablo</span>
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Tasks Rendering */}
+            {/* Tasks Rendering based on ViewMode & Selection */}
             {(() => {
+              // --- 1. WEEKLY VIEW MODE (TABLE / TIMETABLE) ---
+              if (viewMode === 'weekly') {
+                if (tasks.length === 0) {
+                  return (
+                    <div className="text-center p-8 bg-surface-container-lowest rounded-2xl sm:rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+                        <ClipboardCheck className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-manrope font-bold text-base text-on-surface">Haftalık Program Boş</h4>
+                        <p className="text-xs text-on-surface-variant mt-1 max-w-sm mx-auto">
+                          Öğretmeniniz henüz bu hafta için görev atamamış olabilir. Buluttan yenileyerek kontrol edebilirsiniz.
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => handleSyncCloud()}
+                        disabled={isSyncing}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 transition-all shadow-md active:scale-95"
+                      >
+                        <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
+                        Buluttan Şimdi Yenile
+                      </button>
+                    </div>
+                  );
+                }
+
+                // Sub-mode: 7-Day Timetable Grid
+                if (weeklyTableStyle === 'grid') {
+                  const daysToDisplay = selectedDayFilter === 'all' 
+                    ? DAYS_TR 
+                    : selectedDayFilter === 'today'
+                    ? [DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]]
+                    : [selectedDayFilter];
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant px-1">
+                        <span className="flex items-center gap-1.5 text-primary">
+                          <Calendar className="w-4 h-4" />
+                          Haftalık 7 Günlük Çalışma Tablosu ({tasks.length} Görev)
+                        </span>
+                        <span className="text-[11px] text-on-surface-variant/70 italic hidden sm:inline">
+                          Herhangi bir göreve tıklayarak sonucunu girebilir veya videoyu izleyebilirsiniz.
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto pb-3 custom-scrollbar">
+                        <div className="min-w-[850px] grid grid-cols-7 gap-3 items-start">
+                          {daysToDisplay.map((day) => {
+                            const dayTasks = tasks.filter(t => t.day === day);
+                            const isCurrentDay = day === DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
+                            const dayCompletedCount = dayTasks.filter(t => t.completed).length;
+
+                            return (
+                              <div 
+                                key={day} 
+                                className={cn(
+                                  "flex flex-col rounded-2xl border p-2.5 min-h-[380px] transition-all",
+                                  isCurrentDay 
+                                    ? "bg-primary/[0.04] border-primary/40 ring-2 ring-primary/20 shadow-sm" 
+                                    : "bg-surface-container-lowest border-outline-variant/15 hover:border-primary/30"
+                                )}
+                              >
+                                {/* Column Day Header */}
+                                <div className={cn(
+                                  "p-2.5 rounded-xl mb-2 text-center transition-all",
+                                  isCurrentDay ? "bg-primary text-white shadow-xs" : "bg-surface-container-high/70 text-on-surface"
+                                )}>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-black uppercase tracking-wider">{day}</span>
+                                    {isCurrentDay && (
+                                      <span className="text-[8px] font-black uppercase px-1.5 py-0.2 rounded bg-white/20 text-white">
+                                        Bugün
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] font-bold opacity-85 mt-1 flex justify-between items-center">
+                                    <span>{dayTasks.length} Görev</span>
+                                    <span>{dayCompletedCount}/{dayTasks.length} Tamam</span>
+                                  </div>
+                                </div>
+
+                                {/* Task Cards in this Day Column */}
+                                <div className="space-y-2 flex-grow">
+                                  {dayTasks.length === 0 ? (
+                                    <div className="h-full flex flex-col items-center justify-center text-center py-16 px-1 text-on-surface-variant/40">
+                                      <span className="text-[11px] font-bold italic">Planlanmış görev yok</span>
+                                    </div>
+                                  ) : (
+                                    dayTasks.map((task) => (
+                                      <div
+                                        key={task.id}
+                                        onClick={() => handleTaskClick(task)}
+                                        className={cn(
+                                          "p-2.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer relative group flex flex-col justify-between gap-1.5",
+                                          task.completed 
+                                            ? "bg-tertiary/[0.05] border-tertiary/25 text-on-surface/50" 
+                                            : "bg-surface-container-low border-outline-variant/15 hover:border-primary hover:shadow-xs"
+                                        )}
+                                      >
+                                        <div>
+                                          {/* Subject & Type Badges */}
+                                          <div className="flex items-center justify-between gap-1 mb-1">
+                                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary truncate max-w-[85px]">
+                                              {task.subject || 'Ders'}
+                                            </span>
+                                            <span className={cn(
+                                              "text-[8px] font-black px-1.5 py-0.5 rounded uppercase shrink-0",
+                                              task.type === 'video' ? "bg-red-50 text-red-600" :
+                                              task.type === 'test' ? "bg-indigo-50 text-indigo-700" :
+                                              task.type === 'question' ? "bg-amber-50 text-amber-700" :
+                                              task.type === 'book' ? "bg-emerald-50 text-emerald-700" : "bg-purple-50 text-purple-700"
+                                            )}>
+                                              {task.type === 'video' ? 'Video' : 
+                                               task.type === 'test' ? 'Test' :
+                                               task.type === 'question' ? 'Soru' : 
+                                               task.type === 'book' ? 'Kitap' : 'Okuma'}
+                                            </span>
+                                          </div>
+
+                                          {/* Task Title */}
+                                          <p className={cn(
+                                            "font-bold leading-tight line-clamp-2 text-xs",
+                                            task.completed ? "line-through text-on-surface/40" : "text-on-surface"
+                                          )}>
+                                            {task.title}
+                                          </p>
+
+                                          {task.amount && (
+                                            <p className="text-[10px] font-semibold text-on-surface-variant mt-1">
+                                              Hedef: {task.amount}
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        {/* Footer Actions: Checkbox & Result / Video Button */}
+                                        <div className="flex items-center justify-between pt-1.5 border-t border-outline-variant/10 mt-1">
+                                          {task.type === 'video' ? (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                openVideo(task);
+                                              }}
+                                              className="inline-flex items-center gap-1 text-[10px] font-black text-red-600 hover:text-red-700"
+                                            >
+                                              <Play className="w-3 h-3 fill-current" />
+                                              <span>Videoyu İzle</span>
+                                            </button>
+                                          ) : (task.completed && (task.type === 'question' || task.type === 'test')) ? (
+                                            <span className="text-[9px] font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded">
+                                              🎯 {task.correct ?? 0}D {task.incorrect ?? 0}Y {task.net !== undefined ? `• ${task.net} Net` : ''}
+                                            </span>
+                                          ) : (!task.completed && (task.type === 'question' || task.type === 'test')) ? (
+                                            <span className="text-[9px] font-bold text-primary hover:underline">
+                                              Sonuç Gir
+                                            </span>
+                                          ) : (
+                                            <span />
+                                          )}
+
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              toggleTask(task.id);
+                                            }}
+                                            className={cn(
+                                              "w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0 active:scale-95",
+                                              task.completed 
+                                                ? "bg-tertiary border-tertiary text-white shadow-2xs" 
+                                                : "border-outline-variant/60 hover:border-primary text-transparent"
+                                            )}
+                                            aria-label="Tamamla"
+                                          >
+                                            <Check className="w-3 h-3 text-white" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Sub-mode: Structured List Table
+                const filteredListTasks = selectedDayFilter === 'all' 
+                  ? [...tasks].sort((a, b) => DAYS_TR.indexOf(a.day) - DAYS_TR.indexOf(b.day))
+                  : selectedDayFilter === 'today'
+                  ? tasks.filter(t => t.day === DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1])
+                  : tasks.filter(t => t.day === selectedDayFilter);
+
+                return (
+                  <div className="overflow-x-auto rounded-2xl border border-outline-variant/10 shadow-sm bg-surface-container-lowest">
+                    <table className="w-full text-left border-collapse min-w-[600px]">
+                      <thead>
+                        <tr className="bg-surface-container-high/40 text-on-surface-variant font-black text-[10px] uppercase tracking-widest border-b border-outline-variant/10">
+                          <th className="px-5 py-3.5">Gün</th>
+                          <th className="px-5 py-3.5">Ders</th>
+                          <th className="px-5 py-3.5">Görev / Ödev Detayı</th>
+                          <th className="px-5 py-3.5">Tip / Miktar</th>
+                          <th className="px-5 py-3.5 text-center">Durum / İzle</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant/5">
+                        {filteredListTasks.map((task) => (
+                          <tr 
+                            key={task.id} 
+                            onClick={() => handleTaskClick(task)}
+                            className={cn(
+                              "hover:bg-primary/[0.03] transition-colors cursor-pointer",
+                              task.completed ? "bg-tertiary/[0.02]" : ""
+                            )}
+                          >
+                            <td className="px-5 py-3.5 whitespace-nowrap">
+                              <span className={cn(
+                                "text-[10px] font-black uppercase px-2.5 py-1 rounded-full",
+                                task.day === DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]
+                                  ? "bg-primary text-white shadow-sm"
+                                  : "bg-surface-container-high text-on-surface-variant"
+                              )}>
+                                {task.day}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 whitespace-nowrap font-bold text-xs sm:text-sm text-on-surface">
+                              {task.subject || 'Ders'}
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <div className="space-y-1">
+                                <p className={cn(
+                                  "font-semibold text-xs sm:text-sm max-w-sm",
+                                  task.completed ? "text-on-surface/60 line-through" : "text-on-surface"
+                                )}>
+                                  {task.title}
+                                </p>
+                                {task.completed && (task.type === 'question' || task.type === 'test') && (
+                                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-black">
+                                    <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y</span>
+                                    {task.net !== undefined && <span className="text-primary font-black">• {task.net} Net</span>}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3.5 whitespace-nowrap">
+                              <span className={cn(
+                                "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase inline-flex items-center gap-1",
+                                task.type === 'video' ? "bg-red-50 text-red-600" : 
+                                task.type === 'test' ? "bg-indigo-50 text-indigo-700" :
+                                task.type === 'question' ? "bg-amber-50 text-amber-700" : 
+                                task.type === 'book' ? "bg-emerald-50 text-emerald-700" :
+                                "bg-tertiary/10 text-tertiary"
+                              )}>
+                                {task.type === 'test' && <ClipboardCheck className="w-3 h-3" />}
+                                {task.type === 'book' && <BookOpen className="w-3 h-3" />}
+                                {task.type === 'question' && <Target className="w-3 h-3" />}
+                                {task.type === 'video' ? 'Video' : 
+                                 task.type === 'test' ? `Test: ${task.amount || 'Ödev'}` :
+                                 task.type === 'question' ? `${task.amount || 'Soru'}` : 
+                                 task.type === 'book' ? `Kitap: ${task.amount || 'Okuma'}` :
+                                 'Okuma'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 text-center">
+                              {task.type === 'video' ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openVideo(task);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition-all shadow-xs"
+                                >
+                                  <Play className="w-3 h-3 fill-current" />
+                                  <span>İzle</span>
+                                </button>
+                              ) : (
+                                <button 
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleTaskClick(task);
+                                  }}
+                                  className="inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-container-high transition-colors"
+                                >
+                                  <div className={cn(
+                                    "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
+                                    task.completed ? "bg-tertiary border-tertiary text-white shadow-xs" : "border-outline hover:border-primary"
+                                  )}>
+                                    {task.completed && <CheckSquare className="w-4 h-4" />}
+                                  </div>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              }
+
+              // --- 2. DAILY VIEW MODE (GÜNLÜK AKIŞ) ---
               const currentFilteredTasks = (() => {
                 if (selectedDayFilter === 'all') {
                   return [...tasks].sort((a, b) => DAYS_TR.indexOf(a.day) - DAYS_TR.indexOf(b.day));
@@ -755,7 +1208,6 @@ export function StudentPortal() {
               })();
 
               if (currentFilteredTasks.length === 0) {
-                // Empty state logic
                 if (selectedDayFilter === 'today' && tasks.length > 0) {
                   return (
                     <div className="text-center p-6 sm:p-8 bg-surface-container-lowest rounded-2xl sm:rounded-3xl border border-primary/20 shadow-sm space-y-4">
@@ -770,11 +1222,14 @@ export function StudentPortal() {
                       </div>
                       <button 
                         type="button"
-                        onClick={() => setSelectedDayFilter('all')}
+                        onClick={() => {
+                          setViewMode('weekly');
+                          setSelectedDayFilter('all');
+                        }}
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 transition-all shadow-md active:scale-95"
                       >
-                        <BookOpen className="w-4 h-4" />
-                        Tüm Haftalık Ödevlerimi Gör ({tasks.length})
+                        <Calendar className="w-4 h-4" />
+                        Haftalık Programı Tablo Olarak Gör ({tasks.length})
                       </button>
                     </div>
                   );
@@ -792,11 +1247,14 @@ export function StudentPortal() {
                       </div>
                       <button 
                         type="button"
-                        onClick={() => setSelectedDayFilter('all')}
+                        onClick={() => {
+                          setViewMode('weekly');
+                          setSelectedDayFilter('all');
+                        }}
                         className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high text-on-surface text-xs font-bold hover:bg-surface-container-highest transition-all"
                       >
-                        <BookOpen className="w-3.5 h-3.5" />
-                        Tüm Haftayı Göster ({tasks.length})
+                        <Calendar className="w-3.5 h-3.5" />
+                        Haftalık Tabloyu Aç ({tasks.length})
                       </button>
                     </div>
                   );
@@ -826,7 +1284,7 @@ export function StudentPortal() {
                 );
               }
 
-              // When tasks exist:
+              // Daily view - Table Layout
               if (displayLayout === 'table') {
                 return (
                   <div className="overflow-x-auto rounded-2xl border border-outline-variant/10 shadow-sm bg-surface-container-lowest">
@@ -860,7 +1318,7 @@ export function StudentPortal() {
                                 {task.day}
                               </span>
                             </td>
-                            <td className="px-5 py-3.5 whitespace-nowrap font-bold text-xs sm:text-sm text-on-surface">{task.subject}</td>
+                            <td className="px-5 py-3.5 whitespace-nowrap font-bold text-xs sm:text-sm text-on-surface">{task.subject || 'Ders'}</td>
                             <td className="px-5 py-3.5">
                               <div className="space-y-1">
                                 <p className={cn(
@@ -897,21 +1355,35 @@ export function StudentPortal() {
                               </span>
                             </td>
                             <td className="px-5 py-3.5 text-center">
-                              <button 
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleTaskClick(task);
-                                }}
-                                className="inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-container-high transition-colors"
-                              >
-                                <div className={cn(
-                                  "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
-                                  task.completed ? "bg-tertiary border-tertiary text-white shadow-xs" : "border-outline hover:border-primary"
-                                )}>
-                                  {task.completed && <CheckSquare className="w-4 h-4" />}
-                                </div>
-                              </button>
+                              {task.type === 'video' ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openVideo(task);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition-all shadow-xs"
+                                >
+                                  <Play className="w-3 h-3 fill-current" />
+                                  <span>İzle</span>
+                                </button>
+                              ) : (
+                                <button 
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleTaskClick(task);
+                                  }}
+                                  className="inline-flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-container-high transition-colors"
+                                >
+                                  <div className={cn(
+                                    "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
+                                    task.completed ? "bg-tertiary border-tertiary text-white shadow-xs" : "border-outline hover:border-primary"
+                                  )}>
+                                    {task.completed && <CheckSquare className="w-4 h-4" />}
+                                  </div>
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -921,7 +1393,7 @@ export function StudentPortal() {
                 );
               }
 
-              // Card Layout (Optimized for Mobile Phone & Touch Screen)
+              // Daily view - Card Layout
               return (
                 <div className="space-y-3 max-h-[650px] overflow-y-auto pr-1 custom-scrollbar">
                   {currentFilteredTasks.map((task) => (
@@ -967,7 +1439,7 @@ export function StudentPortal() {
                             </span>
                           )}
                           <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-primary/10 text-primary">
-                            {task.subject}
+                            {task.subject || 'Ders'}
                           </span>
                           <span className={cn(
                             "text-[9px] font-bold px-2 py-0.5 rounded-md uppercase inline-flex items-center gap-1",
@@ -1012,9 +1484,18 @@ export function StudentPortal() {
 
                       {/* Video Button */}
                       {task.type === 'video' && task.videoUrl && (
-                        <div className="shrink-0 self-center">
-                          <Youtube className="w-6 h-6 text-red-500 opacity-80 group-hover:opacity-100 transition-opacity" />
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openVideo(task);
+                          }}
+                          className="shrink-0 self-center p-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors flex items-center gap-1 text-xs font-bold"
+                          title="Videoyu Aç"
+                        >
+                          <Youtube className="w-5 h-5 text-red-600" />
+                          <span className="hidden sm:inline">İzle</span>
+                        </button>
                       )}
                     </div>
                   ))}
@@ -1023,45 +1504,224 @@ export function StudentPortal() {
             })()}
           </div>
 
-          {/* Video Lesson Card */}
-          {todayTasks.find(t => t.type === 'video') && (
-            <div className="bg-surface-container-lowest rounded-[2.5rem] overflow-hidden shadow-ambient border border-outline-variant/10">
-              <div className="p-10">
-                <div className="flex justify-between items-start mb-8">
+          {/* Video Hub Section (Günün ve Haftanın Videoları - Birden Fazla Video Desteği) */}
+          {(() => {
+            const dayIndex = new Date().getDay();
+            const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+            
+            // Eğer bir gün filtresi seçilmişse o günün videolarını, değilse bugünün videolarını; bugünde video yoksa haftanın videolarını göster
+            const targetDay = (selectedDayFilter !== 'all' && selectedDayFilter !== 'today')
+              ? selectedDayFilter 
+              : todayName;
+            
+            const currentDayVideos = tasks.filter(t => t.day === targetDay && t.type === 'video' && t.videoUrl);
+            const allAssignedVideos = tasks.filter(t => t.type === 'video' && t.videoUrl);
+            
+            const displayVideos = currentDayVideos.length > 0 ? currentDayVideos : allAssignedVideos;
+            
+            if (displayVideos.length === 0) return null;
+
+            const safeIndex = selectedVideoIndex < displayVideos.length ? selectedVideoIndex : 0;
+            const currentVideo = displayVideos[safeIndex] || displayVideos[0];
+            const isTodayVideos = currentDayVideos.length > 0;
+            const completedCount = displayVideos.filter(v => v.completed).length;
+
+            return (
+              <div className="bg-surface-container-lowest rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-ambient border border-outline-variant/15 p-6 sm:p-8 space-y-6">
+                {/* Video Hub Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-outline-variant/10 pb-5">
                   <div>
-                    <span className="text-tertiary font-bold text-xs uppercase tracking-widest bg-tertiary/10 px-4 py-1.5 rounded-full">Bugünün Videosu</span>
-                    <h2 className="text-3xl font-bold mt-4 font-manrope">{todayTasks.find(t => t.type === 'video')?.title}</h2>
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                      <span className="text-tertiary font-black text-xs uppercase tracking-widest bg-tertiary/10 px-3.5 py-1 rounded-full">
+                        {isTodayVideos ? (targetDay === todayName ? 'Bugünün Videoları' : `${targetDay} Günü Videoları`) : 'Haftalık Video Dersleri'}
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black bg-red-100 text-red-700">
+                        <Youtube className="w-3.5 h-3.5" />
+                        {displayVideos.length} Video Atandı
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                        <Check className="w-3 h-3" />
+                        {completedCount} / {displayVideos.length} İzlendi
+                      </span>
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black font-manrope text-on-surface">
+                      {currentVideo.title}
+                    </h2>
+                    <p className="text-xs font-bold text-on-surface-variant mt-0.5">
+                      {currentVideo.subject} • {currentVideo.day} {currentVideo.amount ? `• Süre: ${currentVideo.amount}` : ''}
+                    </p>
                   </div>
-                  <div className="p-3 rounded-full bg-primary/10 text-primary">
-                    <Play className="w-6 h-6 fill-current" />
-                  </div>
+
+                  {/* Previous / Next Controls if multiple videos */}
+                  {displayVideos.length > 1 && (
+                    <div className="flex items-center gap-2 self-start sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedVideoIndex(prev => Math.max(0, prev - 1))}
+                        disabled={safeIndex === 0}
+                        className="p-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest disabled:opacity-40 text-on-surface transition-all"
+                        title="Önceki Video"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <span className="text-xs font-black text-on-surface px-2">
+                        {safeIndex + 1} / {displayVideos.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedVideoIndex(prev => Math.min(displayVideos.length - 1, prev + 1))}
+                        disabled={safeIndex === displayVideos.length - 1}
+                        className="p-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest disabled:opacity-40 text-on-surface transition-all"
+                        title="Sonraki Video"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                
+
+                {/* Main Video Player Preview */}
                 <div 
-                  onClick={() => {
-                    const videoUrl = todayTasks.find(t => t.type === 'video')?.videoUrl;
-                    if (videoUrl) {
-                      setActiveVideo(getYoutubeId(videoUrl));
-                      setShowVideoModal(true);
-                    }
-                  }}
-                  className="aspect-video w-full rounded-3xl overflow-hidden bg-black relative group shadow-lg cursor-pointer"
+                  onClick={() => openVideo(currentVideo)}
+                  className="aspect-video w-full rounded-2xl sm:rounded-3xl overflow-hidden bg-black relative group shadow-lg cursor-pointer"
                 >
                   <img 
-                    src={`https://img.youtube.com/vi/${getYoutubeId(todayTasks.find(t => t.type === 'video')?.videoUrl || '')}/maxresdefault.jpg`} 
-                    alt="Lesson" 
-                    className="w-full h-full object-cover opacity-70 group-hover:scale-105 transition-transform duration-1000"
+                    src={`https://img.youtube.com/vi/${getYoutubeId(currentVideo.videoUrl || '')}/maxresdefault.jpg`} 
+                    alt={currentVideo.title} 
+                    className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-700"
                     referrerPolicy="no-referrer"
+                    onError={(e: any) => {
+                      // Fallback thumbnail if maxres is unavailable
+                      e.target.src = `https://img.youtube.com/vi/${getYoutubeId(currentVideo.videoUrl || '')}/mqdefault.jpg`;
+                    }}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-all">
-                    <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center ring-2 ring-white/50 shadow-2xl">
-                      <Play className="w-8 h-8 text-white fill-current" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition-all">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/25 backdrop-blur-md flex items-center justify-center ring-4 ring-white/60 shadow-2xl group-hover:scale-110 transition-transform">
+                      <Play className="w-8 h-8 text-white fill-current translate-x-0.5" />
                     </div>
                   </div>
+                  
+                  {/* Floating Video Info Bar */}
+                  <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-between text-white">
+                    <span className="text-xs font-black truncate max-w-sm">
+                      {currentVideo.title}
+                    </span>
+                    <span className="text-[11px] font-bold bg-red-600 px-2.5 py-0.5 rounded-full shrink-0">
+                      ▶️ Şimdi İzle
+                    </span>
+                  </div>
                 </div>
+
+                {/* Primary Actions for the active video */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openVideo(currentVideo)}
+                      className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-md shadow-red-600/20 active:scale-95 transition-all"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      <span>Tam Ekran Oynat</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleTask(currentVideo.id)}
+                      className={cn(
+                        "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 active:scale-95",
+                        currentVideo.completed
+                          ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                          : "bg-surface-container-high hover:bg-surface-container-highest text-on-surface"
+                      )}
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>{currentVideo.completed ? 'İzlendi (Geri Al)' : 'İzlendi Olarak İşaretle'}</span>
+                    </button>
+                  </div>
+
+                  {displayVideos.length > 1 && (
+                    <span className="text-xs font-bold text-on-surface-variant">
+                      Seçili: {safeIndex + 1} / {displayVideos.length} Video
+                    </span>
+                  )}
+                </div>
+
+                {/* Playlist of ALL Videos assigned for this day (Birden Fazla Video Oynatma Listesi) */}
+                {displayVideos.length > 1 && (
+                  <div className="space-y-3 pt-3 border-t border-outline-variant/10">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase tracking-wider text-on-surface flex items-center gap-1.5">
+                        <Youtube className="w-4 h-4 text-red-600" />
+                        Günün Diğer Videoları ({displayVideos.length} Video)
+                      </span>
+                      <span className="text-[11px] font-bold text-on-surface-variant">
+                        İzlemek istediğiniz videoya tıklayın
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {displayVideos.map((vid, idx) => (
+                        <div
+                          key={vid.id}
+                          onClick={() => {
+                            setSelectedVideoIndex(idx);
+                            openVideo(vid);
+                          }}
+                          className={cn(
+                            "p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-2 text-left group",
+                            safeIndex === idx
+                              ? "bg-primary/5 border-primary shadow-sm ring-2 ring-primary/20"
+                              : "bg-surface-container-low border-outline-variant/15 hover:border-primary/40 hover:bg-surface-container-high"
+                          )}
+                        >
+                          <div className="flex items-start gap-2.5">
+                            {/* Mini Thumbnail */}
+                            <div className="w-20 h-14 rounded-xl overflow-hidden bg-black shrink-0 relative">
+                              <img
+                                src={`https://img.youtube.com/vi/${getYoutubeId(vid.videoUrl || '')}/mqdefault.jpg`}
+                                alt={vid.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                <Play className="w-4 h-4 text-white fill-current" />
+                              </div>
+                            </div>
+
+                            <div className="flex-grow min-w-0">
+                              <div className="flex items-center gap-1 mb-0.5">
+                                <span className="text-[9px] font-black uppercase text-primary bg-primary/10 px-1.5 py-0.2 rounded">
+                                  {vid.subject || 'Ders'}
+                                </span>
+                                <span className="text-[9px] font-bold text-on-surface-variant">
+                                  Video {idx + 1}
+                                </span>
+                              </div>
+                              <p className="font-extrabold text-xs text-on-surface line-clamp-2 leading-tight">
+                                {vid.title}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 border-t border-outline-variant/10 text-[10px]">
+                            <span className={cn(
+                              "font-black flex items-center gap-1",
+                              vid.completed ? "text-emerald-700" : "text-on-surface-variant"
+                            )}>
+                              {vid.completed ? '✅ İzlendi' : '⭕ İzlenmedi'}
+                            </span>
+                            <span className="font-black text-red-600 group-hover:underline flex items-center gap-1">
+                              <span>İzle</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Motivation Card - Yaş Grubuna ve Sınıf Seviyesine Özel Günlük Değişen Motivasyon */}
           {(() => {
@@ -1370,26 +2030,68 @@ export function StudentPortal() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md"
           >
             <motion.div 
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.9 }}
-              className="relative w-full max-w-5xl aspect-video rounded-3xl overflow-hidden shadow-2xl"
+              className="relative w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl bg-surface-container-lowest flex flex-col"
             >
-              <button 
-                onClick={() => setShowVideoModal(false)}
-                className="absolute top-6 right-6 z-10 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-md transition-all"
-              >
-                <AlertTriangle className="w-6 h-6 rotate-45" />
-              </button>
-              <iframe 
-                src={`https://www.youtube.com/embed/${activeVideo}?autoplay=1`}
-                className="w-full h-full border-none"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+              <div className="p-4 sm:p-5 border-b border-outline-variant/10 flex items-center justify-between bg-surface-container-low">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                    <Youtube className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm sm:text-base font-extrabold text-on-surface line-clamp-1">
+                      {activeVideoTask?.title || 'Ders Videosu'}
+                    </h4>
+                    <p className="text-[11px] font-bold text-on-surface-variant">
+                      {activeVideoTask?.subject || 'Ders'} {activeVideoTask?.amount ? `• Süre: ${activeVideoTask.amount}` : ''} {activeVideoTask?.day ? `• ${activeVideoTask.day}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowVideoModal(false)}
+                  className="p-2 hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="aspect-video w-full bg-black">
+                <iframe 
+                  src={`https://www.youtube.com/embed/${activeVideo}?autoplay=1`}
+                  className="w-full h-full border-none"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+
+              {activeVideoTask && (
+                <div className="p-4 bg-surface-container-lowest border-t border-outline-variant/10 flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-xs font-bold text-on-surface-variant">
+                    {activeVideoTask.completed ? '✅ Bu video izlendi olarak işaretlendi.' : 'Videoyu izledikten sonra tek tıkla tamamlandı olarak işaretleyebilirsiniz.'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleTask(activeVideoTask.id);
+                      setActiveVideoTask(prev => prev ? { ...prev, completed: !prev.completed } : null);
+                    }}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 active:scale-95",
+                      activeVideoTask.completed
+                        ? "bg-tertiary/10 text-tertiary hover:bg-tertiary/20"
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
+                    )}
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>{activeVideoTask.completed ? 'İzlendi (Geri Al)' : 'Videoyu İzlendi Olarak İşaretle'}</span>
+                  </button>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
