@@ -171,14 +171,22 @@ export function Analytics() {
             <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
               <Target className="w-6 h-6" />
             </div>
-            <span className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${trend === 'up' ? 'bg-tertiary/10 text-tertiary' : 'bg-secondary/10 text-secondary'}`}>
-              {trend === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {Math.abs(latestScore - previousScore).toFixed(1)} Net
-            </span>
+            {trialResults.length > 1 ? (
+              <span className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${trend === 'up' ? 'bg-tertiary/10 text-tertiary' : 'bg-secondary/10 text-secondary'}`}>
+                {trend === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                {Math.abs(latestScore - previousScore).toFixed(1)} Net
+              </span>
+            ) : (
+              <span className="text-xs font-bold text-on-surface-variant bg-surface-container-high px-2.5 py-1 rounded-full">
+                {trialResults.length === 1 ? 'İlk Sınav' : 'Kayıt Yok'}
+              </span>
+            )}
           </div>
           <div>
             <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Son Deneme Neti</p>
-            <h4 className="text-3xl font-black text-on-surface">{latestScore.toFixed(2)}</h4>
+            <h4 className="text-3xl font-black text-on-surface">
+              {trialResults.length > 0 ? latestScore.toFixed(2) : '-'}
+            </h4>
           </div>
         </div>
 
@@ -188,8 +196,8 @@ export function Analytics() {
           </div>
           <div>
             <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">En Çok Hata Yapılan Konu</p>
-            <h4 className="text-3xl font-black text-on-surface">
-              {sortedErrors[0]?.topic || '-'}
+            <h4 className="text-2xl font-black text-on-surface truncate">
+              {sortedErrors[0]?.topic || 'Hata Yok'}
             </h4>
           </div>
         </div>
@@ -214,25 +222,32 @@ export function Analytics() {
               Net Gelişim Grafiği
             </h4>
           </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trialResults}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600 }} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="score" 
-                  stroke="#6366f1" 
-                  strokeWidth={4} 
-                  dot={{ r: 6, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }}
-                  activeDot={{ r: 8 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="h-64 w-full flex items-center justify-center">
+            {trialResults.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trialResults}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600 }} />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="score" 
+                    stroke="#6366f1" 
+                    strokeWidth={4} 
+                    dot={{ r: 6, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }}
+                    activeDot={{ r: 8 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center space-y-2">
+                <TrendingUp className="w-10 h-10 text-outline-variant mx-auto opacity-20" />
+                <p className="text-xs font-bold text-on-surface-variant">Henüz kayıtlı deneme sınavı sonucu bulunmuyor.</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -244,22 +259,29 @@ export function Analytics() {
               Hatalı Konu Dağılımı
             </h4>
           </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={sortedErrors.slice(0, 6)}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="topic" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 600 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600 }} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-                <Bar dataKey="count" radius={[8, 8, 0, 0]}>
-                  {sortedErrors.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="h-64 w-full flex items-center justify-center">
+            {sortedErrors.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={sortedErrors.slice(0, 6)}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="topic" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 600 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600 }} />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+                    {sortedErrors.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center space-y-2">
+                <CheckCircle2 className="w-10 h-10 text-tertiary mx-auto opacity-30" />
+                <p className="text-xs font-bold text-on-surface-variant">Harika! Henüz kaydedilmiş konu hatası yok.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

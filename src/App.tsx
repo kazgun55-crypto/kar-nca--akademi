@@ -13,6 +13,7 @@ import { AssignmentFlow } from './pages/AssignmentFlow';
 import { Analytics } from './pages/Analytics';
 import { EnterTrial } from './pages/EnterTrial';
 import { MyStudents } from './pages/MyStudents';
+import { Library } from './pages/Library';
 import { initGlobalCloudSync } from './lib/firestoreService';
 
 function DirectStudentRedirect() {
@@ -72,6 +73,7 @@ export default function App() {
                 <Route path="/students/new" element={<AddStudent />} />
                 <Route path="/my-students" element={<MyStudents />} />
                 <Route path="/portal" element={<StudentPortal />} />
+                <Route path="/library" element={<Library />} />
                 <Route path="/assignments" element={<AssignmentFlow />} />
                 <Route path="/enter-trial" element={<EnterTrial />} />
                 <Route path="/analytics" element={<Analytics />} />

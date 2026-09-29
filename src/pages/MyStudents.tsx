@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { parseVideoUrl } from '../lib/videoUtils';
-import { subscribeStudents, updateStudentTeacherId, deleteStudentFromFirestore, saveStudentTasks, getStudentTasks, subscribeStudentTasks } from '../lib/firestoreService';
+import { 
+  subscribeStudents, 
+  updateStudentTeacherId, 
+  deleteStudentFromFirestore, 
+  saveStudentTasks, 
+  getStudentTasks, 
+  subscribeStudentTasks,
+  StudentBook,
+  subscribeStudentBooks
+} from '../lib/firestoreService';
 import { 
   Users, 
   Search, 
@@ -75,8 +84,14 @@ export function MyStudents() {
   const [allDirectoryStudents, setAllDirectoryStudents] = useState<any[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [view, setView] = useState<'list' | 'details'>('list');
-  const [activeTab, setActiveTab] = useState<'program' | 'analytics'>('program');
+  const [activeTab, setActiveTab] = useState<'program' | 'analytics' | 'books'>('program');
   const [selectedClass, setSelectedClass] = useState<string>('all');
+  const [studentBooks, setStudentBooks] = useState<StudentBook[]>([]);
+
+  const userRole = localStorage.getItem('userRole') || 'teacher';
+  const currentUserId = localStorage.getItem('currentUserId') || '';
+  const currentUserName = (localStorage.getItem('currentUserName') || '').toLowerCase();
+  const currentUserUsername = (localStorage.getItem('currentUserUsername') || '').toLowerCase();
   
   const [studentScope, setStudentScope] = useState<'my' | 'all'>('my');
   
@@ -101,7 +116,8 @@ export function MyStudents() {
   const yksDays = calculateCountdownDays('YKS');
   const maarifDays = calculateMaarifExamCountdown();
   
-  const activeStudentList = studentScope === 'all' ? allDirectoryStudents : students;
+  // Teachers ONLY ever see their own students; admin can toggle if desired
+  const activeStudentList = (userRole === 'admin' && studentScope === 'all') ? allDirectoryStudents : students;
   const uniqueClasses = Array.from(new Set(activeStudentList.map(s => s.grade).filter(Boolean)));
   
   const filteredStudents = selectedClass === 'all'
@@ -177,19 +193,41 @@ export function MyStudents() {
   useEffect(() => {
     const unsub = subscribeStudents((allList) => {
       setAllDirectoryStudents(allList);
-      const teacherId = localStorage.getItem('currentUserId') || '1';
-      const myStudents = allList.filter((s: any) => s.teacherId === teacherId);
-      setStudents(myStudents);
-      // If teacher has no assigned students, automatically show all students
-      if (myStudents.length === 0 && allList.length > 0) {
-        setStudentScope('all');
+      
+      const teacherRole = localStorage.getItem('userRole') || 'teacher';
+      const teacherId = localStorage.getItem('currentUserId') || '';
+      const teacherUsername = (localStorage.getItem('currentUserUsername') || '').toLowerCase();
+      const teacherName = (localStorage.getItem('currentUserName') || '').toLowerCase();
+
+      if (teacherRole === 'teacher') {
+        const myStudents = allList.filter((s: any) => {
+          if (!s.teacherId) return false;
+          const sTid = String(s.teacherId).trim();
+          if (sTid === teacherId) return true;
+          if (teacherUsername && sTid.toLowerCase() === teacherUsername) return true;
+          if (teacherId === 'teacher_gokce' || teacherUsername === 'gokce' || teacherName.includes('gökçe') || teacherName.includes('gokce')) {
+            return sTid === 'teacher_gokce' || sTid === '2';
+          }
+          if (teacherId === '1' || teacherUsername === 'ahmet_y' || teacherName.includes('ahmet')) {
+            return sTid === '1' || sTid === 'ahmet_y';
+          }
+          if (teacherId === 'teacher_ayse' || teacherUsername === 'ayse_d' || teacherName.includes('ayşe') || teacherName.includes('ayse')) {
+            return sTid === 'teacher_ayse' || sTid === 'ayse_d';
+          }
+          return false;
+        });
+        setStudents(myStudents);
+        setStudentScope('my');
+      } else {
+        // Administrator view
+        setStudents(allList);
       }
     });
 
     return () => unsub();
   }, []);
 
-  // Real-time synchronization of selected student's tasks
+  // Real-time synchronization of selected student's tasks & read books
   useEffect(() => {
     if (!selectedStudent) return;
     const unsubTasks = subscribeStudentTasks(selectedStudent.id, (fresh) => {
@@ -197,7 +235,15 @@ export function MyStudents() {
         setStudentTasks(fresh);
       }
     });
-    return () => unsubTasks();
+
+    const unsubBooks = subscribeStudentBooks(selectedStudent.id, (books) => {
+      setStudentBooks(books);
+    });
+
+    return () => {
+      unsubTasks();
+      unsubBooks();
+    };
   }, [selectedStudent]);
 
   const copyStudentLink = (studentId: string, studentName: string) => {
@@ -242,36 +288,45 @@ export function MyStudents() {
     setSelectedStudent(student);
     setView('details');
     
-    // Load real data for this student if exists, else mock
+    // Load real data for this student if exists
     const savedTrials = localStorage.getItem(`trial_results_${student.id}`);
+    const savedDetailedTrials = localStorage.getItem(`trial_results_detailed_${student.id}`);
     const savedErrors = localStorage.getItem(`topic_errors_${student.id}`);
     const savedTasks = localStorage.getItem(`tasks_${student.id}`);
 
-    if (savedTrials) setStudentTrials(JSON.parse(savedTrials));
-    else if (['1', '2', '3'].includes(student.id)) setStudentTrials([
-      { date: '01.04', score: 65, avg: 60 }, 
-      { date: '08.04', score: 72, avg: 62 },
-      { date: '15.04', score: 75, avg: 65 },
-      { date: '22.04', score: 82, avg: 68 },
-      { date: '29.04', score: 85.5, avg: 70 }
-    ]);
-    else setStudentTrials([]);
+    let parsedTrials: any[] = [];
+    if (savedTrials) {
+      try { parsedTrials = JSON.parse(savedTrials); } catch {}
+    } else if (savedDetailedTrials) {
+      try {
+        const detailed = JSON.parse(savedDetailedTrials);
+        parsedTrials = detailed.map((t: any) => ({
+          id: t.id,
+          date: t.date,
+          score: t.totalNet,
+          avg: 70
+        }));
+      } catch {}
+    }
+    setStudentTrials(parsedTrials);
 
-    if (savedErrors) setStudentErrors(JSON.parse(savedErrors));
-    else if (['1', '2', '3'].includes(student.id)) setStudentErrors([
-      { topic: 'Türev', count: 5 },
-      { topic: 'İntegral', count: 3 },
-      { topic: 'Trigonometri', count: 4 },
-      { topic: 'Polinomlar', count: 2 },
-      { topic: 'Limit', count: 1 }
-    ]);
-    else setStudentErrors([]);
+    let parsedErrors: any[] = [];
+    if (savedErrors) {
+      try { parsedErrors = JSON.parse(savedErrors); } catch {}
+    }
+    setStudentErrors(parsedErrors);
 
-    if (savedTasks) setStudentTasks(JSON.parse(savedTasks));
-    else if (student.tasks && Array.isArray(student.tasks)) {
+    let currentTaskList: any[] = [];
+    if (savedTasks) {
+      try { currentTaskList = JSON.parse(savedTasks); } catch {}
+      setStudentTasks(currentTaskList);
+    } else if (student.tasks && Array.isArray(student.tasks)) {
+      currentTaskList = student.tasks;
       setStudentTasks(student.tasks);
       localStorage.setItem(`tasks_${student.id}`, JSON.stringify(student.tasks));
-    } else setStudentTasks([]);
+    } else {
+      setStudentTasks([]);
+    }
 
     // Trigger instant cloud fetch for student tasks to ensure fresh sync
     getStudentTasks(student.id).then(tasks => {
@@ -282,61 +337,57 @@ export function MyStudents() {
     if (savedArchives) setArchivedPrograms(JSON.parse(savedArchives));
     else setArchivedPrograms([]);
 
-    // Subject performance
-    const savedDetailedTrials = localStorage.getItem(`trial_results_detailed_${student.id}`);
+    // Subject performance from real detailed trials or real task completion
     if (savedDetailedTrials) {
-      const detailedTrials = JSON.parse(savedDetailedTrials);
-      const subjectTotals: { [key: string]: { correct: number, count: number } } = {};
-      
-      detailedTrials.forEach((trial: any) => {
-        Object.entries(trial.results).forEach(([subject, data]: [string, any]) => {
-          if (!subjectTotals[subject]) subjectTotals[subject] = { correct: 0, count: 0 };
-          subjectTotals[subject].correct += data.correct;
-          subjectTotals[subject].count += 1;
+      try {
+        const detailedTrials = JSON.parse(savedDetailedTrials);
+        const subjectTotals: { [key: string]: { correct: number, count: number } } = {};
+        
+        detailedTrials.forEach((trial: any) => {
+          Object.entries(trial.results || {}).forEach(([subject, data]: [string, any]) => {
+            if (!subjectTotals[subject]) subjectTotals[subject] = { correct: 0, count: 0 };
+            subjectTotals[subject].correct += (data.correct || 0);
+            subjectTotals[subject].count += 1;
+          });
         });
-      });
 
-      const performance = Object.entries(subjectTotals).map(([subject, data]) => ({
-        subject,
-        A: Math.round((data.correct / (data.count * 20)) * 100), // Assuming 20 questions per subject avg
-        fullMark: 100
-      }));
+        const performance = Object.entries(subjectTotals).map(([subject, data]) => ({
+          subject,
+          A: Math.min(100, Math.round((data.correct / (data.count * 20 || 1)) * 100)),
+          fullMark: 100
+        }));
+        setSubjectPerformance(performance);
+      } catch {
+        setSubjectPerformance([]);
+      }
+    } else if (currentTaskList.length > 0 && currentTaskList.some((t: any) => t.completed)) {
+      // Calculate from real task completion per subject
+      const subjectsInTasks = Array.from(new Set(currentTaskList.map((t: any) => t.subject).filter(Boolean)));
+      const performance = subjectsInTasks.map((subject: any) => {
+        const subTasks = currentTaskList.filter((t: any) => t.subject === subject);
+        const done = subTasks.filter((t: any) => t.completed).length;
+        const total = subTasks.length;
+        return {
+          subject,
+          A: total > 0 ? Math.round((done / total) * 100) : 0,
+          fullMark: 100
+        };
+      });
       setSubjectPerformance(performance);
-    } else if (['1', '2', '3'].includes(student.id)) {
-      setSubjectPerformance([
-        { subject: 'Matematik', A: 85, fullMark: 100 },
-        { subject: 'Türkçe', A: 92, fullMark: 100 },
-        { subject: 'Fizik', A: 78, fullMark: 100 },
-        { subject: 'Kimya', A: 88, fullMark: 100 },
-        { subject: 'Biyoloji', A: 80, fullMark: 100 },
-      ]);
     } else {
       setSubjectPerformance([]);
     }
 
-    // Weekly activity
-    if (['1', '2', '3'].includes(student.id)) {
-      setWeeklyActivity([
-        { day: 'Pzt', tasks: 4 },
-        { day: 'Sal', tasks: 6 },
-        { day: 'Çar', tasks: 3 },
-        { day: 'Per', tasks: 8 },
-        { day: 'Cum', tasks: 5 },
-        { day: 'Cmt', tasks: 2 },
-        { day: 'Paz', tasks: 0 },
-      ]);
-    } else {
-      // Calculate from real tasks if possible
-      const days = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
-      const activity = days.map(day => {
-        const dayTasks = (JSON.parse(savedTasks || '[]')).filter((t: any) => {
-          const dayName = DAYS.find(d => d.startsWith(day));
-          return t.day === dayName;
-        });
-        return { day, tasks: dayTasks.length };
+    // Weekly activity from real tasks
+    const days = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+    const activity = days.map(day => {
+      const dayTasks = currentTaskList.filter((t: any) => {
+        const dayName = DAYS.find(d => d.startsWith(day));
+        return t.day === dayName;
       });
-      setWeeklyActivity(activity);
-    }
+      return { day, tasks: dayTasks.length };
+    });
+    setWeeklyActivity(activity);
 
     // Load AI Analysis for selected student
     const savedAiAnalysis = localStorage.getItem(`ai_analysis_${student.id}`);
@@ -485,13 +536,15 @@ export function MyStudents() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <button 
-                  onClick={() => setShowClaimModal(true)}
-                  className="bg-surface-container-high hover:bg-surface-container-highest text-primary px-6 py-3.5 rounded-full font-bold flex items-center gap-2 border border-outline-variant/10 shadow-sm transition-all"
-                >
-                  <Users className="w-5 h-5" />
-                  Sistemden Öğrenci Ata
-                </button>
+                {userRole === 'admin' && (
+                  <button 
+                    onClick={() => setShowClaimModal(true)}
+                    className="bg-surface-container-high hover:bg-surface-container-highest text-primary px-6 py-3.5 rounded-full font-bold flex items-center gap-2 border border-outline-variant/10 shadow-sm transition-all"
+                  >
+                    <Users className="w-5 h-5" />
+                    Sistemden Öğrenci Ata
+                  </button>
+                )}
                 <button 
                   onClick={() => window.location.href = '/students/new'}
                   className="bg-primary hover:bg-primary/90 text-white px-6 py-3.5 rounded-full font-bold flex items-center gap-2 shadow-lg shadow-primary/20 transition-all"
@@ -502,45 +555,47 @@ export function MyStudents() {
               </div>
             </div>
 
-            {/* Scope Switcher: Danışmanlığım vs Tüm Sistem Öğrencileri */}
-            <div className="flex flex-wrap items-center justify-between gap-4 bg-surface-container-low p-2 rounded-2xl border border-outline-variant/10">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setStudentScope('my');
-                    setSelectedClass('all');
-                  }}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                    studentScope === 'my'
-                      ? 'bg-primary text-white shadow-md shadow-primary/20 scale-102'
-                      : 'text-on-surface-variant hover:bg-surface-container-high'
-                  }`}
-                >
-                  <Users className="w-4 h-4" />
-                  Danışman Olduğum Öğrenciler ({students.length})
-                </button>
-                <button
-                  onClick={() => {
-                    setStudentScope('all');
-                    setSelectedClass('all');
-                  }}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                    studentScope === 'all'
-                      ? 'bg-primary text-white shadow-md shadow-primary/20 scale-102'
-                      : 'text-on-surface-variant hover:bg-surface-container-high'
-                  }`}
-                >
-                  <BookOpen className="w-4 h-4" />
-                  Tüm Sistem Öğrencileri ({allDirectoryStudents.length})
-                </button>
-              </div>
+            {/* Scope Switcher: ONLY for Administrator */}
+            {userRole === 'admin' && (
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-surface-container-low p-2 rounded-2xl border border-outline-variant/10">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setStudentScope('my');
+                      setSelectedClass('all');
+                    }}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      studentScope === 'my'
+                        ? 'bg-primary text-white shadow-md shadow-primary/20 scale-102'
+                        : 'text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <Users className="w-4 h-4" />
+                    Danışman Olduğum Öğrenciler ({students.length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setStudentScope('all');
+                      setSelectedClass('all');
+                    }}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      studentScope === 'all'
+                        ? 'bg-primary text-white shadow-md shadow-primary/20 scale-102'
+                        : 'text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    Tüm Sistem Öğrencileri ({allDirectoryStudents.length})
+                  </button>
+                </div>
 
-              {studentScope === 'all' && (
-                <span className="text-[11px] font-bold text-amber-700 bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20">
-                  Tüm kayıtlı öğrenciler listeleniyor • Dilediğiniz öğrenciye program hazırlayabilir veya linkini paylaşabilirsiniz
-                </span>
-              )}
-            </div>
+                {studentScope === 'all' && (
+                  <span className="text-[11px] font-bold text-amber-700 bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20">
+                    Tüm kayıtlı öğrenciler listeleniyor • Dilediğiniz öğrenciye program hazırlayabilir veya linkini paylaşabilirsiniz
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Sınıf Filtreleri */}
             {uniqueClasses.length > 0 && (
@@ -623,22 +678,27 @@ export function MyStudents() {
                 <div className="w-16 h-16 bg-primary/10 text-primary rounded-3xl flex items-center justify-center mx-auto mb-2">
                   <Users className="w-8 h-8" />
                 </div>
-                <h4 className="text-2xl font-bold text-on-surface">Henüz Sorumlu Olduğunuz Öğrenci Yok</h4>
+                <h4 className="text-2xl font-bold text-on-surface">Danışmanlığınıza Atanmış Öğrenci Bulunmuyor</h4>
                 <p className="text-sm text-on-surface-variant max-w-md mx-auto">
-                  Sistemde kayıtlı öğrencileri kendi danışmanlığınıza ekleyebilir veya yeni bir öğrenci kaydı oluşturabilirsiniz.
+                  {userRole === 'teacher' 
+                    ? 'Sistemde yalnızca size ait öğrencileri görebilirsiniz. Danışmanlığınız için yeni bir öğrenci eklemek için "Yeni Öğrenci Ekle" butonunu kullanabilirsiniz.'
+                    : 'Henüz öğrenci kaydı bulunmuyor. Yeni bir öğrenci kaydı oluşturabilirsiniz.'}
                 </p>
                 <div className="flex flex-wrap justify-center gap-3 pt-4">
-                  <button 
-                    onClick={() => setShowClaimModal(true)}
-                    className="bg-primary text-white px-8 py-3.5 rounded-full font-bold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
-                  >
-                    <Users className="w-5 h-5" />
-                    Sistemdeki Öğrencilerden Kendine Ata
-                  </button>
+                  {userRole === 'admin' && (
+                    <button 
+                      onClick={() => setShowClaimModal(true)}
+                      className="bg-primary text-white px-8 py-3.5 rounded-full font-bold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                    >
+                      <Users className="w-5 h-5" />
+                      Sistemdeki Öğrencilerden Kendine Ata
+                    </button>
+                  )}
                   <button 
                     onClick={() => window.location.href = '/students/new'}
-                    className="bg-surface-container-high hover:bg-surface-container-highest text-on-surface px-6 py-3.5 rounded-full font-bold transition-all border border-outline-variant/10"
+                    className="bg-primary text-white px-8 py-3.5 rounded-full font-bold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
                   >
+                    <Plus className="w-5 h-5" />
                     Yeni Öğrenci Ekle
                   </button>
                 </div>
@@ -767,6 +827,12 @@ export function MyStudents() {
                   className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'analytics' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
                 >
                   Gelişim Analizi
+                </button>
+                <button 
+                  onClick={() => setActiveTab('books')}
+                  className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'books' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
+                >
+                  Okunan Kitaplar ({studentBooks.length})
                 </button>
               </div>
             </div>
@@ -1088,6 +1154,143 @@ export function MyStudents() {
                 </div>
               )}
             </div>
+          ) : activeTab === 'books' ? (
+            <div className="space-y-6">
+              {/* Books Summary Cards for Teacher */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Okunan Kitap</p>
+                  <p className="text-2xl font-black text-emerald-600">
+                    {studentBooks.filter(b => b.status === 'read').length}
+                  </p>
+                  <p className="text-[10px] text-on-surface-variant">Tamamlanan eser</p>
+                </div>
+
+                <div className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Okunan Sayfa</p>
+                  <p className="text-2xl font-black text-primary">
+                    {studentBooks.reduce((acc, b) => acc + (b.status === 'read' ? (b.pageCount || 0) : (b.currentPage || 0)), 0)}
+                  </p>
+                  <p className="text-[10px] text-on-surface-variant">Toplam sayfa sayısı</p>
+                </div>
+
+                <div className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Şu An Okunuyor</p>
+                  <p className="text-2xl font-black text-sky-600">
+                    {studentBooks.filter(b => b.status === 'reading').length}
+                  </p>
+                  <p className="text-[10px] text-on-surface-variant">Aktif okunan kitap</p>
+                </div>
+
+                <div className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Toplam Kayıt</p>
+                  <p className="text-2xl font-black text-amber-600">
+                    {studentBooks.length}
+                  </p>
+                  <p className="text-[10px] text-on-surface-variant">Kitaplıktaki toplam eser</p>
+                </div>
+              </div>
+
+              {studentBooks.length === 0 ? (
+                <div className="py-16 px-6 text-center bg-surface-container-lowest rounded-[2.5rem] border border-outline-variant/10 shadow-xs space-y-4 max-w-md mx-auto my-6">
+                  <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                    <BookOpen className="w-7 h-7" />
+                  </div>
+                  <h4 className="text-xl font-bold text-on-surface">Öğrencinin Kitap Kaydı Yok</h4>
+                  <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
+                    {selectedStudent?.name} henüz kendi portalından veya kütüphanesinden kitap eklemedi. Öğrenci kitap okudukça burada listelenecektir.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {studentBooks.map((book) => {
+                    const isRead = book.status === 'read';
+                    const isReading = book.status === 'reading';
+
+                    return (
+                      <div
+                        key={book.id}
+                        className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-3 relative overflow-hidden"
+                      >
+                        <div 
+                          className={`absolute top-0 left-0 right-0 h-1 ${
+                            isRead ? 'bg-emerald-500' : isReading ? 'bg-sky-500' : 'bg-amber-500'
+                          }`} 
+                        />
+
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold px-2.5 py-1 bg-surface-container-high rounded-full text-on-surface-variant truncate">
+                            {book.genre || 'Roman'}
+                          </span>
+                          <span 
+                            className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                              isRead 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                : isReading 
+                                ? 'bg-sky-50 text-sky-700 border-sky-200' 
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}
+                          >
+                            {isRead ? '✓ Okundu' : isReading ? '📖 Okunuyor' : '⏸ Bırakıldı'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h5 className="font-extrabold text-base text-on-surface line-clamp-1">{book.title}</h5>
+                          <p className="text-xs text-on-surface-variant font-medium mt-0.5">{book.author} • {book.pageCount} Sayfa</p>
+                        </div>
+
+                        {isReading && book.currentPage && (
+                          <div className="text-[11px] font-bold text-sky-700 bg-sky-50 p-2 rounded-xl">
+                            İlerleme: {book.currentPage} / {book.pageCount} Sayfa (%{Math.round((book.currentPage / (book.pageCount || 1)) * 100)})
+                          </div>
+                        )}
+
+                        {book.notes && (
+                          <div className="p-3 bg-surface-container-high/60 rounded-2xl text-[11px] text-on-surface-variant italic line-clamp-2">
+                            "{book.notes}"
+                          </div>
+                        )}
+
+                        <div className="pt-2 border-t border-outline-variant/10 flex items-center justify-between text-[11px] text-on-surface-variant">
+                          <span>{book.finishDate ? `Bitiş: ${book.finishDate}` : 'Tarih belirtilmedi'}</span>
+                          {book.rating && (
+                            <span className="font-bold text-amber-500">★ {book.rating}/5</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : !((studentTasks.some(t => t.completed)) || studentTrials.length > 0 || studentErrors.length > 0) ? (
+            <div className="py-16 px-6 text-center bg-surface-container-lowest rounded-[2.5rem] border border-outline-variant/10 shadow-sm space-y-5 max-w-xl mx-auto my-6">
+              <div className="w-16 h-16 bg-primary/10 text-primary rounded-3xl flex items-center justify-center mx-auto">
+                <Sparkles className="w-8 h-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-2xl font-black text-on-surface">Henüz Gelişim Verisi Bulunmuyor</h4>
+                <p className="text-sm text-on-surface-variant font-medium leading-relaxed">
+                  {selectedStudent?.name} için henüz tamamlanmış bir görev veya kayıtlı deneme sınavı bulunmuyor.
+                  {studentTasks.length > 0 ? (
+                    ` Haftalık programında ${studentTasks.length} adet görev planlanmış durumda. Öğrenci görevlerini yaptıkça veya deneme sınavı sonuçları girildikçe başarı analizleri burada otomatik olarak oluşacaktır.`
+                  ) : (
+                    ' Öğrenciye haftalık görev veya deneme sınavı tanımlandıkça gelişim grafikleri ve analizleri burada görüntülenecektir.'
+                  )}
+                </p>
+              </div>
+              <div className="pt-2 flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('program')}
+                  className="px-6 py-3.5 bg-primary text-white font-bold rounded-2xl shadow-md hover:bg-primary/90 transition-all text-xs flex items-center gap-2"
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>Haftalık Program Sekmesine Geç</span>
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="space-y-8">
               <div>
@@ -1095,10 +1298,26 @@ export function MyStudents() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/10 shadow-sm">
                     <p className="text-[10px] font-bold text-on-surface-variant uppercase mb-1">Ortalama Net</p>
-                    <p className="text-2xl font-black text-primary">{(studentTrials.reduce((acc, curr) => acc + curr.score, 0) / (studentTrials.length || 1)).toFixed(1)}</p>
-                    <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-tertiary">
-                      <TrendingUp className="w-3 h-3" />
-                      +4.2 geçen aya göre
+                    <p className="text-2xl font-black text-primary">
+                      {studentTrials.length > 0 
+                        ? (studentTrials.reduce((acc, curr) => acc + (curr.score ?? curr.totalNet ?? 0), 0) / studentTrials.length).toFixed(1)
+                        : '-'}
+                    </p>
+                    <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-on-surface-variant">
+                      {studentTrials.length >= 2 ? (() => {
+                        const last = studentTrials[studentTrials.length - 1].score ?? studentTrials[studentTrials.length - 1].totalNet ?? 0;
+                        const prev = studentTrials[studentTrials.length - 2].score ?? studentTrials[studentTrials.length - 2].totalNet ?? 0;
+                        const diff = (last - prev).toFixed(1);
+                        const isUp = last >= prev;
+                        return (
+                          <span className={`flex items-center gap-1 ${isUp ? 'text-tertiary' : 'text-secondary'}`}>
+                            <TrendingUp className="w-3 h-3" />
+                            {isUp ? `+${diff}` : diff} son denemeye göre
+                          </span>
+                        );
+                      })() : (
+                        <span>{studentTrials.length === 1 ? '1 deneme sınavı kayıtlı' : 'Deneme girilmedi'}</span>
+                      )}
                     </div>
                   </div>
                   <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/10 shadow-sm">
@@ -1106,17 +1325,28 @@ export function MyStudents() {
                     <p className="text-2xl font-black text-secondary">
                       %{studentTasks.length > 0 ? Math.round((studentTasks.filter(t => t.completed).length / studentTasks.length) * 100) : 0}
                     </p>
-                    <p className="text-[10px] font-medium text-on-surface-variant mt-2">Son 30 gün verisi</p>
+                    <p className="text-[10px] font-medium text-on-surface-variant mt-2">
+                      {studentTasks.filter(t => t.completed).length} / {studentTasks.length} görev tamamlandı
+                    </p>
                   </div>
                   <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/10 shadow-sm">
-                    <p className="text-[10px] font-bold text-on-surface-variant uppercase mb-1">Zayıf Ders</p>
-                    <p className="text-2xl font-black text-secondary-container">Fizik</p>
-                    <p className="text-[10px] font-medium text-on-surface-variant mt-2">Gelişim gerekiyor</p>
+                    <p className="text-[10px] font-bold text-on-surface-variant uppercase mb-1">Çözülen Soru</p>
+                    <p className="text-2xl font-black text-primary">
+                      {studentTasks.filter(t => t.completed).reduce((acc, t) => {
+                        const m = (t.amount || '').match(/\d+/);
+                        return acc + (m ? parseInt(m[0], 10) : (t.questionCount || 0));
+                      }, 0)} Soru
+                    </p>
+                    <p className="text-[10px] font-medium text-on-surface-variant mt-2">Programdan tamamlanan</p>
                   </div>
                   <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/10 shadow-sm">
-                    <p className="text-[10px] font-bold text-on-surface-variant uppercase mb-1">Sıralama</p>
-                    <p className="text-2xl font-black text-tertiary">12/145</p>
-                    <p className="text-[10px] font-medium text-on-surface-variant mt-2">Kurum geneli</p>
+                    <p className="text-[10px] font-bold text-on-surface-variant uppercase mb-1">Odak Alanı / Hata</p>
+                    <p className="text-2xl font-black text-secondary-container truncate" title={studentErrors[0]?.topic || 'Dengeli'}>
+                      {studentErrors[0]?.topic || (studentTasks.some(t => !t.completed) ? 'Görevler Sürüyor' : 'Tüm Dersler Dengeli')}
+                    </p>
+                    <p className="text-[10px] font-medium text-on-surface-variant mt-2 truncate">
+                      {studentErrors[0] ? `En çok hata: ${studentErrors[0].topic}` : 'Başarı takibi aktif'}
+                    </p>
                   </div>
                 </div>
 
@@ -1370,23 +1600,37 @@ export function MyStudents() {
                   <div className="bg-surface-container-lowest p-8 rounded-[2.5rem] border border-outline-variant/10 shadow-sm space-y-6 lg:col-span-2">
                     <h4 className="text-xl font-bold text-on-surface flex items-center gap-2">
                       <CheckCircle2 className="w-5 h-5 text-tertiary" />
-                      Konu Bazlı Başarı Oranı
+                      Ders Bazlı Görev Başarı Oranı
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {currentSubjects.map((subject) => (
-                        <div key={subject} className="p-4 bg-surface-container-low rounded-2xl space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-sm text-on-surface">{subject}</span>
-                            <span className="text-xs font-black text-primary">%{Math.round(Math.random() * 40 + 60)}</span>
-                          </div>
-                          <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-primary rounded-full" 
-                              style={{ width: `${Math.random() * 40 + 60}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
+                      {(() => {
+                        const subjectsInTasks = Array.from(new Set(studentTasks.map(t => t.subject).filter(Boolean)));
+                        const displaySubjects = subjectsInTasks.length > 0 ? subjectsInTasks : currentSubjects.slice(0, 4);
+
+                        return displaySubjects.map((subject) => {
+                          const subTasks = studentTasks.filter(t => t.subject === subject);
+                          const doneCount = subTasks.filter(t => t.completed).length;
+                          const rate = subTasks.length > 0 ? Math.round((doneCount / subTasks.length) * 100) : 0;
+
+                          return (
+                            <div key={subject} className="p-4 bg-surface-container-low rounded-2xl space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-sm text-on-surface">{subject}</span>
+                                <span className="text-xs font-black text-primary">%{rate}</span>
+                              </div>
+                              <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-primary rounded-full transition-all duration-500" 
+                                  style={{ width: `${rate}%` }}
+                                />
+                              </div>
+                              <p className="text-[10px] font-bold text-on-surface-variant">
+                                {subTasks.length > 0 ? `${doneCount} / ${subTasks.length} görev tamamlandı` : 'Bu ders için görev atanmadı'}
+                              </p>
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1490,26 +1734,29 @@ export function MyStudents() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-outline-variant/5">
-                        {[
-                          { date: '29.04.2024', name: 'TYT Genel Deneme-5', score: 85.5, dy: '92D 18Y', status: 'up' },
-                          { date: '22.04.2024', name: 'ÖZDEBİR Türkiye Geneli', score: 82.0, dy: '88D 22Y', status: 'up' },
-                          { date: '15.04.2024', name: 'TYT Genel Deneme-4', score: 75.0, dy: '82D 28Y', status: 'down' },
-                          { date: '08.04.2024', name: 'Kurum İçi Deneme-12', score: 72.0, dy: '78D 32Y', status: 'up' },
-                        ].map((trial, i) => (
-                          <tr key={i} className="group hover:bg-surface-container-low/50 transition-colors">
-                            <td className="py-4 text-sm font-medium text-on-surface-variant">{trial.date}</td>
-                            <td className="py-4 text-sm font-bold text-on-surface">{trial.name}</td>
-                            <td className="py-4 text-sm font-black text-primary">{trial.score}</td>
-                            <td className="py-4 text-xs font-bold text-on-surface-variant">{trial.dy}</td>
-                            <td className="py-4">
-                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold ${
-                                trial.status === 'up' ? 'bg-tertiary/10 text-tertiary' : 'bg-secondary/10 text-secondary'
-                              }`}>
-                                {trial.status === 'up' ? '↑ Yükseliş' : '↓ Düşüş'}
-                              </span>
+                        {studentTrials.length > 0 ? (
+                          studentTrials.map((trial, i) => (
+                            <tr key={i} className="group hover:bg-surface-container-low/50 transition-colors">
+                              <td className="py-4 text-sm font-medium text-on-surface-variant">{trial.date}</td>
+                              <td className="py-4 text-sm font-bold text-on-surface">{trial.title || trial.name || 'Genel Deneme'}</td>
+                              <td className="py-4 text-sm font-black text-primary">{(trial.score ?? trial.totalNet ?? 0).toFixed(2)}</td>
+                              <td className="py-4 text-xs font-bold text-on-surface-variant">
+                                {trial.totalQuestions ? `${trial.totalQuestions} Soru` : trial.dy || '-'}
+                              </td>
+                              <td className="py-4">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-primary/10 text-primary">
+                                  Kayıtlı Sınav
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-xs font-bold text-on-surface-variant">
+                              Bu öğrenci için henüz kaydedilmiş bir deneme sınavı bulunmuyor.
                             </td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>

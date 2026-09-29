@@ -88,6 +88,15 @@ export function StudentPortal() {
   const [showResultModal, setShowResultModal] = useState<boolean>(false);
   const tasksRef = useRef<HTMLDivElement>(null);
 
+  // Exam / Trial Entry States
+  const [examSubject, setExamSubject] = useState<string>('Genel Deneme');
+  const [examTitle, setExamTitle] = useState<string>('');
+  const [examCorrect, setExamCorrect] = useState<string>('');
+  const [examIncorrect, setExamIncorrect] = useState<string>('');
+  const [examEmpty, setExamEmpty] = useState<string>('');
+  const [examWrongTopic, setExamWrongTopic] = useState<string>('');
+  const [examSaveToast, setExamSaveToast] = useState<string | null>(null);
+
   const [allStudents, setAllStudents] = useState<any[]>([]);
   const [showStudentMenu, setShowStudentMenu] = useState<boolean>(false);
   const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
@@ -372,6 +381,105 @@ export function StudentPortal() {
     setEvaluatingTask(null);
   };
 
+  const handleSaveTrial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const correct = Number(examCorrect) || 0;
+    const incorrect = Number(examIncorrect) || 0;
+    const empty = Number(examEmpty) || 0;
+
+    if (correct === 0 && incorrect === 0) {
+      setExamSaveToast('Lütfen doğru veya yanlış soru sayısı giriniz!');
+      setTimeout(() => setExamSaveToast(null), 3000);
+      return;
+    }
+
+    const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5');
+    const penalty = isMiddleSchool ? 3 : 4; // LGS: 3, Lise/YKS: 4
+    const net = Math.max(0, correct - (incorrect / penalty));
+
+    const dateStr = new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
+    const trialId = Math.random().toString(36).substr(2, 9);
+    const subjectName = examSubject.trim() || 'Genel Deneme';
+    const trialName = examTitle.trim() || `${subjectName} Denemesi`;
+
+    const wrongTopicsList = examWrongTopic.trim() 
+      ? [{ topic: examWrongTopic.trim(), count: incorrect || 1 }] 
+      : [];
+
+    const newTrial: TrialData = {
+      id: trialId,
+      date: dateStr,
+      results: {
+        [subjectName]: {
+          correct,
+          incorrect,
+          wrongTopics: wrongTopicsList
+        }
+      },
+      totalNet: Number(net.toFixed(2))
+    };
+
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+
+    // 1. Detailed history
+    const updatedHistory = [newTrial, ...trialHistory];
+    setTrialHistory(updatedHistory);
+    localStorage.setItem(`trial_results_detailed_${targetStudentId}`, JSON.stringify(updatedHistory));
+
+    // 2. Simple trial results for charts
+    try {
+      const existingTrials = JSON.parse(localStorage.getItem(`trial_results_${targetStudentId}`) || '[]');
+      const updatedTrials = [
+        ...existingTrials,
+        {
+          id: trialId,
+          date: dateStr,
+          score: Number(net.toFixed(2)),
+          totalQuestions: correct + incorrect + empty,
+          title: trialName
+        }
+      ];
+      localStorage.setItem(`trial_results_${targetStudentId}`, JSON.stringify(updatedTrials));
+    } catch {}
+
+    // 3. Error topics
+    if (examWrongTopic.trim()) {
+      try {
+        const existingErrors = JSON.parse(localStorage.getItem(`topic_errors_${targetStudentId}`) || '[]');
+        const match = existingErrors.find((err: any) => err.topic.toLowerCase() === examWrongTopic.trim().toLowerCase());
+        let updatedErrors;
+        if (match) {
+          updatedErrors = existingErrors.map((err: any) => err.id === match.id ? { ...err, count: err.count + (incorrect || 1) } : err);
+        } else {
+          updatedErrors = [...existingErrors, { id: Math.random().toString(36).substr(2, 9), topic: examWrongTopic.trim(), count: incorrect || 1 }];
+        }
+        localStorage.setItem(`topic_errors_${targetStudentId}`, JSON.stringify(updatedErrors));
+      } catch {}
+    }
+
+    // 4. Reset form & feedback
+    setExamCorrect('');
+    setExamIncorrect('');
+    setExamEmpty('');
+    setExamWrongTopic('');
+    setExamTitle('');
+    setExamSaveToast(`✅ Deneme sınavı kaydedildi! Toplam Net: ${net.toFixed(2)}`);
+    setTimeout(() => setExamSaveToast(null), 4000);
+  };
+
+  const deleteTrial = (trialId: string) => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    const updated = trialHistory.filter(t => t.id !== trialId);
+    setTrialHistory(updated);
+    localStorage.setItem(`trial_results_detailed_${targetStudentId}`, JSON.stringify(updated));
+    try {
+      const simple = JSON.parse(localStorage.getItem(`trial_results_${targetStudentId}`) || '[]');
+      const updatedSimple = simple.filter((t: any) => t.id !== trialId);
+      localStorage.setItem(`trial_results_${targetStudentId}`, JSON.stringify(updatedSimple));
+    } catch {}
+    if (selectedTrial?.id === trialId) setSelectedTrial(null);
+  };
+
   const finishProgram = async () => {
     if (tasks.length === 0) return;
 
@@ -501,6 +609,15 @@ export function StudentPortal() {
           )}
 
           <button
+            onClick={() => window.location.href = '/library'}
+            className="px-3.5 py-2 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+            title="Kütüphaneme Git & Okuduğum Kitaplar"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>Kütüphanem</span>
+          </button>
+
+          <button
             onClick={copyShareLink}
             className="px-3.5 py-2 bg-white hover:bg-surface-container-high text-on-surface border border-outline-variant/20 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
             title="Öğrencinin şifresiz doğrudan girebileceği program linkini kopyala"
@@ -589,41 +706,88 @@ export function StudentPortal() {
         </div>
 
         {/* Progress Overview */}
-        <div className="lg:col-span-4 bg-surface-container-lowest rounded-[2.5rem] p-10 flex flex-col items-center justify-between shadow-ambient border border-outline-variant/10">
-          <h3 className="text-on-surface text-xl font-bold mb-8 w-full">İlerleme Özeti</h3>
-          <div className="flex flex-col gap-10 w-full">
-            <div className="flex items-center gap-6">
-              <div className="relative w-24 h-24 shrink-0">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle className="text-surface-container-high" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeWidth="8" />
-                  <circle className="text-tertiary" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeDasharray="251.3" strokeDashoffset={251.3 - (251.3 * progressPercent) / 100} strokeLinecap="round" strokeWidth="8" />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-lg font-bold text-on-surface">{progressPercent}%</span>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-bold text-on-surface">Haftalık İlerleme</p>
-                <p className="text-xs text-on-surface-variant font-medium">Programındaki görevlerin tamamlanma oranı.</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-6">
-              <div className="relative w-24 h-24 shrink-0">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle className="text-surface-container-high" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeWidth="8" />
-                  <circle className="text-primary" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeDasharray="251.3" strokeDashoffset="140" strokeLinecap="round" strokeWidth="8" />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-lg font-bold text-on-surface">45%</span>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-bold text-on-surface">Genel Hedef</p>
-                <p className="text-xs text-on-surface-variant font-medium">Dönem sonu başarısı için iyi bir tempo.</p>
-              </div>
-            </div>
+        <div className="lg:col-span-4 bg-surface-container-lowest rounded-[2.5rem] p-8 sm:p-10 flex flex-col justify-between shadow-ambient border border-outline-variant/10">
+          <div className="flex items-center justify-between mb-6 w-full">
+            <h3 className="text-on-surface text-xl font-bold">İlerleme Özeti</h3>
+            <span className="text-[10px] font-black uppercase tracking-wider bg-surface-container-high text-on-surface-variant px-2.5 py-1 rounded-full">
+              Gerçek Zamanlı
+            </span>
           </div>
+
+          {tasks.length === 0 && trialHistory.length === 0 ? (
+            <div className="py-8 text-center space-y-3 my-auto">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                <Sparkles className="w-7 h-7" />
+              </div>
+              <h4 className="text-base font-bold text-on-surface">Henüz İlerleme Verisi Yok</h4>
+              <p className="text-xs text-on-surface-variant font-medium max-w-xs mx-auto leading-relaxed">
+                Haftalık görevlerini tamamladığında ve deneme sınavı sonuçlarını girdiğinde ilerleme analizlerin burada gerçek verilerle oluşacaktır.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-8 w-full my-auto">
+              {/* Task Completion Circle */}
+              <div className="flex items-center gap-6">
+                <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle className="text-surface-container-high" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeWidth="8" />
+                    <circle className="text-tertiary" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeDasharray="251.3" strokeDashoffset={251.3 - (251.3 * progressPercent) / 100} strokeLinecap="round" strokeWidth="8" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-lg font-black text-on-surface">%{progressPercent}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-on-surface">Haftalık Görevler</p>
+                  <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                    {tasks.length > 0 ? `${completedCount} / ${tasks.length} görev tamamlandı.` : 'Bu hafta için görev bekleniyor.'}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Deneme veya Soru Durumu */}
+              <div className="flex items-center gap-6">
+                {trialHistory.length > 0 ? (
+                  <>
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
+                      <div className="w-full h-full rounded-full bg-secondary/10 flex flex-col items-center justify-center text-center p-2 border border-secondary/20">
+                        <span className="text-base sm:text-lg font-black text-secondary leading-none">
+                          {trialHistory[0].totalNet.toFixed(1)}
+                        </span>
+                        <span className="text-[9px] font-black uppercase text-secondary/80 mt-0.5">Net</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-on-surface">Son Deneme Neti</p>
+                      <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                        {trialHistory.length} deneme sınavı kaydı bulunuyor.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
+                      <div className="w-full h-full rounded-full bg-primary/10 flex flex-col items-center justify-center text-center p-2 border border-primary/20">
+                        <span className="text-base sm:text-lg font-black text-primary leading-none">
+                          {tasks.filter(t => t.completed).reduce((acc, t) => {
+                            const match = (t.amount || '').match(/\d+/);
+                            return acc + (match ? parseInt(match[0], 10) : 0);
+                          }, 0)}
+                        </span>
+                        <span className="text-[9px] font-black uppercase text-primary/80 mt-0.5">Soru</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-on-surface">Çözülen Sorular</p>
+                      <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                        Tamamlanan ödevlerden hesaplandı.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -1906,65 +2070,219 @@ export function StudentPortal() {
 
         {/* Right Column - Secondary Actions, Results & History */}
         <div className="lg:col-span-4 flex flex-col gap-8">
-          {/* Exam Entry */}
-          <div className="bg-surface-container-highest rounded-[2.5rem] p-10 border border-outline-variant/10">
-            <h3 className="text-2xl font-bold mb-6 font-manrope">Sınav Sonucu Gir</h3>
-            <form className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-2 block">Ders</label>
-                  <select className="w-full bg-surface-container-lowest border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary/20 py-4 px-4 outline-none">
-                    <option>Matematik</option>
-                    <option>Türkçe</option>
-                    <option>Fizik</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-2 block">Net Doğru</label>
+          {/* Exam Entry (İşlevsel Deneme & Sınav Sonucu Gir) */}
+          <div className="bg-surface-container-highest rounded-[2.5rem] p-6 sm:p-8 border border-outline-variant/10 shadow-sm space-y-6">
+            <div className="flex items-center justify-between border-b border-outline-variant/10 pb-4">
+              <div>
+                <h3 className="text-xl sm:text-2xl font-black font-manrope text-on-surface">Deneme Sınavı Gir</h3>
+                <p className="text-xs text-on-surface-variant font-medium mt-0.5">Sonucunu gir, netin ve hata analizin anında oluşsun.</p>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                <ClipboardCheck className="w-5 h-5" />
+              </div>
+            </div>
+
+            {examSaveToast && (
+              <div className="p-3.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{examSaveToast}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveTrial} className="space-y-4">
+              {/* Deneme Adı */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-1 block">
+                  Deneme Adı / Yayın (İsteğe Bağlı)
+                </label>
+                <input 
+                  type="text"
+                  value={examTitle}
+                  onChange={(e) => setExamTitle(e.target.value)}
+                  placeholder="Örn: Özdebir TYT 1 veya Mart Denemesi"
+                  className="w-full bg-surface-container-lowest border border-outline-variant/15 rounded-2xl text-xs font-bold text-on-surface focus:ring-2 focus:ring-primary py-3 px-4 outline-none transition-all"
+                />
+              </div>
+
+              {/* Ders Seçimi */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-1 block">
+                  Sınav Türü / Ders
+                </label>
+                <select 
+                  value={examSubject}
+                  onChange={(e) => setExamSubject(e.target.value)}
+                  className="w-full bg-surface-container-lowest border border-outline-variant/15 rounded-2xl text-xs font-bold text-on-surface focus:ring-2 focus:ring-primary py-3 px-4 outline-none transition-all"
+                >
+                  <option value="Genel Deneme">Genel Deneme Sınavı (Tüm Dersler / TYT-AYT-LGS)</option>
+                  <option value="Matematik">Matematik Branş Denemesi</option>
+                  <option value="Türkçe">Türkçe / Edebiyat Branş Denemesi</option>
+                  <option value="Fen Bilimleri">Fen Bilimleri Branş Denemesi</option>
+                  <option value="Fizik">Fizik</option>
+                  <option value="Kimya">Kimya</option>
+                  <option value="Biyoloji">Biyoloji</option>
+                  <option value="Sosyal Bilgiler">Sosyal Bilgiler / Tarih</option>
+                  <option value="Coğrafya">Coğrafya</option>
+                  <option value="İngilizce">İngilizce (YDT)</option>
+                </select>
+              </div>
+
+              {/* Doğru, Yanlış, Boş Grid */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-emerald-700 uppercase tracking-widest ml-1 block">
+                    Doğru (D)
+                  </label>
                   <input 
                     type="number" 
-                    placeholder="00" 
-                    className="w-full bg-surface-container-lowest border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary/20 py-4 px-4 outline-none"
+                    min="0"
+                    max="200"
+                    required
+                    value={examCorrect}
+                    onChange={(e) => setExamCorrect(e.target.value)}
+                    placeholder="0" 
+                    className="w-full bg-surface-container-lowest border border-emerald-200 text-center rounded-2xl text-base font-black text-emerald-800 focus:ring-2 focus:ring-emerald-500 py-3 px-2 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-rose-700 uppercase tracking-widest ml-1 block">
+                    Yanlış (Y)
+                  </label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="200"
+                    value={examIncorrect}
+                    onChange={(e) => setExamIncorrect(e.target.value)}
+                    placeholder="0" 
+                    className="w-full bg-surface-container-lowest border border-rose-200 text-center rounded-2xl text-base font-black text-rose-800 focus:ring-2 focus:ring-rose-500 py-3 px-2 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-1 block">
+                    Boş (B)
+                  </label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="200"
+                    value={examEmpty}
+                    onChange={(e) => setExamEmpty(e.target.value)}
+                    placeholder="0" 
+                    className="w-full bg-surface-container-lowest border border-outline-variant/15 text-center rounded-2xl text-base font-black text-on-surface focus:ring-2 focus:ring-primary py-3 px-2 outline-none transition-all"
                   />
                 </div>
               </div>
-              <button className="w-full bg-primary text-white font-black py-4 rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2">
+
+              {/* Canlı Net Önizleme */}
+              {Boolean(examCorrect || examIncorrect) && (
+                <div className="p-3 bg-primary/10 rounded-2xl flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary">Hesaplanan Tahmini Net:</span>
+                  <span className="text-base font-black text-primary">
+                    {Math.max(0, (Number(examCorrect) || 0) - ((Number(examIncorrect) || 0) / (studentGrade.includes('8') ? 3 : 4))).toFixed(2)} Net
+                  </span>
+                </div>
+              )}
+
+              {/* Hatalı Konu Girişi (İsteğe Bağlı) */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-1 block">
+                  Yanlış Yapılan Konu (İsteğe Bağlı)
+                </label>
+                <input 
+                  type="text"
+                  value={examWrongTopic}
+                  onChange={(e) => setExamWrongTopic(e.target.value)}
+                  placeholder="Örn: Türev, Noktalama İşaretleri, Optik"
+                  className="w-full bg-surface-container-lowest border border-outline-variant/15 rounded-2xl text-xs font-bold text-on-surface focus:ring-2 focus:ring-primary py-3 px-4 outline-none transition-all"
+                />
+              </div>
+
+              <button 
+                type="submit"
+                className="w-full bg-gradient-to-r from-primary to-primary-container text-white font-black py-4 rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 text-sm"
+              >
                 <Save className="w-5 h-5" />
-                Sonucu Kaydet
+                <span>Deneme Sonucunu Kaydet</span>
               </button>
             </form>
           </div>
 
-          {/* Trial History */}
+          {/* Trial History (Deneme Geçmişi) */}
           {trialHistory.length > 0 && (
-            <div className="bg-surface-container-lowest rounded-[2.5rem] p-10 border border-outline-variant/10 shadow-sm">
-              <div className="flex items-center gap-3 mb-8">
-                <ClipboardCheck className="w-6 h-6 text-secondary" />
-                <h3 className="text-2xl font-bold font-manrope">Deneme Geçmişi</h3>
+            <div className="bg-surface-container-lowest rounded-[2.5rem] p-6 sm:p-8 border border-outline-variant/10 shadow-sm space-y-5">
+              <div className="flex items-center justify-between border-b border-outline-variant/10 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <ClipboardCheck className="w-5 h-5 text-secondary" />
+                  <h3 className="text-xl font-bold font-manrope text-on-surface">Deneme Geçmişi</h3>
+                </div>
+                <span className="text-xs font-black text-secondary bg-secondary/10 px-2.5 py-1 rounded-full">
+                  {trialHistory.length} Sınav
+                </span>
               </div>
-              <div className="space-y-4">
-                {trialHistory.map((trial) => (
-                  <button 
-                    key={trial.id} 
-                    onClick={() => setSelectedTrial(trial)}
-                    className="w-full p-6 bg-surface-container-low rounded-3xl border border-outline-variant/5 hover:border-secondary/30 transition-all text-left group"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">{trial.date}</p>
-                        <h4 className="font-bold text-on-surface text-sm sm:text-base">Genel Deneme Sınavı</h4>
+
+              <div className="space-y-3">
+                {trialHistory.map((trial) => {
+                  const subjectKey = Object.keys(trial.results)[0] || 'Genel Deneme';
+                  const subjectData = trial.results[subjectKey];
+
+                  return (
+                    <div 
+                      key={trial.id} 
+                      className="p-5 bg-surface-container-low hover:bg-surface-container-high/60 rounded-3xl border border-outline-variant/10 transition-all text-left space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider bg-surface-container-lowest px-2 py-0.5 rounded-lg border border-outline-variant/10">
+                              {trial.date}
+                            </span>
+                            <span className="text-[10px] font-black uppercase text-primary bg-primary/10 px-2 py-0.5 rounded-lg">
+                              {subjectKey}
+                            </span>
+                          </div>
+                          {subjectData && (
+                            <p className="text-xs font-semibold text-on-surface-variant">
+                              {subjectData.correct} Doğru • {subjectData.incorrect} Yanlış
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-[9px] font-black text-secondary uppercase tracking-widest">Net</p>
+                          <p className="text-xl font-black text-secondary leading-none">
+                            {trial.totalNet.toFixed(2)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-black text-secondary uppercase tracking-widest">Toplam Net</p>
-                        <p className="text-xl sm:text-2xl font-black text-secondary">{trial.totalNet.toFixed(2)}</p>
+
+                      <div className="pt-2 border-t border-outline-variant/10 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTrial(trial)}
+                          className="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
+                        >
+                          <span>Detayları Gör</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Bu deneme sonucunu silmek istediğinizden emin misiniz?')) {
+                              deleteTrial(trial.id);
+                            }
+                          }}
+                          className="p-1.5 text-on-surface-variant hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-xs flex items-center gap-1"
+                          title="Denemeyi Sil"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Sil</span>
+                        </button>
                       </div>
                     </div>
-                    <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-on-surface-variant uppercase">
-                      <span>Detayları Gör</span>
-                      <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
-                    </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

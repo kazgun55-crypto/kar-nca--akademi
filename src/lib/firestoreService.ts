@@ -463,6 +463,7 @@ export async function authenticateUser(usernameOrEmail: string, passwordInput: s
       localStorage.setItem('userRole', 'student');
       localStorage.setItem('currentUserId', matchedStudentDoc.id);
       localStorage.setItem('currentUserName', data.name);
+      localStorage.setItem('currentUserUsername', data.username || '');
       localStorage.setItem('currentUserGrade', data.grade || '12. Sınıf');
       return { role: 'student', name: data.name, id: matchedStudentDoc.id };
     }
@@ -488,6 +489,7 @@ export async function authenticateUser(usernameOrEmail: string, passwordInput: s
       localStorage.setItem('userRole', 'teacher');
       localStorage.setItem('currentUserId', matchedTeacherDoc.id);
       localStorage.setItem('currentUserName', data.name);
+      localStorage.setItem('currentUserUsername', data.username || '');
       localStorage.setItem('currentUserEmail', data.email || '');
       return { role: 'teacher', name: data.name, id: matchedTeacherDoc.id };
     }
@@ -514,6 +516,7 @@ export async function authenticateUser(usernameOrEmail: string, passwordInput: s
       localStorage.setItem('userRole', userRole);
       localStorage.setItem('currentUserId', matchedUserDoc.id);
       localStorage.setItem('currentUserName', data.name);
+      localStorage.setItem('currentUserUsername', data.username || '');
       localStorage.setItem('currentUserEmail', data.email || '');
       if (data.grade) localStorage.setItem('currentUserGrade', data.grade);
       return { role: userRole, name: data.name, id: matchedUserDoc.id };
@@ -1047,5 +1050,115 @@ export function initGlobalCloudSync() {
   }, (err) => {
     console.warn('[Firestore] Global teachers onSnapshot:', err);
   });
+}
+
+// --------------------------------------------------------------------------
+// Student Library (Kütüphane & Okunan Kitaplar) Services
+// --------------------------------------------------------------------------
+
+export interface StudentBook {
+  id: string;
+  studentId: string;
+  title: string;
+  author: string;
+  pageCount: number;
+  currentPage?: number;
+  genre: string;
+  status: 'read' | 'reading' | 'dropped'; // 'read': Okundu, 'reading': Okunuyor, 'dropped': Bırakıldı
+  rating?: number; // 1 to 5
+  notes?: string;
+  startDate?: string;
+  finishDate?: string;
+  createdAt: string;
+}
+
+export async function saveStudentBook(
+  studentId: string, 
+  book: Omit<StudentBook, 'id' | 'createdAt' | 'studentId'> & { id?: string; createdAt?: string; studentId?: string }
+): Promise<StudentBook> {
+  const bookId = book.id || 'book_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  const now = new Date().toISOString();
+  const bookDoc: StudentBook = {
+    ...cleanForFirestore(book),
+    id: bookId,
+    studentId,
+    createdAt: book.createdAt || now
+  };
+
+  try {
+    await setDoc(doc(db, 'books', bookId), bookDoc, { merge: true });
+  } catch (err) {
+    console.warn('Firestore save book error, caching locally:', err);
+  }
+
+  // Always update local cache for instant UI rendering
+  try {
+    const key = `books_${studentId}`;
+    const existing: StudentBook[] = JSON.parse(localStorage.getItem(key) || '[]');
+    const filtered = existing.filter(b => b.id !== bookId);
+    const updated = [bookDoc, ...filtered];
+    localStorage.setItem(key, JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
+  } catch {}
+
+  return bookDoc;
+}
+
+export async function deleteStudentBook(studentId: string, bookId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'books', bookId));
+  } catch (err) {
+    console.warn('Firestore delete book error:', err);
+  }
+
+  try {
+    const key = `books_${studentId}`;
+    const existing: StudentBook[] = JSON.parse(localStorage.getItem(key) || '[]');
+    const updated = existing.filter(b => b.id !== bookId);
+    localStorage.setItem(key, JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
+  } catch {}
+}
+
+export async function getStudentBooks(studentId: string): Promise<StudentBook[]> {
+  const key = `books_${studentId}`;
+  try {
+    const q = query(collection(db, 'books'), where('studentId', '==', studentId));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as StudentBook));
+      localStorage.setItem(key, JSON.stringify(list));
+      return list;
+    }
+  } catch (err) {
+    console.warn('getStudentBooks firestore error:', err);
+  }
+
+  return JSON.parse(localStorage.getItem(key) || '[]');
+}
+
+export function subscribeStudentBooks(studentId: string, callback: (books: StudentBook[]) => void) {
+  const key = `books_${studentId}`;
+  const local: StudentBook[] = JSON.parse(localStorage.getItem(key) || '[]');
+  if (local.length > 0) {
+    callback(local);
+  }
+
+  try {
+    const q = query(collection(db, 'books'), where('studentId', '==', studentId));
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as StudentBook));
+      // Sort by finishDate or createdAt descending
+      list.sort((a, b) => (b.finishDate || b.createdAt || '').localeCompare(a.finishDate || a.createdAt || ''));
+      localStorage.setItem(key, JSON.stringify(list));
+      callback(list);
+    }, (err) => {
+      console.warn('subscribeStudentBooks firestore error:', err);
+      callback(JSON.parse(localStorage.getItem(key) || '[]'));
+    });
+  } catch (err) {
+    console.warn('subscribeStudentBooks setup error:', err);
+    return () => {};
+  }
 }
 

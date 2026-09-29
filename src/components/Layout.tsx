@@ -27,9 +27,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
     } else {
       return [
         { icon: UserCircle, label: 'Portal', path: '/portal' },
+        { icon: BookOpen, label: 'Kütüphanem', path: '/library' },
         { icon: ClipboardCheck, label: 'Deneme Gir', path: '/enter-trial' },
         { icon: BarChart3, label: 'Analiz', path: '/analytics' },
-        { icon: BookOpen, label: 'Ödevler', path: '/assignments' },
       ];
     }
   };

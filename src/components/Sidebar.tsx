@@ -24,6 +24,7 @@ const navItems = [
   { icon: Users, label: 'Öğrencilerim', path: '/my-students', roles: ['teacher'] },
   { icon: Users, label: 'Öğrenci Dizini', path: '/students', roles: ['admin'] },
   { icon: UserCircle, label: 'Öğrenci Portalı', path: '/portal', roles: ['student'] },
+  { icon: BookOpen, label: 'Kütüphanem', path: '/library', roles: ['student', 'teacher', 'admin'] },
   { icon: ClipboardCheck, label: 'Deneme Gir', path: '/enter-trial', roles: ['student'] },
   { icon: GraduationCap, label: 'Sınıf Yönetimi', path: '/classes', roles: ['admin'] },
   { icon: BookOpen, label: 'Ödev Akışı', path: '/assignments', roles: ['student'] },

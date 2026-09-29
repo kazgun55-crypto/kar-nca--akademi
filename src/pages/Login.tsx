@@ -75,7 +75,7 @@ export function Login() {
       setFoundAccount({
         name: 'Sistem Yöneticisi',
         username: 'köksal',
-        password: 'köksal123',
+        password: 'Yonetici.2026!',
         email: 'admin@okul.com',
         accountType: 'Yönetici'
       });
@@ -142,31 +142,6 @@ export function Login() {
       setError(err.message || 'Geçersiz kullanıcı adı/e-posta veya şifre.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fillDemo = (demoRole: 'student' | 'teacher' | 'gokce' | 'teacher2' | 'admin') => {
-    setError('');
-    if (demoRole === 'gokce') {
-      setRole('teacher');
-      setUsername('gokce');
-      setPassword('Ogretmen.2026!');
-    } else if (demoRole === 'teacher') {
-      setRole('teacher');
-      setUsername('ahmet_y');
-      setPassword('Ogretmen.2026!');
-    } else if (demoRole === 'teacher2') {
-      setRole('teacher');
-      setUsername('ayse_d');
-      setPassword('Ogretmen.2026!');
-    } else if (demoRole === 'student') {
-      setRole('student');
-      setUsername('ahmet');
-      setPassword('Ogrenci.2026!');
-    } else if (demoRole === 'admin') {
-      setRole('admin');
-      setUsername('köksal');
-      setPassword('Yonetici.2026!');
     }
   };
 
@@ -411,7 +386,7 @@ export function Login() {
                     <p className="font-extrabold text-lg text-on-surface">{foundAccount.name}</p>
                     <p className="text-xs text-on-surface-variant">Kullanıcı Adı: <span className="font-mono text-on-surface font-bold">{foundAccount.username}</span></p>
                     <p className="text-xs text-on-surface-variant">E-Posta: <span className="font-mono text-on-surface font-bold">{foundAccount.email || 'Belirtilmemiş'}</span></p>
-                    <p className="text-xs text-on-surface-variant">Mevcut Şifre: <span className="font-mono text-secondary font-bold">{foundAccount.password}</span></p>
+                    <p className="text-xs text-on-surface-variant">Hesap Güvenlik Durumu: <span className="text-emerald-600 font-bold">● Aktif ve Doğrulanmış</span></p>
                   </div>
 
                   {emailSentStatus && (

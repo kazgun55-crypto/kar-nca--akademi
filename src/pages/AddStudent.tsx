@@ -13,23 +13,32 @@ export function AddStudent() {
   });
   const [teachers, setTeachers] = useState<any[]>([]);
   const [showSuccess, setShowSuccess] = useState(false);
+  const userRole = localStorage.getItem('userRole') || 'teacher';
+  const currentUserId = localStorage.getItem('currentUserId') || 'teacher_gokce';
+  const currentUserName = localStorage.getItem('currentUserName') || 'Öğretmen';
 
   useEffect(() => {
     getTeachersFromFirestore().then(list => setTeachers(list));
-  }, []);
+    if (userRole === 'teacher') {
+      setFormData(prev => ({ ...prev, teacherId: currentUserId }));
+    }
+  }, [userRole, currentUserId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.username) return;
+
+    // For teachers, strictly enforce that teacherId is always their own id
+    const finalTeacherId = userRole === 'teacher' ? currentUserId : formData.teacherId;
 
     const newStudent = {
       id: Math.random().toString(36).substr(2, 9),
       name: formData.name,
       grade: formData.grade || '12. Sınıf',
       username: formData.username,
-      password: formData.password || '123456',
+      password: formData.password || 'Ogrenci.2026!',
       email: `${formData.username}@okul.com`,
-      teacherId: formData.teacherId,
+      teacherId: finalTeacherId,
       lastTrialScore: 0,
       avatar: `https://picsum.photos/seed/${formData.username}/100/100`,
       role: 'student'
@@ -39,7 +48,13 @@ export function AddStudent() {
     await saveStudentToFirestore(newStudent);
 
     setShowSuccess(true);
-    setFormData({ name: '', grade: '', username: '', password: '', teacherId: '' });
+    setFormData({ 
+      name: '', 
+      grade: '', 
+      username: '', 
+      password: '', 
+      teacherId: userRole === 'teacher' ? currentUserId : '' 
+    });
     setTimeout(() => setShowSuccess(false), 3000);
   };
 
@@ -147,20 +162,33 @@ export function AddStudent() {
 
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Danışman Öğretmen</label>
-                  <div className="relative group">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
-                    <select 
-                      required
-                      value={formData.teacherId}
-                      onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
-                      className="w-full pl-12 pr-4 py-4 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface appearance-none outline-none"
-                    >
-                      <option value="">Öğretmen Seçiniz</option>
-                      {teachers.map(t => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {userRole === 'teacher' ? (
+                    <div className="flex items-center gap-3 w-full px-4 py-3.5 bg-primary/10 border border-primary/20 rounded-2xl">
+                      <div className="w-8 h-8 rounded-xl bg-primary text-white flex items-center justify-center font-bold text-xs shrink-0">
+                        {currentUserName.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-black text-primary truncate">{currentUserName} (Siz)</p>
+                        <p className="text-[10px] text-on-surface-variant font-medium">Bu öğrenci doğrudan danışmanlığınıza eklenecektir</p>
+                      </div>
+                      <ShieldCheck className="w-5 h-5 text-primary shrink-0" />
+                    </div>
+                  ) : (
+                    <div className="relative group">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
+                      <select 
+                        required
+                        value={formData.teacherId}
+                        onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
+                        className="w-full pl-12 pr-4 py-4 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface appearance-none outline-none"
+                      >
+                        <option value="">Öğretmen Seçiniz</option>
+                        {teachers.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -185,10 +213,12 @@ export function AddStudent() {
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
                     <input 
                       type="password" 
-                      required
+                      name="student-new-password"
+                      autoComplete="new-password"
+                      spellCheck={false}
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="••••••••" 
+                      placeholder="Boş bırakılırsa: Ogrenci.2026!" 
                       className="w-full pl-12 pr-12 py-4 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none"
                     />
                   </div>
