@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { NavLink } from 'react-router-dom';
 import { parseVideoUrl } from '../lib/videoUtils';
 import { 
   subscribeStudents, 
@@ -8,7 +9,11 @@ import {
   getStudentTasks, 
   subscribeStudentTasks,
   StudentBook,
-  subscribeStudentBooks
+  subscribeStudentBooks,
+  TeacherMeeting,
+  saveTeacherMeeting,
+  completeTeacherMeeting,
+  subscribeTeacherMeetings
 } from '../lib/firestoreService';
 import { 
   Users, 
@@ -33,7 +38,14 @@ import {
   ClipboardCheck,
   Share2,
   Copy,
-  Check
+  Check,
+  Bell,
+  Clock,
+  RotateCw,
+  Lightbulb,
+  FileText,
+  CheckSquare,
+  ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -87,6 +99,7 @@ export function MyStudents() {
   const [activeTab, setActiveTab] = useState<'program' | 'analytics' | 'books'>('program');
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [studentBooks, setStudentBooks] = useState<StudentBook[]>([]);
+  const [teacherMeetings, setTeacherMeetings] = useState<TeacherMeeting[]>([]);
 
   const userRole = localStorage.getItem('userRole') || 'teacher';
   const currentUserId = localStorage.getItem('currentUserId') || '';
@@ -224,8 +237,16 @@ export function MyStudents() {
       }
     });
 
-    return () => unsub();
-  }, []);
+    const targetTid = currentUserId || 'teacher_gokce';
+    const unsubMeetings = subscribeTeacherMeetings(targetTid, (meetingsList) => {
+      setTeacherMeetings(meetingsList);
+    });
+
+    return () => {
+      unsub();
+      unsubMeetings();
+    };
+  }, [currentUserId]);
 
   // Real-time synchronization of selected student's tasks & read books
   useEffect(() => {
@@ -416,8 +437,9 @@ export function MyStudents() {
         body: JSON.stringify({
           studentName: selectedStudent.name,
           grade: selectedStudent.grade,
-          tasks: savedTasks,
-          trialResults: savedTrials
+          tasks: studentTasks.length > 0 ? studentTasks : savedTasks,
+          trialResults: studentTrials.length > 0 ? studentTrials : savedTrials,
+          topicErrors: studentErrors
         }),
       });
 
@@ -429,14 +451,143 @@ export function MyStudents() {
       const data = await response.json();
       setAiAnalysis(data);
       localStorage.setItem(`ai_analysis_${selectedStudent.id}`, JSON.stringify(data));
-      
-      // Update last trial score or trigger re-render if necessary
+      showToast('Yapay zeka analizi başarıyla güncellendi! ✨');
     } catch (err: any) {
       console.error(err);
       setAnalysisError(err.message || 'Analiz sırasında beklenmedik bir hata oluştu.');
     } finally {
       setLoadingAnalysis(false);
     }
+  };
+
+  const handleAddAiRecommendedTask = async (rec: any) => {
+    if (!selectedStudent) return;
+    const newTaskItem: Task = {
+      id: Math.random().toString(36).substr(2, 9),
+      studentId: selectedStudent.id,
+      day: DAYS[0],
+      subject: rec.subject || 'Genel',
+      topic: rec.topic || 'Soru Çözümü',
+      amount: rec.suggestedAmount || '25 Soru',
+      type: 'question',
+      completed: false
+    };
+    const updated = [newTaskItem, ...studentTasks];
+    setStudentTasks(updated);
+    await saveStudentTasks(selectedStudent.id, updated);
+    showToast(`"${rec.subject} - ${rec.topic}" plana eklendi! 🎯`);
+  };
+
+  const handleRollOverIncompleteTasks = async () => {
+    if (!selectedStudent) return;
+    const incomplete = studentTasks.filter(t => !t.completed);
+    if (incomplete.length === 0) {
+      showToast('Tebrikler! Geçen haftadan eksik kalan veya yapılmayan ödev bulunmuyor.');
+      return;
+    }
+    const rollOverTasks: Task[] = incomplete.map((t, idx) => ({
+      ...t,
+      id: Math.random().toString(36).substr(2, 9),
+      day: DAYS[idx % 3],
+      topic: t.topic.startsWith('[Telafi]') ? t.topic : `[Telafi] ${t.topic}`,
+      completed: false
+    }));
+    const updated = [...studentTasks, ...rollOverTasks];
+    setStudentTasks(updated);
+    await saveStudentTasks(selectedStudent.id, updated);
+    showToast(`${incomplete.length} adet eksik ödev telafi olarak yeni haftalık plana aktarıldı! 🔄`);
+  };
+
+  const handleArchiveAndStartNewWeek = async () => {
+    if (!selectedStudent) return;
+    if (studentTasks.length === 0) {
+      showToast('Arşivlenecek görev bulunamadı.');
+      return;
+    }
+    const completedCount = studentTasks.filter(t => t.completed).length;
+    const rate = Math.round((completedCount / (studentTasks.length || 1)) * 100);
+    const archiveItem = {
+      id: 'arch_' + Date.now(),
+      endDate: new Date().toLocaleDateString('tr-TR'),
+      completionRate: rate,
+      tasks: studentTasks
+    };
+    const updatedArchives = [archiveItem, ...archivedPrograms];
+    setArchivedPrograms(updatedArchives);
+    localStorage.setItem(`archived_programs_${selectedStudent.id}`, JSON.stringify(updatedArchives));
+    
+    setStudentTasks([]);
+    await saveStudentTasks(selectedStudent.id, []);
+    showToast('Geçen haftanın ödevleri başarıyla arşivlendi! Yeni haftalık program sayfası hazır. 🚀');
+  };
+
+  // Meeting Modal State & Handlers
+  const [meetingModalMode, setMeetingModalMode] = useState<'record_done' | 'schedule_future'>('record_done');
+  const [meetingFormData, setMeetingFormData] = useState({
+    title: 'Haftalık Birebir Koçluk Görüşmesi',
+    type: 'coaching' as 'coaching' | 'exam_analysis' | 'homework_check' | 'parent_meeting' | 'general',
+    date: new Date().toISOString().split('T')[0],
+    time: '16:00',
+    notes: '',
+    recurringWeekly: true
+  });
+
+  const handleSaveOrCompleteMeeting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudent) return;
+    const tId = currentUserId || 'teacher_gokce';
+
+    if (meetingModalMode === 'record_done') {
+      const activePending = teacherMeetings.find(m => m.studentId === selectedStudent.id && !m.isCompleted);
+      const baseMeeting: TeacherMeeting = activePending || {
+        id: 'meet_' + Date.now(),
+        teacherId: tId,
+        studentId: selectedStudent.id,
+        studentName: selectedStudent.name,
+        studentGrade: selectedStudent.grade,
+        title: meetingFormData.title,
+        type: meetingFormData.type,
+        date: meetingFormData.date,
+        time: meetingFormData.time,
+        dayOfWeek: DAYS[new Date(meetingFormData.date).getDay() === 0 ? 6 : new Date(meetingFormData.date).getDay() - 1],
+        isCompleted: false,
+        recurringWeekly: meetingFormData.recurringWeekly,
+        createdAt: new Date().toISOString()
+      };
+
+      await completeTeacherMeeting(baseMeeting, meetingFormData.notes);
+      showToast('Görüşme tamamlandı olarak kaydedildi! Bir sonraki hafta için otomatik hatırlatma hazırlandı. 🔔');
+    } else {
+      const mDate = new Date(meetingFormData.date);
+      const dIndex = mDate.getDay();
+      const dayOfWeek = DAYS[dIndex === 0 ? 6 : dIndex - 1];
+
+      await saveTeacherMeeting({
+        teacherId: tId,
+        studentId: selectedStudent.id,
+        studentName: selectedStudent.name,
+        studentGrade: selectedStudent.grade,
+        title: meetingFormData.title,
+        type: meetingFormData.type,
+        date: meetingFormData.date,
+        time: meetingFormData.time,
+        dayOfWeek,
+        isCompleted: false,
+        notes: meetingFormData.notes,
+        recurringWeekly: meetingFormData.recurringWeekly
+      });
+      showToast('Görüşme takvime eklendi ve haftalık hatırlatma ayarlandı! 📅');
+    }
+
+    setShowMeetingModal(false);
+    setMeetingFormData({
+      title: 'Haftalık Birebir Koçluk Görüşmesi',
+      type: 'coaching',
+      date: new Date().toISOString().split('T')[0],
+      time: '16:00',
+      notes: '',
+      recurringWeekly: true
+    });
   };
 
   // Subscribe to real-time updates for selected student's tasks
@@ -494,29 +645,19 @@ export function MyStudents() {
     return studentTasks.filter((t: Task) => t.day === day);
   };
 
-  const [showMeetingModal, setShowMeetingModal] = useState(false);
-  const [meetingNote, setMeetingNote] = useState('');
+  const todayStr = new Date().toISOString().split('T')[0];
+  const dueTeacherMeetings = teacherMeetings.filter(m => {
+    if (m.isCompleted) return false;
+    if (m.date === todayStr) return true;
+    const mDate = new Date(m.date);
+    const today = new Date(todayStr);
+    const diffDays = Math.ceil((mDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 2;
+  });
 
-  const addMeeting = () => {
-    if (!meetingNote || !selectedStudent) return;
-    
-    const teacherId = localStorage.getItem('currentUserId') || '1';
-    const meeting = {
-      id: Math.random().toString(36).substr(2, 9),
-      teacherId,
-      studentId: selectedStudent.id,
-      date: new Date().toISOString(),
-      notes: meetingNote
-    };
-
-    const savedMeetings = JSON.parse(localStorage.getItem('meetings') || '[]');
-    localStorage.setItem('meetings', JSON.stringify([...savedMeetings, meeting]));
-    
-    setMeetingNote('');
-    setShowMeetingModal(false);
-    
-    // Optional: show success toast
-  };
+  const studentNextMeeting = selectedStudent 
+    ? teacherMeetings.find(m => m.studentId === selectedStudent.id && !m.isCompleted)
+    : null;
 
   return (
     <div className="space-y-8 pb-12">
@@ -536,6 +677,13 @@ export function MyStudents() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
+                <NavLink 
+                  to="/calendar"
+                  className="bg-surface-container-high hover:bg-surface-container-highest text-primary px-5 py-3.5 rounded-full font-bold flex items-center gap-2 border border-outline-variant/10 shadow-xs transition-all text-xs"
+                >
+                  <Calendar className="w-4 h-4" />
+                  Görüşme Takvimi
+                </NavLink>
                 {userRole === 'admin' && (
                   <button 
                     onClick={() => setShowClaimModal(true)}
@@ -554,6 +702,63 @@ export function MyStudents() {
                 </button>
               </div>
             </div>
+
+            {/* Haftalık Görüşme Hatırlatıcıları Banner */}
+            {dueTeacherMeetings.length > 0 && (
+              <div className="bg-gradient-to-r from-amber-500/15 via-primary/10 to-amber-500/10 border-2 border-amber-500/30 p-5 rounded-3xl space-y-3 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/20 shrink-0">
+                      <Bell className="w-5 h-5 animate-bounce" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm sm:text-base text-on-surface flex items-center gap-2">
+                        Haftalık Görüşme Hatırlatması
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-900">
+                          {dueTeacherMeetings.length} Görüşme Zamanı Geldi
+                        </span>
+                      </h4>
+                      <p className="text-xs text-on-surface-variant font-medium">
+                        Öğrenciyle haftalık takip döngüsü gereği görüşme günü geldi veya yaklaşıyor:
+                      </p>
+                    </div>
+                  </div>
+                  <NavLink
+                    to="/calendar"
+                    className="px-4 py-2 bg-white hover:bg-surface-container-high text-primary border border-outline-variant/20 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs shrink-0 self-start sm:self-auto"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    <span>Takvimi Aç</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </NavLink>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+                  {dueTeacherMeetings.map(m => {
+                    const isToday = m.date === todayStr;
+                    return (
+                      <div 
+                        key={m.id}
+                        className="p-3.5 bg-white rounded-2xl border border-amber-500/20 shadow-2xs flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold text-on-surface truncate">{m.studentName}</p>
+                          <p className="text-[10px] text-on-surface-variant flex items-center gap-1 mt-0.5 font-medium">
+                            <Clock className="w-3 h-3 text-primary" />
+                            {m.dayOfWeek}, {m.time}
+                          </p>
+                        </div>
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${
+                          isToday ? 'bg-red-50 text-red-700 border border-red-200 animate-pulse' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {isToday ? 'Bugün' : 'Yaklaşıyor'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Scope Switcher: ONLY for Administrator */}
             {userRole === 'admin' && (
@@ -855,12 +1060,27 @@ export function MyStudents() {
               </div>
               <div className="flex flex-wrap items-center gap-4">
                 <button 
-                  onClick={() => setShowMeetingModal(true)}
-                  className="bg-tertiary text-white px-6 py-4 rounded-3xl font-bold shadow-lg shadow-tertiary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                  onClick={() => {
+                    setMeetingModalMode('record_done');
+                    setShowMeetingModal(true);
+                  }}
+                  className="bg-primary hover:bg-primary/90 text-white px-6 py-4 rounded-3xl font-bold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
                 >
                   <Calendar className="w-5 h-5" />
-                  Görüşme Notu Ekle
+                  Görüşme Planla / Not Al
                 </button>
+
+                {studentNextMeeting && (
+                  <div className="bg-amber-500/10 border border-amber-500/25 px-5 py-3 rounded-3xl flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                      <Bell className="w-4 h-4 animate-bounce" />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black uppercase text-amber-800 tracking-wider">Haftalık Görüşme Zamanı</p>
+                      <p className="text-xs font-black text-on-surface">{studentNextMeeting.date} ({studentNextMeeting.time})</p>
+                    </div>
+                  </div>
+                )}
 
                 {(() => {
                   const studentCountdown = selectedStudent?.grade ? getExamCountdownForGrade(selectedStudent.grade) : null;

@@ -1162,3 +1162,135 @@ export function subscribeStudentBooks(studentId: string, callback: (books: Stude
   }
 }
 
+// --------------------------------------------------------------------------
+// Teacher Calendar & Weekly Recurring Coaching Sessions
+// --------------------------------------------------------------------------
+
+export interface TeacherMeeting {
+  id: string;
+  teacherId: string;
+  studentId: string;
+  studentName: string;
+  studentGrade?: string;
+  title: string;
+  type: 'coaching' | 'exam_analysis' | 'homework_check' | 'parent_meeting' | 'general';
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  dayOfWeek: string; // 'Pazartesi', 'Salı', etc.
+  isCompleted: boolean;
+  notes?: string;
+  completedAt?: string;
+  recurringWeekly: boolean; // if true, reminds next week on same day
+  createdAt: string;
+}
+
+export async function saveTeacherMeeting(
+  meeting: Omit<TeacherMeeting, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
+): Promise<TeacherMeeting> {
+  const meetingId = meeting.id || 'meet_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  const now = new Date().toISOString();
+  const meetingDoc: TeacherMeeting = {
+    ...cleanForFirestore(meeting),
+    id: meetingId,
+    createdAt: meeting.createdAt || now
+  };
+
+  try {
+    await setDoc(doc(db, 'meetings', meetingId), meetingDoc, { merge: true });
+  } catch (err) {
+    console.warn('Firestore save meeting error, caching locally:', err);
+  }
+
+  try {
+    const key = `teacher_meetings_${meeting.teacherId}`;
+    const existing: TeacherMeeting[] = JSON.parse(localStorage.getItem(key) || '[]');
+    const filtered = existing.filter(m => m.id !== meetingId);
+    const updated = [meetingDoc, ...filtered];
+    localStorage.setItem(key, JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
+  } catch {}
+
+  return meetingDoc;
+}
+
+export async function completeTeacherMeeting(
+  meeting: TeacherMeeting, 
+  completionNotes?: string
+): Promise<void> {
+  const now = new Date();
+  const completedDoc: TeacherMeeting = {
+    ...meeting,
+    isCompleted: true,
+    completedAt: now.toISOString(),
+    notes: completionNotes ? `${meeting.notes ? meeting.notes + '\n\n' : ''}[Görüşme Notu]: ${completionNotes}` : meeting.notes
+  };
+
+  await saveTeacherMeeting(completedDoc);
+
+  // If recurringWeekly, automatically schedule the next week's session 7 days later
+  if (meeting.recurringWeekly) {
+    const currentMeetingDate = new Date(meeting.date);
+    const nextDate = new Date(currentMeetingDate);
+    nextDate.setDate(nextDate.getDate() + 7);
+    const nextDateStr = nextDate.toISOString().split('T')[0];
+
+    const nextMeeting: Omit<TeacherMeeting, 'id' | 'createdAt'> = {
+      teacherId: meeting.teacherId,
+      studentId: meeting.studentId,
+      studentName: meeting.studentName,
+      studentGrade: meeting.studentGrade,
+      title: `${meeting.studentName} Haftalık Düzenli Koçluk Görüşmesi`,
+      type: meeting.type,
+      date: nextDateStr,
+      time: meeting.time || '16:00',
+      dayOfWeek: meeting.dayOfWeek,
+      isCompleted: false,
+      recurringWeekly: true,
+      notes: `Geçen haftaki görüşme tamamlandı. Önceki görüşme notu: ${completionNotes || meeting.notes || 'Normal seyrinde devam ediyor.'}`
+    };
+
+    await saveTeacherMeeting(nextMeeting);
+  }
+}
+
+export async function deleteTeacherMeeting(meetingId: string, teacherId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'meetings', meetingId));
+  } catch (err) {
+    console.warn('Firestore delete meeting error:', err);
+  }
+
+  try {
+    const key = `teacher_meetings_${teacherId}`;
+    const existing: TeacherMeeting[] = JSON.parse(localStorage.getItem(key) || '[]');
+    const updated = existing.filter(m => m.id !== meetingId);
+    localStorage.setItem(key, JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
+  } catch {}
+}
+
+export function subscribeTeacherMeetings(teacherId: string, callback: (meetings: TeacherMeeting[]) => void) {
+  const key = `teacher_meetings_${teacherId}`;
+  const local: TeacherMeeting[] = JSON.parse(localStorage.getItem(key) || '[]');
+  if (local.length > 0) {
+    callback(local);
+  }
+
+  try {
+    const q = query(collection(db, 'meetings'), where('teacherId', '==', teacherId));
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as TeacherMeeting));
+      list.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+      localStorage.setItem(key, JSON.stringify(list));
+      callback(list);
+    }, (err) => {
+      console.warn('subscribeTeacherMeetings firestore error:', err);
+      callback(JSON.parse(localStorage.getItem(key) || '[]'));
+    });
+  } catch (err) {
+    console.warn('subscribeTeacherMeetings setup error:', err);
+    return () => {};
+  }
+}
+
+

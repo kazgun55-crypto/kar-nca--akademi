@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
-import { Menu, X, LayoutDashboard, Users, UserCircle, ClipboardCheck, BarChart3, Settings, ShieldCheck, BookOpen } from 'lucide-react';
+import { Menu, X, LayoutDashboard, Users, UserCircle, ClipboardCheck, BarChart3, Settings, ShieldCheck, BookOpen, Calendar } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
@@ -22,6 +22,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     } else if (userRole === 'teacher') {
       return [
         { icon: Users, label: 'Öğrencilerim', path: '/my-students' },
+        { icon: Calendar, label: 'Takvim & Görüşmeler', path: '/calendar' },
+        { icon: BookOpen, label: 'Kütüphane', path: '/library' },
         { icon: Settings, label: 'Ayarlar', path: '/settings' },
       ];
     } else {

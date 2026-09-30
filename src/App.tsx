@@ -14,6 +14,7 @@ import { Analytics } from './pages/Analytics';
 import { EnterTrial } from './pages/EnterTrial';
 import { MyStudents } from './pages/MyStudents';
 import { Library } from './pages/Library';
+import { TeacherCalendar } from './pages/TeacherCalendar';
 import { initGlobalCloudSync } from './lib/firestoreService';
 
 function DirectStudentRedirect() {
@@ -72,6 +73,7 @@ export default function App() {
                 <Route path="/students" element={<StudentDirectory />} />
                 <Route path="/students/new" element={<AddStudent />} />
                 <Route path="/my-students" element={<MyStudents />} />
+                <Route path="/calendar" element={<TeacherCalendar />} />
                 <Route path="/portal" element={<StudentPortal />} />
                 <Route path="/library" element={<Library />} />
                 <Route path="/assignments" element={<AssignmentFlow />} />
