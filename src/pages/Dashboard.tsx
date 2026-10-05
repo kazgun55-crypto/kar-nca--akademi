@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Users, Verified, FileText, Mail, Sparkles, Timer, Calendar, UserCheck } from 'lucide-react';
+import { TrendingUp, Users, Verified, FileText, Mail, Sparkles, Timer, Calendar, UserCheck, Trophy } from 'lucide-react';
 import { StatCard } from '@/src/components/StatCard';
 import { motion } from 'motion/react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { subscribeStudents, subscribeTeachers } from '@/src/lib/firestoreService';
 import { calculateMaarifExamCountdown } from '@/src/lib/curriculum';
+import { StudentLeaderboard } from '@/src/components/StudentLeaderboard';
 
 export function Dashboard() {
+  const userRole = localStorage.getItem('userRole') || 'student';
+  if (userRole !== 'admin') {
+    return <Navigate to="/portal" replace />;
+  }
+
   const [studentCount, setStudentCount] = useState<number>(0);
   const [teacherCount, setTeacherCount] = useState<number>(0);
   const [avgScore, setAvgScore] = useState<number>(0);
@@ -172,6 +178,11 @@ export function Dashboard() {
           </button>
         </motion.div>
       </div>
+
+      {/* Sınıf & Branş Bazlı Öğrenci Performans Sıralaması (Yalnızca Yönetici) */}
+      <section className="pt-4">
+        <StudentLeaderboard embedded={true} />
+      </section>
     </div>
   );
 }

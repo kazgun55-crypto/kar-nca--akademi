@@ -14,12 +14,14 @@ import {
   BarChart3,
   ClipboardCheck,
   Timer,
-  Calendar
+  Calendar,
+  Trophy
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Genel Bakış', path: '/', roles: ['admin'] },
+  { icon: Trophy, label: 'Performans Sıralaması', path: '/leaderboard', roles: ['admin'] },
   { icon: ShieldCheck, label: 'Öğretmen Yönetimi', path: '/teachers', roles: ['admin'] },
   { icon: Users, label: 'Öğrencilerim', path: '/my-students', roles: ['teacher'] },
   { icon: Calendar, label: 'Takvim & Görüşmeler', path: '/calendar', roles: ['teacher', 'admin'] },

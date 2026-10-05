@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
-import { Menu, X, LayoutDashboard, Users, UserCircle, ClipboardCheck, BarChart3, Settings, ShieldCheck, BookOpen, Calendar } from 'lucide-react';
+import { Menu, X, LayoutDashboard, Users, UserCircle, ClipboardCheck, BarChart3, Settings, ShieldCheck, BookOpen, Calendar, Trophy } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
@@ -15,6 +15,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     if (userRole === 'admin') {
       return [
         { icon: LayoutDashboard, label: 'Genel Bakış', path: '/' },
+        { icon: Trophy, label: 'Sıralama', path: '/leaderboard' },
         { icon: ShieldCheck, label: 'Öğretmenler', path: '/teachers' },
         { icon: Users, label: 'Öğrenciler', path: '/students' },
         { icon: Settings, label: 'Ayarlar', path: '/settings' },
