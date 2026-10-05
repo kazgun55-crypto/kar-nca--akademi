@@ -49,7 +49,9 @@ app.post("/api/analyze", async (req, res) => {
     const uncompletedTasks = activeMetricsTasks.filter((t: any) => t && !t.completed);
     const completionRate = activeMetricsTasks.length > 0 ? Math.round((completedTasks.length / activeMetricsTasks.length) * 100) : 0;
 
-    // 1. Calculate Weekly Task Metrics (Doğru, Yanlış, Boş, Net)
+    // 1. Calculate Weekly Task Metrics (Doğru, Yanlış, Boş, Net, Verilen Soru Sayısı)
+    let weeklyAssignedQuestions = 0;
+    let weeklySolvedQuestions = 0;
     let weeklyTotalQuestions = 0;
     let weeklyCorrect = 0;
     let weeklyIncorrect = 0;
@@ -71,28 +73,46 @@ app.post("/api/analyze", async (req, res) => {
       const emp = Number(t.empty) || 0;
       const n = typeof t.net === 'number' ? t.net : Math.max(0, c - (inc / 4));
 
-      weeklyCorrect += c;
-      weeklyIncorrect += inc;
-      weeklyEmpty += emp;
-      weeklyNet += n;
-
-      let qCount = c + inc + emp;
-      if (qCount === 0 && t.amount) {
+      // Task question calculation
+      let taskQ = 0;
+      if (t.amount) {
         const match = String(t.amount).match(/\d+/);
-        if (match) qCount = parseInt(match[0], 10);
+        if (match) taskQ = parseInt(match[0], 10);
       }
-      weeklyTotalQuestions += qCount;
+      if (taskQ === 0 && (c + inc + emp) > 0) {
+        taskQ = c + inc + emp;
+      }
+      if (taskQ === 0) {
+        if (t.type === 'question') taskQ = 25;
+        else if (t.type === 'test') taskQ = 20;
+      }
 
-      subjectTaskStats[subj].correct += c;
-      subjectTaskStats[subj].incorrect += inc;
-      subjectTaskStats[subj].empty += emp;
-      subjectTaskStats[subj].net += n;
-      subjectTaskStats[subj].total += qCount;
+      weeklyAssignedQuestions += taskQ;
 
-      if (inc > 0) {
-        subjectTaskStats[subj].topics[topic] = (subjectTaskStats[subj].topics[topic] || 0) + inc;
+      if (t.completed) {
+        weeklyCorrect += c;
+        weeklyIncorrect += inc;
+        weeklyEmpty += emp;
+        weeklyNet += n;
+
+        const solvedInTask = (c + inc + emp) > 0 ? (c + inc + emp) : taskQ;
+        weeklySolvedQuestions += solvedInTask;
+        weeklyTotalQuestions += solvedInTask;
+
+        subjectTaskStats[subj].correct += c;
+        subjectTaskStats[subj].incorrect += inc;
+        subjectTaskStats[subj].empty += emp;
+        subjectTaskStats[subj].net += n;
+        subjectTaskStats[subj].total += solvedInTask;
+
+        if (inc > 0) {
+          subjectTaskStats[subj].topics[topic] = (subjectTaskStats[subj].topics[topic] || 0) + inc;
+        }
       }
     });
+
+    const weeklyRemainingQuestions = Math.max(0, weeklyAssignedQuestions - weeklySolvedQuestions);
+    const questionCompletionRate = weeklyAssignedQuestions > 0 ? Math.min(100, Math.round((weeklySolvedQuestions / weeklyAssignedQuestions) * 100)) : 0;
 
     // 2. Aggregate Topic Errors from all sources (TopicErrors, Tasks, and Trials)
     const topicErrorMap: Record<string, { topic: string; subject: string; count: number }> = {};
@@ -434,7 +454,11 @@ app.post("/api/analyze", async (req, res) => {
 
     // 11. Structured Weekly Performance Statistics for UI Dashboard
     const weeklyPerformanceStats = {
-      totalQuestions: weeklyTotalQuestions,
+      assignedQuestions: weeklyAssignedQuestions,
+      solvedQuestions: weeklySolvedQuestions,
+      remainingQuestions: weeklyRemainingQuestions,
+      questionCompletionRate: questionCompletionRate,
+      totalQuestions: weeklySolvedQuestions > 0 ? weeklySolvedQuestions : weeklyTotalQuestions,
       totalCorrect: weeklyCorrect,
       totalIncorrect: weeklyIncorrect,
       totalEmpty: weeklyEmpty,

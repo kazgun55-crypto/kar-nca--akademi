@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, 
   ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, 
@@ -18,6 +18,7 @@ import {
   getStudentById,
   subscribeStudents
 } from '../lib/firestoreService';
+import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats } from '../lib/utils';
 import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -86,7 +87,17 @@ export function StudentPortal() {
   const [evalIncorrect, setEvalIncorrect] = useState<number>(0);
   const [evalEmpty, setEvalEmpty] = useState<number>(0);
   const [showResultModal, setShowResultModal] = useState<boolean>(false);
+  const [weeklyQuestionGoal, setWeeklyQuestionGoal] = useState<number | undefined>(undefined);
   const tasksRef = useRef<HTMLDivElement>(null);
+
+  // Haftalık ve Günlük Soru Hesaplamaları (Öğretmenin verdiği haftalık soru sayısı ve öğrencinin çözdüğü)
+  const weeklyQuestionStats = useMemo(() => {
+    return calculateWeeklyQuestionStats(tasks, weeklyQuestionGoal);
+  }, [tasks, weeklyQuestionGoal]);
+
+  const todayQuestionStats = useMemo(() => {
+    return calculateWeeklyQuestionStats(todayTasks);
+  }, [todayTasks]);
 
   // Exam / Trial Entry States
   const [examSubject, setExamSubject] = useState<string>('Genel Deneme');
@@ -222,6 +233,9 @@ export function StudentPortal() {
         setStudentName(studentDoc.name || 'Öğrenci');
         setStudentGrade(studentDoc.grade || '');
         setCountdown(getExamCountdownForGrade(studentDoc.grade || ''));
+        if (studentDoc.weeklyQuestionGoal || studentDoc.weeklyTargetQuestions) {
+          setWeeklyQuestionGoal(Number(studentDoc.weeklyQuestionGoal || studentDoc.weeklyTargetQuestions));
+        }
         if (studentDoc.id && studentDoc.id !== id) {
           id = studentDoc.id;
           setStudentId(studentDoc.id);
@@ -624,6 +638,50 @@ export function StudentPortal() {
   const completedCount = tasks.filter(t => t.completed).length;
   const progressPercent = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
 
+  // Helper to extract assigned question count from a task
+  const getTaskAssignedQuestions = (task: Task): number => {
+    if (task.type === 'video') return 0;
+    if (task.amount) {
+      const match = String(task.amount).match(/\d+/);
+      if (match) return parseInt(match[0], 10);
+    }
+    const evalTotal = (task.correct || 0) + (task.incorrect || 0) + (task.empty || 0);
+    if (evalTotal > 0) return evalTotal;
+    if (task.type === 'question' || task.type === 'test') return 20;
+    return 0;
+  };
+
+  // Helper to extract solved question count from a completed task
+  const getTaskSolvedQuestions = (task: Task): number => {
+    if (!task.completed || task.type === 'video') return 0;
+    const evalTotal = (task.correct || 0) + (task.incorrect || 0) + (task.empty || 0);
+    if (evalTotal > 0) return evalTotal;
+    if (task.amount) {
+      const match = String(task.amount).match(/\d+/);
+      if (match) return parseInt(match[0], 10);
+    }
+    if (task.type === 'question' || task.type === 'test') return 20;
+    return 0;
+  };
+
+  // Weekly questions metrics
+  const weeklyAssignedQuestions = tasks.reduce((sum, t) => sum + getTaskAssignedQuestions(t), 0);
+  const weeklySolvedQuestions = tasks.filter(t => t.completed).reduce((sum, t) => sum + getTaskSolvedQuestions(t), 0);
+  const weeklyRemainingQuestions = Math.max(0, weeklyAssignedQuestions - weeklySolvedQuestions);
+  const weeklyQuestionProgressPercent = weeklyAssignedQuestions > 0 
+    ? Math.min(100, Math.round((weeklySolvedQuestions / weeklyAssignedQuestions) * 100)) 
+    : (tasks.length > 0 ? progressPercent : 0);
+
+  // Question evaluations summary
+  const weeklyTotalCorrect = tasks.filter(t => t.completed).reduce((sum, t) => sum + (t.correct || 0), 0);
+  const weeklyTotalIncorrect = tasks.filter(t => t.completed).reduce((sum, t) => sum + (t.incorrect || 0), 0);
+  const weeklyTotalEmpty = tasks.filter(t => t.completed).reduce((sum, t) => sum + (t.empty || 0), 0);
+  const weeklyTotalNet = Number((tasks.filter(t => t.completed && t.net !== undefined).reduce((sum, t) => sum + (t.net || 0), 0)).toFixed(2));
+
+  // Today's questions metrics
+  const todayAssignedQuestions = todayTasks.reduce((sum, t) => sum + getTaskAssignedQuestions(t), 0);
+  const todaySolvedQuestions = todayTasks.filter(t => t.completed).reduce((sum, t) => sum + getTaskSolvedQuestions(t), 0);
+
   const currentDayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
   const currentTodayName = DAYS_TR[currentDayIndex];
   const todayIncompleteTasks = tasks.filter(t => t.day === currentTodayName && !t.completed);
@@ -800,8 +858,20 @@ export function StudentPortal() {
               )}
             </div>
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold mb-4 sm:mb-6 leading-tight font-manrope">Tekrar hoş geldin,<br />{studentName.split(' ')[0]}.</h1>
-            <p className="text-sm sm:text-base md:text-lg text-white/80 mb-6 sm:mb-10 font-medium">
-              Bugün yapman gereken {todayTasks.length} görev var. {tasks.length > todayTasks.length && `Haftalık programında toplam ${tasks.length} görev bulunuyor.`} Haftalık programının %{progressPercent} kısmını tamamladın!
+            <p className="text-sm sm:text-base md:text-lg text-white/80 mb-6 sm:mb-10 font-medium leading-relaxed">
+              Bugün yapman gereken <strong className="text-white font-black">{todayTasks.length} görev</strong> {todayQuestionStats.assignedQuestions > 0 ? `(${todayQuestionStats.assignedQuestions} soru)` : ''} var.
+              {weeklyQuestionStats.assignedQuestions > 0 ? (
+                <span>
+                  {' '}Haftalık programında öğretmeninin verdiği toplam <strong className="text-amber-300 font-black underline decoration-amber-400/60 decoration-2 underline-offset-4">{weeklyQuestionStats.assignedQuestions} soru</strong> ödevinden <strong className="text-white font-black">{weeklyQuestionStats.solvedQuestions} tanesini</strong> (%{weeklyQuestionStats.progressPercent}) tamamladın.
+                  {weeklyQuestionStats.remainingQuestions > 0 ? (
+                    <span className="text-amber-200 font-bold"> ({weeklyQuestionStats.remainingQuestions} soru kaldı)</span>
+                  ) : (
+                    <span className="text-emerald-200 font-black"> 🎉 Harika! Haftalık tüm soru hedefini tamamladın!</span>
+                  )}
+                </span>
+              ) : (
+                tasks.length > todayTasks.length && ` Haftalık programında toplam ${tasks.length} görev bulunuyor.`
+              )}
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <button 
@@ -866,67 +936,98 @@ export function StudentPortal() {
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-8 w-full my-auto">
-              {/* Task Completion Circle */}
-              <div className="flex items-center gap-6">
-                <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
+            <div className="flex flex-col gap-5 w-full my-auto">
+              {/* 1. Haftalık Görev Tamamlama */}
+              <div className="flex items-center gap-4 p-3 bg-surface-container-low/70 rounded-2xl border border-outline-variant/10">
+                <div className="relative w-16 h-16 shrink-0">
                   <svg className="w-full h-full transform -rotate-90">
-                    <circle className="text-surface-container-high" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeWidth="8" />
-                    <circle className="text-tertiary" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeDasharray="251.3" strokeDashoffset={251.3 - (251.3 * progressPercent) / 100} strokeLinecap="round" strokeWidth="8" />
+                    <circle className="text-surface-container-high" cx="32" cy="32" fill="transparent" r="26" stroke="currentColor" strokeWidth="6" />
+                    <circle className="text-tertiary" cx="32" cy="32" fill="transparent" r="26" stroke="currentColor" strokeDasharray="163.3" strokeDashoffset={163.3 - (163.3 * progressPercent) / 100} strokeLinecap="round" strokeWidth="6" />
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-lg font-black text-on-surface">%{progressPercent}</span>
+                    <span className="text-xs font-black text-on-surface">%{progressPercent}</span>
                   </div>
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-on-surface">Haftalık Görevler</p>
-                  <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-                    {tasks.length > 0 ? `${completedCount} / ${tasks.length} görev tamamlandı.` : 'Bu hafta için görev bekleniyor.'}
+                <div className="space-y-0.5">
+                  <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Haftalık Görevler</p>
+                  <p className="text-sm font-black text-on-surface">
+                    {tasks.length > 0 ? `${completedCount} / ${tasks.length} Görev` : 'Görev bekleniyor'}
+                  </p>
+                  <p className="text-[10px] text-tertiary font-bold">
+                    {tasks.length > 0 && completedCount === tasks.length 
+                      ? 'Tüm görevler tamamlandı! 🎯' 
+                      : `${tasks.length - completedCount} görev kaldı`}
                   </p>
                 </div>
               </div>
-              
-              {/* Deneme veya Soru Durumu */}
-              <div className="flex items-center gap-6">
-                {trialHistory.length > 0 ? (
-                  <>
-                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
-                      <div className="w-full h-full rounded-full bg-secondary/10 flex flex-col items-center justify-center text-center p-2 border border-secondary/20">
-                        <span className="text-base sm:text-lg font-black text-secondary leading-none">
-                          {trialHistory[0].totalNet.toFixed(1)}
-                        </span>
-                        <span className="text-[9px] font-black uppercase text-secondary/80 mt-0.5">Net</span>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-on-surface">Son Deneme Neti</p>
-                      <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-                        {trialHistory.length} deneme sınavı kaydı bulunuyor.
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
-                      <div className="w-full h-full rounded-full bg-primary/10 flex flex-col items-center justify-center text-center p-2 border border-primary/20">
-                        <span className="text-base sm:text-lg font-black text-primary leading-none">
-                          {tasks.filter(t => t.completed).reduce((acc, t) => {
-                            const match = (t.amount || '').match(/\d+/);
-                            return acc + (match ? parseInt(match[0], 10) : 0);
-                          }, 0)}
-                        </span>
-                        <span className="text-[9px] font-black uppercase text-primary/80 mt-0.5">Soru</span>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-on-surface">Çözülen Sorular</p>
-                      <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-                        Tamamlanan ödevlerden hesaplandı.
-                      </p>
-                    </div>
-                  </>
-                )}
+
+              {/* 2. Haftalık Verilen Soru Sayısı ve Çözüm Durumu */}
+              <div className="flex items-center gap-4 p-3 bg-primary/[0.06] rounded-2xl border border-primary/20">
+                <div className="relative w-16 h-16 shrink-0">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle className="text-primary/15" cx="32" cy="32" fill="transparent" r="26" stroke="currentColor" strokeWidth="6" />
+                    <circle className="text-primary" cx="32" cy="32" fill="transparent" r="26" stroke="currentColor" strokeDasharray="163.3" strokeDashoffset={163.3 - (163.3 * weeklyQuestionStats.progressPercent) / 100} strokeLinecap="round" strokeWidth="6" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-xs font-black text-primary">%{weeklyQuestionStats.progressPercent}</span>
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[11px] font-black text-primary uppercase tracking-wider">Haftalık Verilen Soru</p>
+                    <span className="text-[8px] font-black px-1.5 py-0.2 rounded bg-primary/15 text-primary uppercase">Hedef</span>
+                  </div>
+                  <p className="text-sm sm:text-base font-black text-on-surface">
+                    {weeklyQuestionStats.solvedQuestions} / {weeklyQuestionStats.assignedQuestions} Soru
+                  </p>
+                  <p className="text-[10px] font-semibold text-on-surface-variant">
+                    {weeklyQuestionStats.remainingQuestions > 0 
+                      ? `${weeklyQuestionStats.remainingQuestions} soru kaldı` 
+                      : (weeklyQuestionStats.assignedQuestions > 0 ? '🎉 Haftalık hedef tamamlandı!' : 'Ödev bekleniyor')}
+                  </p>
+                </div>
               </div>
+
+              {/* 3. Deneme Sınavı Neti veya Soru Doğruluk Analizi */}
+              {trialHistory.length > 0 ? (
+                <div className="flex items-center gap-4 p-3 bg-secondary/[0.06] rounded-2xl border border-secondary/20">
+                  <div className="w-16 h-16 rounded-2xl bg-secondary/10 flex flex-col items-center justify-center text-center p-1 border border-secondary/20 shrink-0">
+                    <span className="text-base font-black text-secondary leading-none">
+                      {trialHistory[0].totalNet.toFixed(1)}
+                    </span>
+                    <span className="text-[8px] font-black uppercase text-secondary/80 mt-0.5">Net</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Son Deneme Neti</p>
+                    <p className="text-xs font-extrabold text-on-surface truncate max-w-[150px]">{trialHistory[0].date || 'Deneme'}</p>
+                    <p className="text-[10px] text-on-surface-variant font-medium">
+                      {trialHistory.length} deneme sınavı kaydı
+                    </p>
+                  </div>
+                </div>
+              ) : (weeklyQuestionStats.correct > 0 || weeklyQuestionStats.incorrect > 0) ? (
+                <div className="flex items-center gap-4 p-3 bg-emerald-500/[0.07] rounded-2xl border border-emerald-500/20">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-100/80 flex flex-col items-center justify-center text-center p-1 border border-emerald-300/40 shrink-0">
+                    <span className="text-base font-black text-emerald-800 leading-none">
+                      {weeklyQuestionStats.correct}
+                    </span>
+                    <span className="text-[8px] font-black uppercase text-emerald-800 mt-0.5">Doğru</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider">Soru Başarısı</p>
+                    <p className="text-xs font-black text-emerald-800">
+                      {weeklyQuestionStats.correct} D • {weeklyQuestionStats.incorrect} Y {weeklyQuestionStats.empty > 0 ? `• ${weeklyQuestionStats.empty} B` : ''}
+                    </p>
+                    <p className="text-[10px] font-bold text-emerald-700">
+                      Net: {weeklyQuestionStats.net}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-surface-container-low rounded-2xl text-center text-xs text-on-surface-variant font-medium">
+                  💡 Görevlerinize tıklayarak doğru/yanlış sonuçlarınızı girebilirsiniz.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1048,21 +1149,60 @@ export function StudentPortal() {
               </div>
             </div>
 
-            {/* Quick Stats on Mobile & Desktop */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-5 p-3 bg-surface-container-lowest rounded-2xl border border-outline-variant/10 text-center">
-              <div className="p-1">
-                <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam</p>
-                <p className="text-sm sm:text-lg font-extrabold text-on-surface">{tasks.length} Ödev</p>
+            {/* Quick Stats on Mobile & Desktop: Haftalık Verilen Soru ve Ödev İstatistikleri */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3.5 mb-5 p-3 sm:p-4 bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-2xs">
+              <div className="p-2 sm:p-2.5 text-center bg-primary/[0.05] rounded-xl border border-primary/15 space-y-0.5">
+                <div className="flex items-center justify-center gap-1">
+                  <Target className="w-3.5 h-3.5 text-primary" />
+                  <p className="text-[10px] font-black text-primary uppercase tracking-tight">Haftalık Verilen Soru</p>
+                </div>
+                <p className="text-base sm:text-xl font-black text-on-surface">{weeklyQuestionStats.assignedQuestions} Soru</p>
+                <p className="text-[9px] font-bold text-primary/80">Öğretmen Hedefi</p>
               </div>
-              <div className="p-1 border-x border-outline-variant/10">
-                <p className="text-[10px] font-bold text-tertiary uppercase">Tamamlanan</p>
-                <p className="text-sm sm:text-lg font-extrabold text-tertiary">{completedCount}</p>
+
+              <div className="p-2 sm:p-2.5 text-center bg-tertiary/[0.05] rounded-xl border border-tertiary/15 space-y-0.5">
+                <p className="text-[10px] font-bold text-tertiary uppercase tracking-tight">Çözülen Soru</p>
+                <p className="text-base sm:text-xl font-black text-tertiary">{weeklyQuestionStats.solvedQuestions} Soru</p>
+                <p className="text-[9px] font-bold text-tertiary/80">%{weeklyQuestionStats.progressPercent} Tamamlandı</p>
               </div>
-              <div className="p-1">
-                <p className="text-[10px] font-bold text-primary uppercase">Kalan</p>
-                <p className="text-sm sm:text-lg font-extrabold text-primary">{tasks.length - completedCount}</p>
+
+              <div className="p-2 sm:p-2.5 text-center bg-amber-500/[0.05] rounded-xl border border-amber-500/15 space-y-0.5">
+                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-tight">Kalan Soru</p>
+                <p className="text-base sm:text-xl font-black text-amber-800">{weeklyQuestionStats.remainingQuestions} Soru</p>
+                <p className="text-[9px] font-bold text-amber-700/80">Haftalık Kalan</p>
+              </div>
+
+              <div className="p-2 sm:p-2.5 text-center bg-surface-container-low rounded-xl border border-outline-variant/10 space-y-0.5">
+                <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-tight">Toplam Ödev</p>
+                <p className="text-base sm:text-xl font-black text-on-surface">{completedCount} / {tasks.length}</p>
+                <p className="text-[9px] font-bold text-on-surface-variant">Görev Tamamlandı</p>
               </div>
             </div>
+
+            {/* Soru Başarısı Detayı (Eğer öğrenci sonuç girdiyse) */}
+            {(weeklyQuestionStats.correct > 0 || weeklyQuestionStats.incorrect > 0 || weeklyQuestionStats.empty > 0) && (
+              <div className="mb-4 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <Award className="w-4 h-4 text-emerald-700" />
+                  <span className="font-extrabold text-emerald-950">Haftalık Soru Çözüm Sonuçların:</span>
+                </div>
+                <div className="flex items-center gap-3 font-bold text-emerald-800">
+                  <span className="text-emerald-700">{weeklyQuestionStats.correct} Doğru</span>
+                  <span>•</span>
+                  <span className="text-rose-700">{weeklyQuestionStats.incorrect} Yanlış</span>
+                  {weeklyQuestionStats.empty > 0 && (
+                    <>
+                      <span>•</span>
+                      <span className="text-amber-700">{weeklyQuestionStats.empty} Boş</span>
+                    </>
+                  )}
+                  <span>•</span>
+                  <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-md font-black text-[11px]">
+                    Net: {weeklyQuestionStats.net}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Primary View Mode Switcher: Günlük Akış (Bugün) vs Haftalık Program Tablosu */}
             <div className="bg-surface-container-highest/60 p-1 rounded-2xl mb-5 flex items-center justify-between gap-2">
@@ -1141,6 +1281,28 @@ export function StudentPortal() {
                 </div>
               )}
             </div>
+
+            {/* Günlük Modda Bugünün Soru Özeti Barı */}
+            {viewMode === 'today' && (
+              <div className="mb-4 p-3.5 bg-gradient-to-r from-primary/10 via-primary/5 to-surface-container-low border border-primary/20 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse" />
+                  <span className="font-extrabold text-on-surface">Bugünün Soru Planı:</span>
+                  <span className="font-black text-primary bg-white px-2 py-0.5 rounded-md border border-primary/20 shadow-2xs">
+                    {todayQuestionStats.assignedQuestions} Soru Hedefi
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 font-bold text-on-surface-variant flex-wrap">
+                  <span>Çözülen: <strong className="text-emerald-700">{todayQuestionStats.solvedQuestions} Soru</strong></span>
+                  <span>•</span>
+                  <span>Kalan: <strong className="text-amber-700">{todayQuestionStats.remainingQuestions} Soru</strong></span>
+                  <span>•</span>
+                  <span className="text-[11px] bg-primary/10 text-primary px-2.5 py-1 rounded-lg font-black border border-primary/15">
+                    Haftalık Toplam Verilen: {weeklyQuestionStats.assignedQuestions} Soru
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Day Filter Chips (Horizontal Touch Scroll on Phone) */}
             <div className="flex items-center justify-between gap-2 flex-wrap mb-5">
@@ -1291,7 +1453,7 @@ export function StudentPortal() {
                       <div className="flex items-center justify-between text-xs font-bold text-on-surface-variant px-1">
                         <span className="flex items-center gap-1.5 text-primary">
                           <Calendar className="w-4 h-4" />
-                          Haftalık 7 Günlük Çalışma Tablosu ({tasks.length} Görev)
+                          Haftalık 7 Günlük Çalışma Tablosu ({tasks.length} Görev {weeklyQuestionStats.assignedQuestions > 0 ? `• ${weeklyQuestionStats.assignedQuestions} Soru Hedefi` : ''})
                         </span>
                         <span className="text-[11px] text-on-surface-variant/70 italic hidden sm:inline">
                           Herhangi bir göreve tıklayarak sonucunu girebilir veya videoyu izleyebilirsiniz.
@@ -1304,6 +1466,7 @@ export function StudentPortal() {
                             const dayTasks = tasks.filter(t => t.day === day);
                             const isCurrentDay = day === DAYS_TR[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
                             const dayCompletedCount = dayTasks.filter(t => t.completed).length;
+                            const dayQStats = calculateWeeklyQuestionStats(dayTasks);
 
                             return (
                               <div 
@@ -1328,10 +1491,16 @@ export function StudentPortal() {
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-[10px] font-bold opacity-85 mt-1 flex justify-between items-center">
+                                  <div className="text-[10px] font-bold opacity-90 mt-1 flex justify-between items-center">
                                     <span>{dayTasks.length} Görev</span>
-                                    <span>{dayCompletedCount}/{dayTasks.length} Tamam</span>
+                                    <span>{dayQStats.assignedQuestions > 0 ? `${dayQStats.assignedQuestions} Soru` : `${dayCompletedCount}/${dayTasks.length} Tamam`}</span>
                                   </div>
+                                  {dayQStats.assignedQuestions > 0 && (
+                                    <div className="text-[9px] font-semibold opacity-85 mt-0.5 pt-0.5 border-t border-current/15 flex justify-between items-center">
+                                      <span>Çözülen: {dayQStats.solvedQuestions}</span>
+                                      <span>Kalan: {dayQStats.remainingQuestions}</span>
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Task Cards in this Day Column */}
@@ -3351,12 +3520,24 @@ export function StudentPortal() {
                     </p>
                   </div>
 
-                  {/* Weekly Performance Stats: Doğru, Yanlış, Boş, Doğruluk %, Son Deneme */}
+                  {/* Weekly Performance Stats: Verilen Soru, Çözülen Soru, Doğru, Yanlış, Boş, Doğruluk %, Son Deneme */}
                   {studentAiAnalysis.weeklyPerformanceStats && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+                      <div className="p-3 bg-primary/10 rounded-xl text-center space-y-0.5 border border-primary/20">
+                        <p className="text-[10px] font-bold text-primary uppercase">Verilen Soru</p>
+                        <p className="text-lg font-black text-on-surface">
+                          {studentAiAnalysis.weeklyPerformanceStats.assignedQuestions || weeklyQuestionStats.assignedQuestions}
+                        </p>
+                        <p className="text-[9px] font-bold text-primary/80">Hedef</p>
+                      </div>
                       <div className="p-3 bg-surface-container-low rounded-xl text-center space-y-0.5 border border-outline-variant/10">
-                        <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam Soru</p>
-                        <p className="text-lg font-black text-on-surface">{studentAiAnalysis.weeklyPerformanceStats.totalQuestions || 0}</p>
+                        <p className="text-[10px] font-bold text-on-surface-variant uppercase">Çözülen Soru</p>
+                        <p className="text-lg font-black text-on-surface">
+                          {studentAiAnalysis.weeklyPerformanceStats.solvedQuestions || weeklyQuestionStats.solvedQuestions}
+                        </p>
+                        <p className="text-[9px] font-bold text-tertiary">
+                          %{studentAiAnalysis.weeklyPerformanceStats.questionCompletionRate || weeklyQuestionStats.progressPercent} Başarı
+                        </p>
                       </div>
                       <div className="p-3 bg-emerald-50/70 rounded-xl text-center space-y-0.5 border border-emerald-200/50">
                         <p className="text-[10px] font-bold text-emerald-800 uppercase">Doğru</p>
@@ -3374,9 +3555,9 @@ export function StudentPortal() {
                         <p className="text-[10px] font-bold text-indigo-800 uppercase">Doğruluk</p>
                         <p className="text-lg font-black text-indigo-700">%{studentAiAnalysis.weeklyPerformanceStats.successRate || 0}</p>
                       </div>
-                      <div className="p-3 bg-primary/10 rounded-xl text-center space-y-0.5 border border-primary/20">
-                        <p className="text-[10px] font-bold text-primary uppercase">Son Deneme</p>
-                        <p className="text-lg font-black text-primary">{studentAiAnalysis.weeklyPerformanceStats.latestTrialNet || 0} Net</p>
+                      <div className="p-3 bg-secondary/10 rounded-xl text-center space-y-0.5 border border-secondary/20 col-span-2 sm:col-span-1">
+                        <p className="text-[10px] font-bold text-secondary uppercase">Son Deneme</p>
+                        <p className="text-lg font-black text-secondary">{studentAiAnalysis.weeklyPerformanceStats.latestTrialNet || 0} Net</p>
                       </div>
                     </div>
                   )}

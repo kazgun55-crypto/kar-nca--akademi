@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Calendar, PlayCircle, BookOpen, CheckCircle2, Clock, Plus, User, Send, 
   Trash2, ClipboardCheck, Award, Repeat, Sparkles, Users, Check, Share2, Copy,
-  ExternalLink, X
+  ExternalLink, X, Target
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseVideoUrl, getYoutubeId } from '../lib/videoUtils';
+import { calculateWeeklyQuestionStats } from '../lib/utils';
 import { 
   saveStudentTasks, 
   getStudentTasks, 
@@ -38,6 +39,11 @@ export function AssignmentFlow() {
   const [selectedDays, setSelectedDays] = useState<string[]>([initialDay]);
   const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily');
   const [tasks, setTasks] = useState<Task[]>([]);
+
+  // Haftalık soru hesaplaması (Verilen soru sayısı ve öğrencinin çözdüğü sorular)
+  const weeklyQuestionStats = useMemo(() => {
+    return calculateWeeklyQuestionStats(tasks);
+  }, [tasks]);
   
   // Real-time Firestore Sync & Student Selection States
   const [allStudents, setAllStudents] = useState<any[]>([]);
@@ -504,6 +510,39 @@ export function AssignmentFlow() {
           </div>
         </div>
       )}
+
+      {/* Haftalık Soru ve Ödev Durum Özeti */}
+      <div className="bg-surface-container-lowest p-4 sm:p-5 rounded-3xl border border-outline-variant/15 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+            <Target className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Haftalık Soru & Ödev Durumu</p>
+            <p className="text-sm font-black text-on-surface">
+              {weeklyQuestionStats.assignedQuestions > 0 ? (
+                <>
+                  <span className="text-primary">{weeklyQuestionStats.assignedQuestions} Soru Verildi</span>
+                  <span className="mx-1 text-on-surface-variant/40">•</span>
+                  <span className="text-emerald-700">{weeklyQuestionStats.solvedQuestions} Soru Çözüldü</span>
+                  <span className="text-xs font-bold text-emerald-800 ml-1.5">(%{weeklyQuestionStats.progressPercent})</span>
+                </>
+              ) : (
+                <span>{tasks.length} Görev Planlandı</span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs font-bold flex-wrap">
+          <div className="px-3 py-1.5 rounded-xl bg-surface-container-high text-on-surface">
+            Kalan Soru: <strong className="text-amber-800">{weeklyQuestionStats.remainingQuestions} Soru</strong>
+          </div>
+          <div className="px-3 py-1.5 rounded-xl bg-surface-container-high text-on-surface">
+            Tamamlanan Görev: <strong className="text-tertiary">{tasks.filter(t => t.completed).length} / {tasks.length}</strong>
+          </div>
+        </div>
+      </div>
 
       {/* Day Selector */}
       {viewMode === 'daily' && (
