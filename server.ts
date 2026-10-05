@@ -73,40 +73,59 @@ app.post("/api/analyze", async (req, res) => {
       const emp = Number(t.empty) || 0;
       const n = typeof t.net === 'number' ? t.net : Math.max(0, c - (inc / 4));
 
-      // Task question calculation
+      // Task question calculation - only count question tasks, strictly exclude book reading (sayfa), video, and reading
+      const type = String(t.type || '').toLowerCase().trim();
+      const amountStr = String(t.amount || '').toLowerCase().trim();
+      const titleStr = String(t.title || t.topic || '').toLowerCase().trim();
+
+      const isNonQuestion = type === 'book' || type === 'reading' || type === 'video' ||
+        amountStr.includes('sayfa') || amountStr.includes('syf') || amountStr.includes('dakika') || 
+        amountStr.includes('dk') || amountStr.includes('saat') || amountStr.includes('kitap') ||
+        titleStr.includes('kitap okuma') || titleStr.includes('sayfa okuma');
+
+      const isQuestion = !isNonQuestion && (
+        type === 'question' || 
+        (type === 'test' && (amountStr.includes('soru') || (c + inc + emp) > 0)) ||
+        amountStr.includes('soru')
+      );
+
       let taskQ = 0;
-      if (t.amount) {
-        const match = String(t.amount).match(/\d+/);
-        if (match) taskQ = parseInt(match[0], 10);
-      }
-      if (taskQ === 0 && (c + inc + emp) > 0) {
-        taskQ = c + inc + emp;
-      }
-      if (taskQ === 0) {
-        if (t.type === 'question') taskQ = 25;
-        else if (t.type === 'test') taskQ = 20;
+      if (isQuestion) {
+        if (t.amount) {
+          const match = String(t.amount).match(/\d+/);
+          if (match) taskQ = parseInt(match[0], 10);
+        }
+        if (taskQ === 0 && (c + inc + emp) > 0) {
+          taskQ = c + inc + emp;
+        }
+        if (taskQ === 0) {
+          if (t.type === 'question') taskQ = 25;
+          else if (t.type === 'test') taskQ = 20;
+        }
       }
 
       weeklyAssignedQuestions += taskQ;
 
       if (t.completed) {
-        weeklyCorrect += c;
-        weeklyIncorrect += inc;
-        weeklyEmpty += emp;
-        weeklyNet += n;
+        if (isQuestion) {
+          weeklyCorrect += c;
+          weeklyIncorrect += inc;
+          weeklyEmpty += emp;
+          weeklyNet += n;
 
-        const solvedInTask = (c + inc + emp) > 0 ? (c + inc + emp) : taskQ;
-        weeklySolvedQuestions += solvedInTask;
-        weeklyTotalQuestions += solvedInTask;
+          const solvedInTask = (c + inc + emp) > 0 ? (c + inc + emp) : taskQ;
+          weeklySolvedQuestions += solvedInTask;
+          weeklyTotalQuestions += solvedInTask;
 
-        subjectTaskStats[subj].correct += c;
-        subjectTaskStats[subj].incorrect += inc;
-        subjectTaskStats[subj].empty += emp;
-        subjectTaskStats[subj].net += n;
-        subjectTaskStats[subj].total += solvedInTask;
+          subjectTaskStats[subj].correct += c;
+          subjectTaskStats[subj].incorrect += inc;
+          subjectTaskStats[subj].empty += emp;
+          subjectTaskStats[subj].net += n;
+          subjectTaskStats[subj].total += solvedInTask;
 
-        if (inc > 0) {
-          subjectTaskStats[subj].topics[topic] = (subjectTaskStats[subj].topics[topic] || 0) + inc;
+          if (inc > 0) {
+            subjectTaskStats[subj].topics[topic] = (subjectTaskStats[subj].topics[topic] || 0) + inc;
+          }
         }
       }
     });

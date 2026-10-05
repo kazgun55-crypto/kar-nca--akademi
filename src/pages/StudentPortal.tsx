@@ -708,28 +708,12 @@ export function StudentPortal() {
 
   // Helper to extract assigned question count from a task
   const getTaskAssignedQuestions = (task: Task): number => {
-    if (task.type === 'video') return 0;
-    if (task.amount) {
-      const match = String(task.amount).match(/\d+/);
-      if (match) return parseInt(match[0], 10);
-    }
-    const evalTotal = (task.correct || 0) + (task.incorrect || 0) + (task.empty || 0);
-    if (evalTotal > 0) return evalTotal;
-    if (task.type === 'question' || task.type === 'test') return 20;
-    return 0;
+    return getTaskQuestionCount(task);
   };
 
   // Helper to extract solved question count from a completed task
   const getTaskSolvedQuestions = (task: Task): number => {
-    if (!task.completed || task.type === 'video') return 0;
-    const evalTotal = (task.correct || 0) + (task.incorrect || 0) + (task.empty || 0);
-    if (evalTotal > 0) return evalTotal;
-    if (task.amount) {
-      const match = String(task.amount).match(/\d+/);
-      if (match) return parseInt(match[0], 10);
-    }
-    if (task.type === 'question' || task.type === 'test') return 20;
-    return 0;
+    return getTaskSolvedCount(task);
   };
 
   // Weekly questions metrics
@@ -3381,25 +3365,27 @@ export function StudentPortal() {
                             title={task.completed ? "Görevi tamamlanmadı yap" : "Görevi hızlı tamamla"}
                           >
                             <Check className="w-3.5 h-3.5" />
-                            <span>{task.completed ? "Tamamlandı" : "Hızlı İşaretle"}</span>
+                            <span>{task.completed ? "Tamamlandı" : (task.type === 'book' ? "Okudum" : "Hızlı İşaretle")}</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleDismissReminder(false);
-                              setEvaluatingTask(task);
-                              setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
-                              setEvalIncorrect(task.incorrect || 0);
-                              setEvalEmpty(task.empty || 0);
-                              setShowResultModal(true);
-                            }}
-                            className="px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
-                            title="Doğru, yanlış ve boş sayılarını gir"
-                          >
-                            <ClipboardCheck className="w-3.5 h-3.5" />
-                            <span>Doğru/Yanlış Gir</span>
-                          </button>
+                          {(task.type === 'question' || task.type === 'test') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleDismissReminder(false);
+                                setEvaluatingTask(task);
+                                setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
+                                setEvalIncorrect(task.incorrect || 0);
+                                setEvalEmpty(task.empty || 0);
+                                setShowResultModal(true);
+                              }}
+                              className="px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                              title="Doğru, yanlış ve boş sayılarını gir"
+                            >
+                              <ClipboardCheck className="w-3.5 h-3.5" />
+                              <span>Doğru/Yanlış Gir</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -3454,21 +3440,23 @@ export function StudentPortal() {
                             <Check className="w-3.5 h-3.5" />
                             <span>Tamamla</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleDismissReminder(false);
-                              setEvaluatingTask(task);
-                              setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
-                              setEvalIncorrect(task.incorrect || 0);
-                              setEvalEmpty(task.empty || 0);
-                              setShowResultModal(true);
-                            }}
-                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
-                          >
-                            <ClipboardCheck className="w-3.5 h-3.5" />
-                            <span>Sonuç Gir</span>
-                          </button>
+                          {(task.type === 'question' || task.type === 'test') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleDismissReminder(false);
+                                setEvaluatingTask(task);
+                                setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
+                                setEvalIncorrect(task.incorrect || 0);
+                                setEvalEmpty(task.empty || 0);
+                                setShowResultModal(true);
+                              }}
+                              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                            >
+                              <ClipboardCheck className="w-3.5 h-3.5" />
+                              <span>Sonuç Gir</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
