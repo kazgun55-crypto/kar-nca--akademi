@@ -4,7 +4,7 @@ import {
   ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, 
   Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus, Quote,
   RefreshCw, Cloud, Smartphone, LayoutGrid, ListFilter, Check, Share2, Copy, Users, ExternalLink,
-  ChevronLeft, ChevronRight, Eye, Grid, Bell, Lightbulb, PlayCircle
+  ChevronLeft, ChevronRight, Eye, Grid, Bell, Lightbulb, PlayCircle, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseVideoUrl, getYoutubeId } from '../lib/videoUtils';
@@ -113,11 +113,62 @@ export function StudentPortal() {
   const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Daily & Incomplete Tasks Reminder Logic
+  // Daily & Incomplete Tasks Reminder Logic (İlk girişte ve 1 saat aralıklarla hatırlatılır)
+  const ONE_HOUR_MS = 60 * 60 * 1000;
   const [showDailyReminderModal, setShowDailyReminderModal] = useState<boolean>(false);
-  const [hasDismissedDailyReminder, setHasDismissedDailyReminder] = useState<boolean>(() => {
-    return sessionStorage.getItem('dismissed_daily_reminder') === 'true';
-  });
+  const initialReminderCheckedRef = useRef<string | null>(null);
+
+  const handleDismissReminder = (snoozeAllDay = false) => {
+    const id = studentId || localStorage.getItem('currentUserId') || '1';
+    const now = Date.now();
+    localStorage.setItem(`last_daily_reminder_shown_${id}`, now.toString());
+    sessionStorage.setItem(`daily_reminder_session_shown_${id}`, 'true');
+    if (snoozeAllDay) {
+      const todayIso = new Date().toISOString().split('T')[0];
+      localStorage.setItem(`daily_reminder_snoozed_date_${id}`, todayIso);
+    }
+    setShowDailyReminderModal(false);
+  };
+
+  const checkAndTriggerReminder = (currentTasks?: Task[]) => {
+    const id = studentId || localStorage.getItem('currentUserId') || '1';
+    const taskSource = currentTasks || tasks;
+    if (!taskSource || taskSource.length === 0) return;
+
+    // Check if user snoozed for the entire day
+    const snoozedDate = localStorage.getItem(`daily_reminder_snoozed_date_${id}`);
+    const todayIso = new Date().toISOString().split('T')[0];
+    if (snoozedDate === todayIso) return;
+
+    // Calculate incomplete tasks
+    const dayIdx = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+    const todayDayName = DAYS_TR[dayIdx];
+    const todayIncomplete = taskSource.filter(t => t.day === todayDayName && !t.completed);
+    const pastDays = DAYS_TR.slice(0, dayIdx);
+    const pastIncomplete = taskSource.filter(t => pastDays.includes(t.day) && !t.completed);
+
+    if (todayIncomplete.length === 0 && pastIncomplete.length === 0) {
+      return; // No incomplete tasks, do not disturb
+    }
+
+    const lastShownStr = localStorage.getItem(`last_daily_reminder_shown_${id}`);
+    const now = Date.now();
+
+    if (!lastShownStr) {
+      // First time entering the program
+      localStorage.setItem(`last_daily_reminder_shown_${id}`, now.toString());
+      sessionStorage.setItem(`daily_reminder_session_shown_${id}`, 'true');
+      setShowDailyReminderModal(true);
+    } else {
+      const lastShown = parseInt(lastShownStr, 10);
+      if (isNaN(lastShown) || now - lastShown >= ONE_HOUR_MS) {
+        // 1 hour has elapsed!
+        localStorage.setItem(`last_daily_reminder_shown_${id}`, now.toString());
+        sessionStorage.setItem(`daily_reminder_session_shown_${id}`, 'true');
+        setShowDailyReminderModal(true);
+      }
+    }
+  };
 
   // Student AI Analysis Modal States
   const [showAiAnalysisModal, setShowAiAnalysisModal] = useState<boolean>(false);
@@ -294,13 +345,6 @@ export function StudentPortal() {
         setStudentAiAnalysis(JSON.parse(savedAi));
       } catch {}
     }
-
-    const isDismissed = sessionStorage.getItem(`dismissed_daily_reminder_${id}`) === 'true';
-    if (!isDismissed) {
-      setTimeout(() => {
-        setShowDailyReminderModal(true);
-      }, 1200);
-    }
   };
 
   useEffect(() => {
@@ -339,6 +383,30 @@ export function StudentPortal() {
 
     return () => unsubscribeTasks();
   }, [studentId]);
+
+  // 1. Program ilk açıldığında hatırlatıcı kontrolü (yalnızca 1 defa ve eksik ödev varsa)
+  useEffect(() => {
+    if (!studentId || tasks.length === 0) return;
+
+    if (initialReminderCheckedRef.current !== studentId) {
+      initialReminderCheckedRef.current = studentId;
+      const initialTimer = setTimeout(() => {
+        checkAndTriggerReminder();
+      }, 1500);
+      return () => clearTimeout(initialTimer);
+    }
+  }, [studentId, tasks]);
+
+  // 2. Program açık kaldığı sürece 1 saat aralıklarla hatırlatma kontrolü
+  useEffect(() => {
+    if (!studentId) return;
+
+    const intervalTimer = setInterval(() => {
+      checkAndTriggerReminder();
+    }, 60 * 1000); // 1 dakikada bir kontrol eder, son gösterimden 1 saat geçtiyse açar
+
+    return () => clearInterval(intervalTimer);
+  }, [studentId, tasks]);
 
   const switchStudent = (newId: string) => {
     localStorage.setItem('currentUserId', newId);
@@ -3188,12 +3256,14 @@ export function StudentPortal() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => handleDismissReminder(false)}
             className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
               className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6"
             >
               {/* Modal Header */}
@@ -3204,15 +3274,21 @@ export function StudentPortal() {
                   </div>
                   <div>
                     <h3 className="text-xl font-black text-on-surface">Günün Görevlerini İşaretle & Eksikleri Tamamla</h3>
-                    <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-                      Bugün: <span className="font-bold text-primary">{currentTodayName}</span> • Ödevlerini tamamladıkça işaretle, doğru ve yanlış sayılarını gir!
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <p className="text-xs text-on-surface-variant font-medium">
+                        Bugün: <span className="font-bold text-primary">{currentTodayName}</span> • Ödevlerini tamamladıkça işaretle!
+                      </p>
+                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300/40 shrink-0">
+                        <Clock className="w-3 h-3 text-amber-700" /> 1 saat aralıklarla hatırlatılır
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowDailyReminderModal(false)}
+                  onClick={() => handleDismissReminder(false)}
                   className="p-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-colors shrink-0"
+                  title="Kapat (1 saat sonra tekrar hatırlatır)"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -3311,12 +3387,12 @@ export function StudentPortal() {
                           <button
                             type="button"
                             onClick={() => {
+                              handleDismissReminder(false);
                               setEvaluatingTask(task);
                               setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
                               setEvalIncorrect(task.incorrect || 0);
                               setEvalEmpty(task.empty || 0);
                               setShowResultModal(true);
-                              setShowDailyReminderModal(false);
                             }}
                             className="px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
                             title="Doğru, yanlış ve boş sayılarını gir"
@@ -3381,12 +3457,12 @@ export function StudentPortal() {
                           <button
                             type="button"
                             onClick={() => {
+                              handleDismissReminder(false);
                               setEvaluatingTask(task);
                               setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
                               setEvalIncorrect(task.incorrect || 0);
                               setEvalEmpty(task.empty || 0);
                               setShowResultModal(true);
-                              setShowDailyReminderModal(false);
                             }}
                             className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
                           >
@@ -3404,11 +3480,7 @@ export function StudentPortal() {
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-outline-variant/10">
                 <button
                   type="button"
-                  onClick={() => {
-                    sessionStorage.setItem('dismissed_daily_reminder', 'true');
-                    setHasDismissedDailyReminder(true);
-                    setShowDailyReminderModal(false);
-                  }}
+                  onClick={() => handleDismissReminder(true)}
                   className="w-full sm:w-auto px-4 py-2.5 text-on-surface-variant hover:text-on-surface text-xs font-semibold rounded-xl hover:bg-surface-container-high transition-colors"
                 >
                   Bugünlük Tekrar Hatırlatma (Kapat)
@@ -3417,9 +3489,9 @@ export function StudentPortal() {
                   <button
                     type="button"
                     onClick={() => {
+                      handleDismissReminder(false);
                       setViewMode('today');
                       setSelectedDayFilter('today');
-                      setShowDailyReminderModal(false);
                       scrollToTasks();
                     }}
                     className="flex-1 sm:flex-none px-5 py-2.5 bg-primary hover:bg-primary/90 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
