@@ -267,6 +267,30 @@ export function MyStudents() {
     };
   }, [selectedStudent]);
 
+  // Listen for global student deletion events to instantly clear state
+  useEffect(() => {
+    const handleStudentDeleted = (e: any) => {
+      const delId = e.detail?.studentId;
+      if (delId) {
+        setStudents(prev => prev.filter(s => s.id !== delId));
+        setAllDirectoryStudents(prev => prev.filter(s => s.id !== delId));
+        if (selectedStudent?.id === delId) {
+          setSelectedStudent(null);
+          setView('list');
+        }
+      }
+    };
+    window.addEventListener('student_deleted', handleStudentDeleted);
+    return () => window.removeEventListener('student_deleted', handleStudentDeleted);
+  }, [selectedStudent]);
+
+  // When switching to the Gelişim Analizi tab, auto-run analysis if not yet loaded
+  useEffect(() => {
+    if (activeTab === 'analytics' && selectedStudent && !aiAnalysis && !loadingAnalysis) {
+      runAiAnalysis();
+    }
+  }, [activeTab, selectedStudent]);
+
   const copyStudentLink = (studentId: string, studentName: string) => {
     const url = `${window.location.origin}/portal?studentId=${studentId}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -299,8 +323,17 @@ export function MyStudents() {
   };
 
   const handlePermanentlyDeleteStudent = async (studentId: string) => {
+    // 1. Immediately remove from React states so student vanishes immediately
+    setStudents(prev => prev.filter(s => s.id !== studentId));
+    setAllDirectoryStudents(prev => prev.filter(s => s.id !== studentId));
+    if (selectedStudent?.id === studentId) {
+      setSelectedStudent(null);
+      setView('list');
+    }
+
+    // 2. Perform permanent deletion in Firestore & blacklist storage
     await deleteStudentFromFirestore(studentId);
-    showToast('Öğrenci sistemden tamamen silindi.');
+    showToast('Öğrenci sistemden kalıcı olarak silindi.');
     setShowDeleteStudentModal(false);
     setDeletingStudentTarget(null);
   };
@@ -419,15 +452,19 @@ export function MyStudents() {
     }
   };
 
-  const runAiAnalysis = async () => {
-    if (!selectedStudent) return;
+  const runAiAnalysis = async (explicitStudent?: Student, explicitArchives?: any[]) => {
+    const targetStudent = explicitStudent || selectedStudent;
+    if (!targetStudent) return;
 
     setLoadingAnalysis(true);
     setAnalysisError(null);
 
     try {
-      const savedTasks = JSON.parse(localStorage.getItem(`tasks_${selectedStudent.id}`) || '[]');
-      const savedTrials = JSON.parse(localStorage.getItem(`trial_results_${selectedStudent.id}`) || '[]');
+      const savedTasks = JSON.parse(localStorage.getItem(`tasks_${targetStudent.id}`) || '[]');
+      const savedTrials = JSON.parse(localStorage.getItem(`trial_results_${targetStudent.id}`) || '[]');
+      const detailedTrials = JSON.parse(localStorage.getItem(`trial_results_detailed_${targetStudent.id}`) || '[]');
+      const savedErrors = JSON.parse(localStorage.getItem(`topic_errors_${targetStudent.id}`) || '[]');
+      const savedArchives = explicitArchives || JSON.parse(localStorage.getItem(`archived_programs_${targetStudent.id}`) || '[]');
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -435,11 +472,13 @@ export function MyStudents() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          studentName: selectedStudent.name,
-          grade: selectedStudent.grade,
+          studentName: targetStudent.name,
+          grade: targetStudent.grade,
           tasks: studentTasks.length > 0 ? studentTasks : savedTasks,
           trialResults: studentTrials.length > 0 ? studentTrials : savedTrials,
-          topicErrors: studentErrors
+          detailedTrials,
+          topicErrors: studentErrors.length > 0 ? studentErrors : savedErrors,
+          archivedPrograms: archivedPrograms.length > 0 ? archivedPrograms : savedArchives
         }),
       });
 
@@ -450,7 +489,7 @@ export function MyStudents() {
 
       const data = await response.json();
       setAiAnalysis(data);
-      localStorage.setItem(`ai_analysis_${selectedStudent.id}`, JSON.stringify(data));
+      localStorage.setItem(`ai_analysis_${targetStudent.id}`, JSON.stringify(data));
       showToast('Yapay zeka analizi başarıyla güncellendi! ✨');
     } catch (err: any) {
       console.error(err);
@@ -460,22 +499,23 @@ export function MyStudents() {
     }
   };
 
-  const handleAddAiRecommendedTask = async (rec: any) => {
+  const handleAddAiRecommendedTask = async (recOrNeed: any) => {
     if (!selectedStudent) return;
+    const taskData = recOrNeed.suggestedTask || recOrNeed;
     const newTaskItem: Task = {
       id: Math.random().toString(36).substr(2, 9),
-      studentId: selectedStudent.id,
+      title: taskData.title || `${taskData.subject || 'Genel'} - ${taskData.topic || 'Soru Çözümü'}`,
       day: DAYS[0],
-      subject: rec.subject || 'Genel',
-      topic: rec.topic || 'Soru Çözümü',
-      amount: rec.suggestedAmount || '25 Soru',
-      type: 'question',
+      subject: taskData.subject || 'Genel',
+      topic: taskData.topic || 'Soru Çözümü',
+      amount: taskData.amount || taskData.suggestedAmount || taskData.neededAction || '25 Soru',
+      type: (taskData.type as any) || 'question',
       completed: false
     };
     const updated = [newTaskItem, ...studentTasks];
     setStudentTasks(updated);
     await saveStudentTasks(selectedStudent.id, updated);
-    showToast(`"${rec.subject} - ${rec.topic}" plana eklendi! 🎯`);
+    showToast(`"${newTaskItem.subject} - ${newTaskItem.topic}" yeni haftalık programa eklendi! 🎯`);
   };
 
   const handleRollOverIncompleteTasks = async () => {
@@ -516,12 +556,19 @@ export function MyStudents() {
     setArchivedPrograms(updatedArchives);
     localStorage.setItem(`archived_programs_${selectedStudent.id}`, JSON.stringify(updatedArchives));
     
+    // Clear tasks for the upcoming week - explicitly empty so no automatic tasks exist
     setStudentTasks([]);
     await saveStudentTasks(selectedStudent.id, []);
     showToast('Geçen haftanın ödevleri başarıyla arşivlendi! Yeni haftalık program sayfası hazır. 🚀');
+
+    // Immediately trigger AI analysis for the newly archived week so development analysis is up to date
+    setTimeout(() => {
+      runAiAnalysis(selectedStudent, updatedArchives);
+    }, 150);
   };
 
   // Meeting Modal State & Handlers
+  const [showMeetingModal, setShowMeetingModal] = useState<boolean>(false);
   const [meetingModalMode, setMeetingModalMode] = useState<'record_done' | 'schedule_future'>('record_done');
   const [meetingFormData, setMeetingFormData] = useState({
     title: 'Haftalık Birebir Koçluk Görüşmesi',
@@ -1641,6 +1688,285 @@ export function MyStudents() {
                         </p>
                       </div>
 
+                      {/* Weekly Performance Stats: Doğru, Yanlış, Boş, Başarı % ve Deneme Neti */}
+                      {aiAnalysis.weeklyPerformanceStats && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                          <div className="p-4 bg-white rounded-2xl border border-outline-variant/10 shadow-xs text-center space-y-1">
+                            <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam Soru</p>
+                            <p className="text-xl sm:text-2xl font-black text-on-surface">{aiAnalysis.weeklyPerformanceStats.totalQuestions || 0}</p>
+                            <p className="text-[10px] text-on-surface-variant/70">Haftalık Çözülen</p>
+                          </div>
+                          <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200/50 shadow-xs text-center space-y-1">
+                            <p className="text-[10px] font-bold text-emerald-800 uppercase">Doğru</p>
+                            <p className="text-xl sm:text-2xl font-black text-emerald-700">{aiAnalysis.weeklyPerformanceStats.totalCorrect || 0}</p>
+                            <p className="text-[10px] text-emerald-700/70">Başarılı Soru</p>
+                          </div>
+                          <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-200/50 shadow-xs text-center space-y-1">
+                            <p className="text-[10px] font-bold text-rose-800 uppercase">Yanlış</p>
+                            <p className="text-xl sm:text-2xl font-black text-rose-700">{aiAnalysis.weeklyPerformanceStats.totalIncorrect || 0}</p>
+                            <p className="text-[10px] text-rose-700/70">Hata Sayısı</p>
+                          </div>
+                          <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/50 shadow-xs text-center space-y-1">
+                            <p className="text-[10px] font-bold text-amber-800 uppercase">Boş</p>
+                            <p className="text-xl sm:text-2xl font-black text-amber-700">{aiAnalysis.weeklyPerformanceStats.totalEmpty || 0}</p>
+                            <p className="text-[10px] text-amber-700/70">Cevapsız</p>
+                          </div>
+                          <div className="p-4 bg-indigo-50/60 rounded-2xl border border-indigo-200/50 shadow-xs text-center space-y-1">
+                            <p className="text-[10px] font-bold text-indigo-800 uppercase">Doğruluk</p>
+                            <p className="text-xl sm:text-2xl font-black text-indigo-700">%{aiAnalysis.weeklyPerformanceStats.successRate || 0}</p>
+                            <p className="text-[10px] text-indigo-700/70">Haftalık Oran</p>
+                          </div>
+                          <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20 shadow-xs text-center space-y-1">
+                            <p className="text-[10px] font-bold text-primary uppercase">Son Deneme</p>
+                            <p className="text-xl sm:text-2xl font-black text-primary">{aiAnalysis.weeklyPerformanceStats.latestTrialNet || 0}</p>
+                            <p className="text-[10px] text-primary/70">Net Skoru</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Önceki Hafta Değerlendirmesi & Karnesi */}
+                      {(aiAnalysis.previousWeekEvaluation || archivedPrograms.length > 0) && (
+                        <div className="p-6 bg-gradient-to-br from-indigo-500/5 via-primary/5 to-transparent rounded-3xl border border-primary/20 shadow-sm space-y-4">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                                <History className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h4 className="font-black text-base text-on-surface">Önceki Hafta Değerlendirmesi & Karnesi</h4>
+                                <p className="text-xs text-on-surface-variant font-medium">
+                                  Biten haftanın görev tamamlama, soru çözümü ve doğruluk analizi
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-xs font-black px-3 py-1 bg-white rounded-full border border-primary/20 text-primary shadow-2xs">
+                              🗓️ {aiAnalysis.previousWeekEvaluation?.endDate || 'Geçen Hafta'}
+                            </span>
+                          </div>
+
+                          {/* Değerlendirme Özeti */}
+                          <div className="p-4 bg-white/90 rounded-2xl border border-outline-variant/10 text-sm font-semibold text-on-surface leading-relaxed">
+                            {aiAnalysis.previousWeekEvaluation?.evaluationSummary || 
+                              `Geçen hafta programı tamamlandı. Öğrencinin çözdüğü görevler ve girdiği doğru/yanlış/boş sayıları doğrultusunda haftalık performansı değerlendirildi.`}
+                          </div>
+
+                          {/* Biten Hafta İstatistik Şeridi */}
+                          {aiAnalysis.previousWeekEvaluation && (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div className="p-3 bg-white rounded-xl border border-outline-variant/10 text-center">
+                                <span className="text-[10px] font-bold text-on-surface-variant block uppercase">Tamamlama</span>
+                                <span className="text-lg font-black text-primary">%{aiAnalysis.previousWeekEvaluation.completionRate}</span>
+                                <span className="text-[10px] text-on-surface-variant block">
+                                  {aiAnalysis.previousWeekEvaluation.completedTasks}/{aiAnalysis.previousWeekEvaluation.totalTasks} Görev
+                                </span>
+                              </div>
+                              <div className="p-3 bg-white rounded-xl border border-outline-variant/10 text-center">
+                                <span className="text-[10px] font-bold text-on-surface-variant block uppercase">Soru Havuzu</span>
+                                <span className="text-lg font-black text-on-surface">{aiAnalysis.previousWeekEvaluation.totalQuestions}</span>
+                                <span className="text-[10px] text-on-surface-variant block">Toplam Soru</span>
+                              </div>
+                              <div className="p-3 bg-white rounded-xl border border-outline-variant/10 text-center">
+                                <span className="text-[10px] font-bold text-on-surface-variant block uppercase">Doğru / Yanlış / Boş</span>
+                                <span className="text-sm font-black text-emerald-700 block mt-0.5">
+                                  {aiAnalysis.previousWeekEvaluation.correct}D • {aiAnalysis.previousWeekEvaluation.incorrect}Y • {aiAnalysis.previousWeekEvaluation.empty}B
+                                </span>
+                                <span className="text-[10px] text-emerald-700/80 block">Sonuç Dağılımı</span>
+                              </div>
+                              <div className="p-3 bg-white rounded-xl border border-outline-variant/10 text-center">
+                                <span className="text-[10px] font-bold text-on-surface-variant block uppercase">Net & Başarı</span>
+                                <span className="text-lg font-black text-emerald-700">{aiAnalysis.previousWeekEvaluation.net} Net</span>
+                                <span className="text-[10px] text-on-surface-variant block">%{aiAnalysis.previousWeekEvaluation.successRate} Doğruluk</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Güçlü Yönler ve Gelişim Alanları */}
+                          {aiAnalysis.previousWeekEvaluation?.strengths && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1">
+                                <span className="text-[10px] font-black uppercase text-emerald-800 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Güçlü Yönler
+                                </span>
+                                <ul className="text-xs font-semibold text-emerald-950 space-y-1">
+                                  {aiAnalysis.previousWeekEvaluation.strengths.map((s: string, idx: number) => (
+                                    <li key={idx} className="flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                                      {s}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl space-y-1">
+                                <span className="text-[10px] font-black uppercase text-amber-800 flex items-center gap-1">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Gelişim Alanları
+                                </span>
+                                <ul className="text-xs font-semibold text-amber-950 space-y-1">
+                                  {(aiAnalysis.previousWeekEvaluation.growthAreas || []).map((g: string, idx: number) => (
+                                    <li key={idx} className="flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                                      {g}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Öğrencinin Neye İhtiyacı Var? (Öncelikli Eksikler & Gelişim Alanları) */}
+                      {aiAnalysis.studentNeeds && aiAnalysis.studentNeeds.length > 0 && (
+                        <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-black">
+                                <Target className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h4 className="font-black text-base text-on-surface">Öğrencinin Neye İhtiyacı Var? (Öncelikli Eksikler)</h4>
+                                <p className="text-xs text-on-surface-variant font-medium">
+                                  Önceki hafta sonuçlarına ve deneme yanlışlarına göre tespit edilen somut ihtiyaçlar
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-extrabold px-3 py-1 bg-rose-50 text-rose-700 rounded-full border border-rose-200">
+                              Öğretmen Kontrollü Planlama
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {aiAnalysis.studentNeeds.map((need: any, idx: number) => (
+                              <div key={idx} className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 hover:border-primary/30 transition-all space-y-3">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-extrabold text-sm text-on-surface">{need.subject}</span>
+                                    <span className="text-xs text-on-surface-variant font-medium">• {need.topic}</span>
+                                  </div>
+                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                    need.urgency === 'urgent' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    {need.urgencyLabel || (need.urgency === 'urgent' ? 'Acil İhtiyaç' : 'Öncelikli Gelişim')}
+                                  </span>
+                                </div>
+
+                                <p className="text-xs text-on-surface-variant leading-relaxed font-medium">
+                                  {need.description}
+                                </p>
+
+                                <div className="p-2.5 bg-white rounded-xl border border-outline-variant/10 flex items-center justify-between gap-2 flex-wrap">
+                                  <div>
+                                    <span className="text-[9px] font-bold text-on-surface-variant uppercase block">Önerilen Çalışma</span>
+                                    <span className="text-xs font-black text-primary">{need.neededAction}</span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddAiRecommendedTask(need)}
+                                    className="px-3.5 py-2 bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 active:scale-95 shrink-0"
+                                    title="Bu ihtiyacı öğrencinin haftalık programına ödev olarak ekle"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Yeni Plana Ekle</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="p-3 bg-surface-container rounded-2xl flex items-center gap-2 text-[11px] text-on-surface-variant font-medium">
+                            <Lightbulb className="w-4 h-4 text-amber-500 shrink-0" />
+                            <span>
+                              <strong>Önemli Kural:</strong> Siz "Yeni Plana Ekle" butonuna basmadığınız veya program oluşturmadığınız sürece öğrenciye otomatik ödev atanmaz. Program kontrolü tamamen sizdedir.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error Analysis Callout Card */}
+                      {aiAnalysis.errorAnalysis && (
+                        <div className="p-6 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-transparent rounded-3xl border border-rose-200/60 shadow-xs space-y-2">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                            <h4 className="font-extrabold text-base text-rose-950">Yanlış Sayısı & Hata Odak Analizi</h4>
+                          </div>
+                          <p className="text-xs sm:text-sm text-rose-900 leading-relaxed font-medium">
+                            {aiAnalysis.errorAnalysis}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Recommendations & Pedagogy Notes Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Weekly Plan Recommendations */}
+                        {aiAnalysis.weeklyPlanRecommendations && aiAnalysis.weeklyPlanRecommendations.length > 0 && (
+                          <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-extrabold text-base text-on-surface flex items-center gap-2">
+                                <Target className="w-5 h-5 text-primary" />
+                                Yeni Program İçin Önerilen Ödevler
+                              </h4>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary uppercase">
+                                Yapay Zeka Planlama
+                              </span>
+                            </div>
+                            <div className="space-y-3">
+                              {aiAnalysis.weeklyPlanRecommendations.map((rec: any, idx: number) => (
+                                <div key={idx} className="p-3.5 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-2">
+                                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <span className="font-bold text-sm text-on-surface">{rec.subject} - {rec.topic}</span>
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                      rec.priority === 'high' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {rec.priority === 'high' ? 'Yüksek Öncelik' : 'Önerilen'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div>
+                                      <p className="text-xs font-semibold text-primary">{rec.suggestedAmount}</p>
+                                      <p className="text-[11px] text-on-surface-variant font-medium">{rec.reason}</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddAiRecommendedTask(rec)}
+                                      className="px-3 py-1.5 bg-primary text-white hover:bg-primary/90 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1 shrink-0"
+                                      title="Bu görevi öğrencinin haftalık programına doğrudan ekle"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>Plana Ekle</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Teacher Coaching & Pedagogy Notes */}
+                        {aiAnalysis.teacherPedagogyNotes && aiAnalysis.teacherPedagogyNotes.length > 0 && (
+                          <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-extrabold text-base text-on-surface flex items-center gap-2">
+                                <Lightbulb className="w-5 h-5 text-amber-500" />
+                                Öğretmen Pedagojik Koçluk Notları
+                              </h4>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 uppercase">
+                                Görüşme Tavsiyeleri
+                              </span>
+                            </div>
+                            <div className="space-y-2.5">
+                              {aiAnalysis.teacherPedagogyNotes.map((note: string, idx: number) => (
+                                <div key={idx} className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/40 border border-amber-200/40 text-xs text-on-surface font-medium leading-relaxed">
+                                  <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-800 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                                    {idx + 1}
+                                  </span>
+                                  <span>{note}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Subject Analysis Grid */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {aiAnalysis.subjects?.map((sub: any, i: number) => {
@@ -2496,6 +2822,164 @@ export function MyStudents() {
                   Kapat
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Teacher Meeting Modal (Görüşme Planla / Not Al) */}
+      <AnimatePresence>
+        {showMeetingModal && selectedStudent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 sm:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6"
+            >
+              <div className="flex items-center justify-between border-b border-outline-variant/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-on-surface">Öğrenci Görüşmesi & Takvim</h3>
+                    <p className="text-xs text-on-surface-variant font-medium">
+                      {selectedStudent.name} ({selectedStudent.grade})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMeetingModal(false)}
+                  className="p-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Mode Switcher */}
+              <div className="grid grid-cols-2 gap-2 bg-surface-container-high/60 p-1 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setMeetingModalMode('record_done')}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+                    meetingModalMode === 'record_done'
+                      ? 'bg-white text-primary shadow-xs'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  Görüşmeyi Not Al (Bitti)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMeetingModalMode('schedule_future')}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+                    meetingModalMode === 'schedule_future'
+                      ? 'bg-white text-primary shadow-xs'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  Yeni Görüşme Planla
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveOrCompleteMeeting} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-on-surface-variant">Görüşme Başlığı</label>
+                  <input
+                    type="text"
+                    required
+                    value={meetingFormData.title}
+                    onChange={(e) => setMeetingFormData({ ...meetingFormData, title: e.target.value })}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl bg-surface-container border border-outline-variant/30 text-on-surface focus:outline-none focus:border-primary"
+                    placeholder="Örn: Haftalık Koçluk & Deneme Analizi"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-on-surface-variant">Görüşme Türü</label>
+                    <select
+                      value={meetingFormData.type}
+                      onChange={(e) => setMeetingFormData({ ...meetingFormData, type: e.target.value as any })}
+                      className="w-full text-xs font-bold px-3 py-2.5 rounded-xl bg-surface-container border border-outline-variant/30 text-on-surface focus:outline-none focus:border-primary"
+                    >
+                      <option value="coaching">Birebir Koçluk</option>
+                      <option value="exam_analysis">Deneme Sınavı Analizi</option>
+                      <option value="homework_check">Ödev & Soru Kontrolü</option>
+                      <option value="parent_meeting">Veli Görüşmesi</option>
+                      <option value="general">Genel Rehberlik</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-on-surface-variant">Saat</label>
+                    <input
+                      type="time"
+                      value={meetingFormData.time}
+                      onChange={(e) => setMeetingFormData({ ...meetingFormData, time: e.target.value })}
+                      className="w-full text-xs font-bold px-3 py-2.5 rounded-xl bg-surface-container border border-outline-variant/30 text-on-surface focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-on-surface-variant">Tarih</label>
+                  <input
+                    type="date"
+                    required
+                    value={meetingFormData.date}
+                    onChange={(e) => setMeetingFormData({ ...meetingFormData, date: e.target.value })}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl bg-surface-container border border-outline-variant/30 text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-on-surface-variant">Görüşme Notları / Kararlar</label>
+                  <textarea
+                    rows={3}
+                    value={meetingFormData.notes}
+                    onChange={(e) => setMeetingFormData({ ...meetingFormData, notes: e.target.value })}
+                    className="w-full text-xs font-medium px-3 py-2 rounded-xl bg-surface-container border border-outline-variant/30 text-on-surface focus:outline-none focus:border-primary"
+                    placeholder="Görüşmede konuşulanlar, öğrencinin haftalık hedefleri..."
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-2xl cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={meetingFormData.recurringWeekly}
+                    onChange={(e) => setMeetingFormData({ ...meetingFormData, recurringWeekly: e.target.checked })}
+                    className="w-4 h-4 rounded text-primary focus:ring-primary"
+                  />
+                  <div className="text-xs">
+                    <p className="font-bold text-on-surface">Haftalık Tekrarlayan Görüşme Hatırlatması</p>
+                    <p className="text-[10px] text-on-surface-variant">Öğrenciyle görüşüldükten sonra diğer hafta aynı gün yaklaşınca sistem otomatik hatırlatır.</p>
+                  </div>
+                </label>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowMeetingModal(false)}
+                    className="flex-1 py-3 text-xs font-bold text-on-surface-variant hover:bg-surface-container-high rounded-xl transition-colors"
+                  >
+                    Vazgeç
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>{meetingModalMode === 'record_done' ? 'Görüşmeyi Kaydet' : 'Randevuyu Oluştur'}</span>
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

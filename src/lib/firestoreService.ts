@@ -257,11 +257,62 @@ export async function saveTeacherToFirestore(teacherData: any) {
   }
 }
 
-// Helper function to delete student from Firestore
+// Helper function to sync and get all deleted student IDs across cloud and local storage
+export async function syncDeletedStudents(): Promise<Set<string>> {
+  const localDeleted: string[] = JSON.parse(localStorage.getItem('deleted_student_ids') || '[]');
+  const deletedSet = new Set<string>(localDeleted);
+  try {
+    const snap = await getDocs(collection(db, 'deleted_students'));
+    snap.docs.forEach(d => {
+      deletedSet.add(d.id);
+      if (d.data()?.studentId) deletedSet.add(d.data().studentId);
+    });
+    localStorage.setItem('deleted_student_ids', JSON.stringify(Array.from(deletedSet)));
+  } catch (err) {
+    console.warn('Error syncing deleted students:', err);
+  }
+  return deletedSet;
+}
+
+// Helper function to delete student from Firestore permanently
 export async function deleteStudentFromFirestore(studentId: string) {
   try {
+    // 1. Delete from Firestore collections
     await deleteDoc(doc(db, 'students', studentId));
     await deleteDoc(doc(db, 'users', studentId));
+    await deleteDoc(doc(db, 'student_tasks', studentId));
+    await deleteDoc(doc(db, 'student_books', studentId));
+
+    // 2. Add to deleted_students blacklist collection in Firestore so student never resurrects
+    await setDoc(doc(db, 'deleted_students', studentId), {
+      studentId,
+      deletedAt: new Date().toISOString()
+    });
+
+    // 3. Keep localStorage clean and updated
+    try {
+      const existing = JSON.parse(localStorage.getItem('students') || '[]');
+      const filtered = existing.filter((s: any) => s.id !== studentId);
+      localStorage.setItem('students', JSON.stringify(filtered));
+
+      const deletedIds = JSON.parse(localStorage.getItem('deleted_student_ids') || '[]');
+      if (!deletedIds.includes(studentId)) {
+        deletedIds.push(studentId);
+        localStorage.setItem('deleted_student_ids', JSON.stringify(deletedIds));
+      }
+
+      // Remove specific student cached data
+      localStorage.removeItem(`tasks_${studentId}`);
+      localStorage.removeItem(`trial_results_${studentId}`);
+      localStorage.removeItem(`trial_results_detailed_${studentId}`);
+      localStorage.removeItem(`topic_errors_${studentId}`);
+      localStorage.removeItem(`ai_analysis_${studentId}`);
+      localStorage.removeItem(`archived_programs_${studentId}`);
+
+      // Dispatch global events for instant reactive UI updates
+      window.dispatchEvent(new CustomEvent('student_deleted', { detail: { studentId } }));
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
   } catch (err) {
     console.error('Error deleting student from Firestore:', err);
   }
@@ -604,13 +655,18 @@ export async function logoutFirebase() {
 // 5. Realtime Sync & Retrieval Firestore Collections
 export async function getStudentsFromFirestore(): Promise<any[]> {
   try {
+    const deletedSet = await syncDeletedStudents();
     const snap = await getDocs(collection(db, 'students'));
-    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const list = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(s => !deletedSet.has(s.id));
     localStorage.setItem('students', JSON.stringify(list));
     return list;
   } catch (err) {
     console.error('Error fetching students from Firestore:', err);
-    return JSON.parse(localStorage.getItem('students') || '[]');
+    const localDeleted: string[] = JSON.parse(localStorage.getItem('deleted_student_ids') || '[]');
+    const localList = JSON.parse(localStorage.getItem('students') || '[]');
+    return localList.filter((s: any) => !localDeleted.includes(s.id));
   }
 }
 
@@ -628,7 +684,11 @@ export async function getTeachersFromFirestore(): Promise<any[]> {
 
 export function subscribeStudents(callback: (students: any[]) => void) {
   return onSnapshot(collection(db, 'students'), (snap) => {
-    const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const deletedIds: string[] = JSON.parse(localStorage.getItem('deleted_student_ids') || '[]');
+    const deletedSet = new Set(deletedIds);
+    const list = snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(s => !deletedSet.has(s.id));
     localStorage.setItem('students', JSON.stringify(list));
     callback(list);
   }, (err) => {
@@ -907,11 +967,26 @@ export async function saveStudentArchivedPrograms(studentId: string, archives: a
 // 8. Comprehensive Two-Way Synchronization across all devices
 export async function ensureAllDataSyncedToFirestore() {
   try {
+    // 0. Sync deleted students list first so deletions are globally respected
+    const deletedSet = await syncDeletedStudents();
+
     // 1. Fetch current students from Firestore
     const studentsSnap = await getDocs(collection(db, 'students'));
     const firestoreStudents: any[] = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    // 2. Ensure Rüzgar Çolak is present in Firestore
+    // Clean up any student document that was deleted but still present in Firestore
+    for (const fs of firestoreStudents) {
+      if (deletedSet.has(fs.id)) {
+        try {
+          await deleteDoc(doc(db, 'students', fs.id));
+          await deleteDoc(doc(db, 'users', fs.id));
+        } catch {}
+      }
+    }
+
+    const activeFirestoreStudents = firestoreStudents.filter(s => !deletedSet.has(s.id));
+
+    // 2. Ensure initial demo student ONLY IF never deleted
     const normalize = (str: string) => 
       str.toLowerCase()
         .replace(/ğ/g, 'g')
@@ -922,76 +997,61 @@ export async function ensureAllDataSyncedToFirestore() {
         .replace(/ç/g, 'c')
         .replace(/[^a-z0-9]/g, '');
 
-    const hasRuzgar = firestoreStudents.some((s: any) => {
-      const n = normalize(s.name || '');
-      const u = normalize(s.username || '');
-      const id = normalize(s.id || '');
-      return n.includes('ruzgar') || u.includes('ruzgar') || id.includes('ruzgar');
-    });
-
-    const defaultRuzgarTasks = [
-      { id: 'rz_1', type: 'question', title: 'Türev - Ekstremum Noktaları Soru Çözümü', amount: '40 soru', completed: true, day: 'Pazartesi', correct: 36, incorrect: 4, topic: 'Türev' },
-      { id: 'rz_2', type: 'video', title: 'İntegral Temel Kavramlar & Giriş', amount: '25 dk', completed: true, day: 'Salı', videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
-      { id: 'rz_3', type: 'question', title: 'Modern Fizik - Fotoelektrik Olayı', amount: '35 soru', completed: false, day: 'Çarşamba' },
-      { id: 'rz_4', type: 'book', title: 'Paragraf Hız Denemesi & Analizi', amount: '30 soru', completed: false, day: 'Perşembe' },
-      { id: 'rz_5', type: 'test', title: 'AYT Matematik Branş Denemesi', amount: '40 soru', completed: false, day: 'Cuma' },
-      { id: 'rz_6', type: 'question', title: 'Organik Kimya - Alkanlar ve Alkenler', amount: '45 soru', completed: false, day: 'Cumartesi' },
-      { id: 'rz_7', type: 'reading', title: 'Genel Tekrar & Hafta Değerlendirmesi', amount: '30 dk', completed: false, day: 'Pazar' }
-    ];
-
-    if (!hasRuzgar) {
-      // Check if user has Rüzgar in local storage
-      const localStudents = JSON.parse(localStorage.getItem('students') || '[]');
-      const localRuzgar = localStudents.find((s: any) => {
+    const isRuzgarDeleted = deletedSet.has('ruzgar_colak') || Array.from(deletedSet).some(id => id.includes('ruzgar'));
+    
+    if (!isRuzgarDeleted) {
+      const hasRuzgar = activeFirestoreStudents.some((s: any) => {
         const n = normalize(s.name || '');
-        return n.includes('ruzgar');
+        const u = normalize(s.username || '');
+        const id = normalize(s.id || '');
+        return n.includes('ruzgar') || u.includes('ruzgar') || id.includes('ruzgar');
       });
 
-      const ruzgarData = localRuzgar || {
-        id: 'ruzgar_colak',
-        name: 'Rüzgar Çolak',
-        grade: '12. Sınıf',
-        lastTrialScore: 89.5,
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        username: 'ruzgar',
-        password: 'Ogrenci.2026!',
-        email: 'ruzgar.colak@okul.com',
-        teacherId: 'teacher_gokce',
-        completion: 82,
-        lastActive: 'Şimdi aktif',
-        role: 'student',
-        tasks: defaultRuzgarTasks
-      };
+      if (!hasRuzgar) {
+        // Only seed Rüzgar if the user hasn't explicitly deleted him
+        const localStudents = JSON.parse(localStorage.getItem('students') || '[]');
+        const localRuzgar = localStudents.find((s: any) => {
+          const n = normalize(s.name || '');
+          return n.includes('ruzgar');
+        });
 
-      await saveStudentToFirestore(ruzgarData);
-      await saveStudentTasks(ruzgarData.id, ruzgarData.tasks || defaultRuzgarTasks);
-      console.log('[Firestore] Rüzgar Çolak successfully synchronized to cloud database!');
-    } else {
-      // Even if Rüzgar exists in Firestore, ensure their tasks are populated
-      const ruzgarStudent = firestoreStudents.find((s: any) => {
-        const n = normalize(s.name || '');
-        return n.includes('ruzgar');
-      });
-      if (ruzgarStudent && (!ruzgarStudent.tasks || ruzgarStudent.tasks.length === 0)) {
-        await saveStudentTasks(ruzgarStudent.id, defaultRuzgarTasks);
+        const ruzgarData = localRuzgar || {
+          id: 'ruzgar_colak',
+          name: 'Rüzgar Çolak',
+          grade: '12. Sınıf',
+          lastTrialScore: 89.5,
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          username: 'ruzgar',
+          password: 'Ogrenci.2026!',
+          email: 'ruzgar.colak@okul.com',
+          teacherId: 'teacher_gokce',
+          completion: 82,
+          lastActive: 'Şimdi aktif',
+          role: 'student',
+          tasks: []
+        };
+
+        await saveStudentToFirestore(ruzgarData);
+        console.log('[Firestore] Rüzgar Çolak initialized safely in cloud database');
       }
     }
 
-    // 3. Migrate any local students that aren't yet in Firestore
+    // 3. Migrate any local students that aren't yet in Firestore (excluding deleted students)
     const localStudents = JSON.parse(localStorage.getItem('students') || '[]');
     for (const ls of localStudents) {
-      if (!ls.id) continue;
-      const alreadyInFs = firestoreStudents.some((fs: any) => fs.id === ls.id);
+      if (!ls.id || deletedSet.has(ls.id)) continue;
+      const alreadyInFs = activeFirestoreStudents.some((fs: any) => fs.id === ls.id);
       if (!alreadyInFs) {
         await saveStudentToFirestore(ls);
       }
     }
 
-    // 4. Migrate any local tasks to Firestore
+    // 4. Migrate any local tasks to Firestore (excluding deleted students)
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('tasks_')) {
         const studentId = key.replace('tasks_', '');
+        if (deletedSet.has(studentId)) continue;
         try {
           const tasks = JSON.parse(localStorage.getItem(key) || '[]');
           if (Array.isArray(tasks) && tasks.length > 0) {

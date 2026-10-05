@@ -4,7 +4,7 @@ import {
   ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, 
   Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus, Quote,
   RefreshCw, Cloud, Smartphone, LayoutGrid, ListFilter, Check, Share2, Copy, Users, ExternalLink,
-  ChevronLeft, ChevronRight, Eye, Grid
+  ChevronLeft, ChevronRight, Eye, Grid, Bell, Lightbulb, PlayCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseVideoUrl, getYoutubeId } from '../lib/videoUtils';
@@ -102,6 +102,88 @@ export function StudentPortal() {
   const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
+  // Daily & Incomplete Tasks Reminder Logic
+  const [showDailyReminderModal, setShowDailyReminderModal] = useState<boolean>(false);
+  const [hasDismissedDailyReminder, setHasDismissedDailyReminder] = useState<boolean>(() => {
+    return sessionStorage.getItem('dismissed_daily_reminder') === 'true';
+  });
+
+  // Student AI Analysis Modal States
+  const [showAiAnalysisModal, setShowAiAnalysisModal] = useState<boolean>(false);
+  const [studentAiAnalysis, setStudentAiAnalysis] = useState<any>(null);
+  const [loadingStudentAi, setLoadingStudentAi] = useState<boolean>(false);
+  const [studentAiError, setStudentAiError] = useState<string | null>(null);
+
+  const toggleTaskCompletionQuick = async (task: Task) => {
+    const updatedTasks = tasks.map(t => {
+      if (t.id === task.id) {
+        const isNowCompleted = !t.completed;
+        const qCount = t.amount ? parseInt(t.amount, 10) || 20 : 20;
+        return {
+          ...t,
+          completed: isNowCompleted,
+          correct: isNowCompleted ? (t.correct ?? qCount) : undefined,
+          incorrect: isNowCompleted ? (t.incorrect ?? 0) : undefined,
+          empty: isNowCompleted ? (t.empty ?? 0) : undefined,
+          net: isNowCompleted ? (t.net ?? qCount) : undefined
+        };
+      }
+      return t;
+    });
+
+    setTasks(updatedTasks);
+    await saveStudentTasks(studentId, updatedTasks);
+
+    const dayIndex = new Date().getDay();
+    const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+    setTodayTasks(updatedTasks.filter((t: Task) => t.day === todayName));
+
+    setSyncToast(!task.completed ? `"${task.title || task.topic}" tamamlandı olarak işaretlendi! ✅` : `"${task.title || task.topic}" işareti geri alındı.`);
+    setTimeout(() => setSyncToast(null), 3000);
+  };
+
+  const runStudentAiAnalysis = async () => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    setLoadingStudentAi(true);
+    setStudentAiError(null);
+
+    try {
+      const savedTrials = localStorage.getItem(`trial_results_${targetStudentId}`);
+      const detailedTrials = localStorage.getItem(`trial_results_detailed_${targetStudentId}`);
+      const savedErrors = localStorage.getItem(`topic_errors_${targetStudentId}`);
+
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          studentName,
+          grade: studentGrade,
+          tasks,
+          trialResults: savedTrials ? JSON.parse(savedTrials) : trialHistory,
+          detailedTrials: detailedTrials ? JSON.parse(detailedTrials) : trialHistory,
+          topicErrors: savedErrors ? JSON.parse(savedErrors) : []
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Yapay Zeka analizi başarısız oldu.');
+      }
+
+      const data = await response.json();
+      setStudentAiAnalysis(data);
+      localStorage.setItem(`ai_analysis_${targetStudentId}`, JSON.stringify(data));
+      setShowAiAnalysisModal(true);
+    } catch (err: any) {
+      console.error(err);
+      setStudentAiError(err.message || 'Analiz sırasında beklenmedik bir hata oluştu.');
+    } finally {
+      setLoadingStudentAi(false);
+    }
+  };
+
   const scrollToTasks = () => {
     tasksRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -190,6 +272,20 @@ export function StudentPortal() {
       try {
         setTrialHistory(JSON.parse(savedTrials));
       } catch {}
+    }
+
+    const savedAi = localStorage.getItem(`ai_analysis_${id}`);
+    if (savedAi) {
+      try {
+        setStudentAiAnalysis(JSON.parse(savedAi));
+      } catch {}
+    }
+
+    const isDismissed = sessionStorage.getItem(`dismissed_daily_reminder_${id}`) === 'true';
+    if (!isDismissed) {
+      setTimeout(() => {
+        setShowDailyReminderModal(true);
+      }, 1200);
     }
   };
 
@@ -528,6 +624,12 @@ export function StudentPortal() {
   const completedCount = tasks.filter(t => t.completed).length;
   const progressPercent = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
 
+  const currentDayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  const currentTodayName = DAYS_TR[currentDayIndex];
+  const todayIncompleteTasks = tasks.filter(t => t.day === currentTodayName && !t.completed);
+  const pastWeekDays = DAYS_TR.slice(0, currentDayIndex);
+  const pastIncompleteTasks = tasks.filter(t => pastWeekDays.includes(t.day) && !t.completed);
+
   return (
     <div className="space-y-8 pb-20">
       {/* Top Bar: Cloud Sync, Student Switcher & Direct Sharing Link */}
@@ -607,6 +709,45 @@ export function StudentPortal() {
               )}
             </div>
           )}
+
+          {/* Daily Task Reminder Button */}
+          <button
+            type="button"
+            onClick={() => setShowDailyReminderModal(true)}
+            className={cn(
+              "px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs relative",
+              todayIncompleteTasks.length > 0 || pastIncompleteTasks.length > 0
+                ? "bg-amber-500 hover:bg-amber-600 text-white animate-pulse"
+                : "bg-surface-container-high hover:bg-surface-container-highest text-on-surface"
+            )}
+            title="Günlük ödevlerini işaretle ve eksikleri kontrol et"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Günlük Hatırlatma</span>
+            {(todayIncompleteTasks.length > 0 || pastIncompleteTasks.length > 0) && (
+              <span className="bg-white text-amber-700 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                {todayIncompleteTasks.length + pastIncompleteTasks.length}
+              </span>
+            )}
+          </button>
+
+          {/* AI Analysis Button */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!studentAiAnalysis) {
+                runStudentAiAnalysis();
+              } else {
+                setShowAiAnalysisModal(true);
+              }
+            }}
+            disabled={loadingStudentAi}
+            className="px-3.5 py-2 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/90 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-primary/20"
+            title="Yapay zeka deneme ve haftalık doğru/yanlış analizini görüntüle"
+          >
+            <Sparkles className={cn("w-3.5 h-3.5", loadingStudentAi && "animate-spin")} />
+            <span>{loadingStudentAi ? "Analiz Ediliyor..." : "Yapay Zeka Analizim"}</span>
+          </button>
 
           <button
             onClick={() => window.location.href = '/library'}
@@ -810,6 +951,62 @@ export function StudentPortal() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Daily Incomplete / Undone Homework Reminder Banner */}
+            {(todayIncompleteTasks.length > 0 || pastIncompleteTasks.length > 0) && (
+              <div className="mb-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-amber-500/5 border border-amber-300/40 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-amber-500/30">
+                    <Bell className="w-5 h-5 animate-bounce" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">
+                        Ödev & Görev Hatırlatıcısı
+                      </span>
+                      {todayIncompleteTasks.length > 0 && (
+                        <span className="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md">
+                          Bugün {todayIncompleteTasks.length} ödev bekliyor
+                        </span>
+                      )}
+                      {pastIncompleteTasks.length > 0 && (
+                        <span className="text-xs font-bold text-orange-800 bg-orange-100 px-2 py-0.5 rounded-md">
+                          Geçmişten {pastIncompleteTasks.length} eksik var
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs sm:text-sm font-semibold text-on-surface leading-relaxed">
+                      {todayIncompleteTasks.length > 0 
+                        ? `Bugünün programında yapman ve işaretlemen gereken ${todayIncompleteTasks.length} adet ödev bulunuyor.` 
+                        : 'Bugünkü ödevlerin tamamlandı!'}
+                      {pastIncompleteTasks.length > 0 && ` Ayrıca önceki günlerden kalan ${pastIncompleteTasks.length} adet eksik ödevini de tamamlayıp doğru/yanlış sayılarını girmelisin.`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start md:self-center shrink-0 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setShowDailyReminderModal(true)}
+                    className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-md shadow-amber-600/20 transition-all flex items-center gap-1.5 active:scale-95"
+                  >
+                    <CheckSquare className="w-4 h-4" />
+                    <span>Hemen İşaretle & Sonuç Gir</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMode('today');
+                      setSelectedDayFilter('today');
+                      scrollToTasks();
+                    }}
+                    className="px-3.5 py-2.5 bg-white hover:bg-surface-container-high text-on-surface border border-outline-variant/20 text-xs font-bold rounded-xl transition-all"
+                  >
+                    Bugünün Ödevleri
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
@@ -1205,9 +1402,22 @@ export function StudentPortal() {
                                               <span>Videoyu İzle</span>
                                             </button>
                                           ) : (task.completed && (task.type === 'question' || task.type === 'test')) ? (
-                                            <span className="text-[9px] font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded">
-                                              🎯 {task.correct ?? 0}D {task.incorrect ?? 0}Y {task.net !== undefined ? `• ${task.net} Net` : ''}
-                                            </span>
+                                            <div className="inline-flex items-center flex-wrap gap-1">
+                                              <span className="text-[9px] font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded">
+                                                {task.correct ?? 0}D
+                                              </span>
+                                              <span className="text-[9px] font-black text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded">
+                                                {task.incorrect ?? 0}Y
+                                              </span>
+                                              {task.empty !== undefined && task.empty > 0 && (
+                                                <span className="text-[9px] font-black text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
+                                                  {task.empty}B
+                                                </span>
+                                              )}
+                                              <span className="text-[9px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                                {task.net !== undefined ? task.net : Math.max(0, (task.correct || 0) - ((task.incorrect || 0) / 4)).toFixed(2)} Net
+                                              </span>
+                                            </div>
                                           ) : (!task.completed && (task.type === 'question' || task.type === 'test')) ? (
                                             <span className="text-[9px] font-bold text-primary hover:underline">
                                               Sonuç Gir
@@ -1297,9 +1507,13 @@ export function StudentPortal() {
                                   {task.title}
                                 </p>
                                 {task.completed && (task.type === 'question' || task.type === 'test') && (
-                                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-black">
-                                    <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y</span>
-                                    {task.net !== undefined && <span className="text-primary font-black">• {task.net} Net</span>}
+                                  <div className="inline-flex items-center flex-wrap gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200/60 rounded-lg text-[10px] font-black">
+                                    <span className="text-emerald-700">🎯 {task.correct ?? 0} Doğru</span>
+                                    <span className="text-rose-700">• {task.incorrect ?? 0} Yanlış</span>
+                                    <span className="text-slate-600">• {task.empty ?? 0} Boş</span>
+                                    <span className="text-primary font-black bg-white px-1.5 py-0.5 rounded shadow-2xs border border-primary/20">
+                                      {task.net !== undefined ? task.net : Math.max(0, (task.correct || 0) - ((task.incorrect || 0) / 4)).toFixed(2)} Net
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -1493,9 +1707,13 @@ export function StudentPortal() {
                                   {task.title}
                                 </p>
                                 {task.completed && (task.type === 'question' || task.type === 'test') && (
-                                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-black">
-                                    <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y</span>
-                                    {task.net !== undefined && <span className="text-primary font-black">• {task.net} Net</span>}
+                                  <div className="inline-flex items-center flex-wrap gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200/60 rounded-lg text-[10px] font-black">
+                                    <span className="text-emerald-700">🎯 {task.correct ?? 0} Doğru</span>
+                                    <span className="text-rose-700">• {task.incorrect ?? 0} Yanlış</span>
+                                    <span className="text-slate-600">• {task.empty ?? 0} Boş</span>
+                                    <span className="text-primary font-black bg-white px-1.5 py-0.5 rounded shadow-2xs border border-primary/20">
+                                      {task.net !== undefined ? task.net : Math.max(0, (task.correct || 0) - ((task.incorrect || 0) / 4)).toFixed(2)} Net
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -1630,9 +1848,13 @@ export function StudentPortal() {
 
                         {/* Completed Stats Tag */}
                         {task.completed && (task.type === 'question' || task.type === 'test') && (
-                          <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-100/90 text-emerald-800 rounded-lg text-[10px] font-black">
-                            <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y {task.empty ? `• ${task.empty} B` : ''}</span>
-                            {task.net !== undefined && <span className="text-primary font-black">• {task.net} Net</span>}
+                          <div className="mt-1.5 inline-flex items-center flex-wrap gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200/70 rounded-xl text-[10px] font-black">
+                            <span className="text-emerald-700">🎯 {task.correct ?? 0} Doğru</span>
+                            <span className="text-rose-700">• {task.incorrect ?? 0} Yanlış</span>
+                            <span className="text-slate-600">• {task.empty ?? 0} Boş</span>
+                            <span className="text-primary font-black bg-white px-2 py-0.5 rounded-md shadow-2xs border border-primary/20">
+                              {task.net !== undefined ? task.net : Math.max(0, (task.correct || 0) - ((task.incorrect || 0) / 4)).toFixed(2)} Net
+                            </span>
                           </div>
                         )}
 
@@ -2785,6 +3007,468 @@ export function StudentPortal() {
                   İptal
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Günlük Ödev & Görev Hatırlatma Modalı */}
+      <AnimatePresence>
+        {showDailyReminderModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6"
+            >
+              {/* Modal Header */}
+              <div className="flex items-start justify-between gap-4 border-b border-outline-variant/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0">
+                    <Bell className="w-6 h-6 animate-bounce" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-on-surface">Günün Görevlerini İşaretle & Eksikleri Tamamla</h3>
+                    <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                      Bugün: <span className="font-bold text-primary">{currentTodayName}</span> • Ödevlerini tamamladıkça işaretle, doğru ve yanlış sayılarını gir!
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDailyReminderModal(false)}
+                  className="p-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-colors shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Status Alert */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-primary/5 to-transparent border border-amber-300/30 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-extrabold text-amber-900">
+                    {todayIncompleteTasks.length === 0 
+                      ? "🎉 Tebrikler! Bugünün tüm ödevlerini tamamladın." 
+                      : `Bugün henüz tamamlanmamış ${todayIncompleteTasks.length} adet ödevin bulunuyor.`}
+                  </p>
+                  {pastIncompleteTasks.length > 0 && (
+                    <p className="text-[11px] font-semibold text-rose-700 mt-0.5">
+                      ⚠️ Ayrıca önceki günlerden {pastIncompleteTasks.length} adet eksik ödevin kaldı.
+                    </p>
+                  )}
+                </div>
+                <span className="text-xs font-black px-2.5 py-1 rounded-xl bg-white shadow-xs text-amber-700 whitespace-nowrap">
+                  %{progressPercent} Tamamlandı
+                </span>
+              </div>
+
+              {/* Today's Tasks List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-on-surface flex items-center gap-1.5">
+                    <CheckSquare className="w-4 h-4 text-primary" />
+                    Bugünün Görevleri ({currentTodayName})
+                  </h4>
+                  <span className="text-[11px] font-bold text-on-surface-variant">
+                    {tasks.filter(t => t.day === currentTodayName).length} Ödev
+                  </span>
+                </div>
+
+                {tasks.filter(t => t.day === currentTodayName).length === 0 ? (
+                  <p className="text-xs text-on-surface-variant text-center py-6 bg-surface-container-low rounded-2xl">
+                    Bugün için planlanmış herhangi bir ödev bulunmuyor.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {tasks.filter(t => t.day === currentTodayName).map((task) => (
+                      <div
+                        key={task.id}
+                        className={`p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          task.completed 
+                            ? 'bg-emerald-50/50 border-emerald-300/40 text-emerald-950' 
+                            : 'bg-white border-outline-variant/15 text-on-surface shadow-xs'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase ${
+                              task.completed ? 'bg-emerald-200/60 text-emerald-800' : 'bg-primary/10 text-primary'
+                            }`}>
+                              {task.subject}
+                            </span>
+                            {task.amount && (
+                              <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-md">
+                                {task.amount}
+                              </span>
+                            )}
+                            {task.completed && (
+                              <div className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                                <Check className="w-3 h-3" />
+                                {task.correct !== undefined ? (
+                                  <span>{task.correct} Doğru • {task.incorrect || 0} Yanlış • {task.empty || 0} Boş {task.net !== undefined ? `• ${task.net} Net` : ''}</span>
+                                ) : (
+                                  <span>Tamamlandı</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <p className={`text-xs font-bold ${task.completed ? 'line-through text-emerald-900/60' : 'text-on-surface'}`}>
+                            {task.title || task.topic}
+                          </p>
+                        </div>
+
+                        {/* Action Buttons for this task */}
+                        <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleTaskCompletionQuick(task)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+                              task.completed 
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs' 
+                                : 'bg-surface-container-high hover:bg-emerald-50 hover:text-emerald-700 text-on-surface'
+                            }`}
+                            title={task.completed ? "Görevi tamamlanmadı yap" : "Görevi hızlı tamamla"}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{task.completed ? "Tamamlandı" : "Hızlı İşaretle"}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEvaluatingTask(task);
+                              setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
+                              setEvalIncorrect(task.incorrect || 0);
+                              setEvalEmpty(task.empty || 0);
+                              setShowResultModal(true);
+                              setShowDailyReminderModal(false);
+                            }}
+                            className="px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                            title="Doğru, yanlış ve boş sayılarını gir"
+                          >
+                            <ClipboardCheck className="w-3.5 h-3.5" />
+                            <span>Doğru/Yanlış Gir</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Past Incomplete Tasks List */}
+              {pastIncompleteTasks.length > 0 && (
+                <div className="space-y-3 pt-2 border-t border-outline-variant/10">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-rose-700 flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-600" />
+                      Geçmiş Günlerden Eksik Kalan Ödevler ({pastIncompleteTasks.length})
+                    </h4>
+                    <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-md">
+                      Telafi Gerekli
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {pastIncompleteTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className="p-3 bg-rose-50/50 rounded-2xl border border-rose-200/50 text-on-surface flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 uppercase">
+                              {task.day}
+                            </span>
+                            <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                              {task.subject}
+                            </span>
+                            {task.amount && (
+                              <span className="text-[10px] font-bold text-on-surface-variant bg-white px-2 py-0.5 rounded-md">
+                                {task.amount}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-bold text-rose-950">
+                            {task.title || task.topic}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleTaskCompletionQuick(task)}
+                            className="px-3 py-1.5 bg-white hover:bg-emerald-50 hover:text-emerald-700 text-on-surface border border-outline-variant/20 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Tamamla</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEvaluatingTask(task);
+                              setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
+                              setEvalIncorrect(task.incorrect || 0);
+                              setEvalEmpty(task.empty || 0);
+                              setShowResultModal(true);
+                              setShowDailyReminderModal(false);
+                            }}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                          >
+                            <ClipboardCheck className="w-3.5 h-3.5" />
+                            <span>Sonuç Gir</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-outline-variant/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sessionStorage.setItem('dismissed_daily_reminder', 'true');
+                    setHasDismissedDailyReminder(true);
+                    setShowDailyReminderModal(false);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 text-on-surface-variant hover:text-on-surface text-xs font-semibold rounded-xl hover:bg-surface-container-high transition-colors"
+                >
+                  Bugünlük Tekrar Hatırlatma (Kapat)
+                </button>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMode('today');
+                      setSelectedDayFilter('today');
+                      setShowDailyReminderModal(false);
+                      scrollToTasks();
+                    }}
+                    className="flex-1 sm:flex-none px-5 py-2.5 bg-primary hover:bg-primary/90 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <span>Programda Göster</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Öğrenci Yapay Zeka Başarı ve Hata Analiz Modalı */}
+      <AnimatePresence>
+        {showAiAnalysisModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 sm:p-8 max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6"
+            >
+              {/* Modal Header */}
+              <div className="flex items-start justify-between gap-4 border-b border-outline-variant/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                    <Sparkles className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-on-surface">Yapay Zeka Başarı & Hata Analiz Raporu</h3>
+                    <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                      {studentName} ({studentGrade || 'Seviye Belirtilmemiş'}) • Deneme ve haftalık doğru/yanlış verileri
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={runStudentAiAnalysis}
+                    disabled={loadingStudentAi}
+                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                    title="Analizi yeniden oluştur"
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5", loadingStudentAi && "animate-spin")} />
+                    <span>Yenile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAiAnalysisModal(false)}
+                    className="p-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Loading State */}
+              {loadingStudentAi && (
+                <div className="py-12 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin mx-auto" />
+                  <p className="text-sm font-bold text-on-surface">Yapay Zeka Çalışma Verilerini İnceliyor...</p>
+                  <p className="text-xs text-on-surface-variant">Denemeler, haftalık doğru-yanlışlar ve konu hataları analiz ediliyor.</p>
+                </div>
+              )}
+
+              {/* Error State */}
+              {!loadingStudentAi && studentAiError && (
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium space-y-2">
+                  <p className="font-bold">{studentAiError}</p>
+                  <button
+                    type="button"
+                    onClick={runStudentAiAnalysis}
+                    className="px-3 py-1.5 bg-rose-600 text-white rounded-xl font-bold"
+                  >
+                    Tekrar Dene
+                  </button>
+                </div>
+              )}
+
+              {/* Analysis Content */}
+              {!loadingStudentAi && studentAiAnalysis && (
+                <div className="space-y-6">
+                  {/* Summary */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-r from-primary/10 via-indigo-500/10 to-transparent border border-primary/20 space-y-1.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-primary flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Genel Değerlendirme
+                    </p>
+                    <p className="text-xs sm:text-sm font-semibold text-on-surface leading-relaxed italic">
+                      "{studentAiAnalysis.summary}"
+                    </p>
+                  </div>
+
+                  {/* Weekly Performance Stats: Doğru, Yanlış, Boş, Doğruluk %, Son Deneme */}
+                  {studentAiAnalysis.weeklyPerformanceStats && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                      <div className="p-3 bg-surface-container-low rounded-xl text-center space-y-0.5 border border-outline-variant/10">
+                        <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam Soru</p>
+                        <p className="text-lg font-black text-on-surface">{studentAiAnalysis.weeklyPerformanceStats.totalQuestions || 0}</p>
+                      </div>
+                      <div className="p-3 bg-emerald-50/70 rounded-xl text-center space-y-0.5 border border-emerald-200/50">
+                        <p className="text-[10px] font-bold text-emerald-800 uppercase">Doğru</p>
+                        <p className="text-lg font-black text-emerald-700">{studentAiAnalysis.weeklyPerformanceStats.totalCorrect || 0}</p>
+                      </div>
+                      <div className="p-3 bg-rose-50/70 rounded-xl text-center space-y-0.5 border border-rose-200/50">
+                        <p className="text-[10px] font-bold text-rose-800 uppercase">Yanlış</p>
+                        <p className="text-lg font-black text-rose-700">{studentAiAnalysis.weeklyPerformanceStats.totalIncorrect || 0}</p>
+                      </div>
+                      <div className="p-3 bg-amber-50/70 rounded-xl text-center space-y-0.5 border border-amber-200/50">
+                        <p className="text-[10px] font-bold text-amber-800 uppercase">Boş</p>
+                        <p className="text-lg font-black text-amber-700">{studentAiAnalysis.weeklyPerformanceStats.totalEmpty || 0}</p>
+                      </div>
+                      <div className="p-3 bg-indigo-50/70 rounded-xl text-center space-y-0.5 border border-indigo-200/50">
+                        <p className="text-[10px] font-bold text-indigo-800 uppercase">Doğruluk</p>
+                        <p className="text-lg font-black text-indigo-700">%{studentAiAnalysis.weeklyPerformanceStats.successRate || 0}</p>
+                      </div>
+                      <div className="p-3 bg-primary/10 rounded-xl text-center space-y-0.5 border border-primary/20">
+                        <p className="text-[10px] font-bold text-primary uppercase">Son Deneme</p>
+                        <p className="text-lg font-black text-primary">{studentAiAnalysis.weeklyPerformanceStats.latestTrialNet || 0} Net</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error Analysis Callout */}
+                  {studentAiAnalysis.errorAnalysis && (
+                    <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200/60 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-600" />
+                        <h4 className="font-extrabold text-xs uppercase tracking-wider text-rose-950">Yanlış Yapılan Konuların Analizi</h4>
+                      </div>
+                      <p className="text-xs text-rose-900 leading-relaxed font-medium">
+                        {studentAiAnalysis.errorAnalysis}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Weekly Plan Recommendations */}
+                  {studentAiAnalysis.weeklyPlanRecommendations && studentAiAnalysis.weeklyPlanRecommendations.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="font-extrabold text-xs uppercase tracking-wider text-on-surface flex items-center gap-1.5">
+                        <Target className="w-4 h-4 text-primary" />
+                        Senin İçin Önerilen Çalışma Hedefleri
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {studentAiAnalysis.weeklyPlanRecommendations.map((rec: any, idx: number) => (
+                          <div key={idx} className="p-3.5 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-1.5">
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                              rec.priority === 'high' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {rec.subject}
+                            </span>
+                            <p className="text-xs font-bold text-on-surface">{rec.topic}</p>
+                            <p className="text-xs font-semibold text-primary">{rec.suggestedAmount}</p>
+                            <p className="text-[10px] text-on-surface-variant font-medium">{rec.reason}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Subject Analysis Grid */}
+                  {studentAiAnalysis.subjects && studentAiAnalysis.subjects.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="font-extrabold text-xs uppercase tracking-wider text-on-surface flex items-center gap-1.5">
+                        <BookOpen className="w-4 h-4 text-primary" />
+                        Ders Bazlı Yetkinlik & Önerilen Ders Videoları
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {studentAiAnalysis.subjects.map((sub: any, idx: number) => (
+                          <div key={idx} className="p-4 bg-white rounded-2xl border border-outline-variant/10 shadow-xs space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="font-black text-sm text-on-surface">{sub.name}</span>
+                              <span className="text-xs font-black text-primary">%{sub.accuracy}</span>
+                            </div>
+                            <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  sub.status === 'danger' ? 'bg-rose-500' : sub.status === 'warning' ? 'bg-amber-500' : 'bg-emerald-500'
+                                }`}
+                                style={{ width: `${sub.accuracy}%` }}
+                              />
+                            </div>
+                            {sub.deficiencies && sub.deficiencies.length > 0 && (
+                              <div className="space-y-2 pt-1">
+                                {sub.deficiencies.map((def: any, dIdx: number) => (
+                                  <div key={dIdx} className="space-y-1">
+                                    <p className="text-[11px] font-bold text-on-surface">{def.topic}</p>
+                                    {def.recommendations?.map((rec: any, rIdx: number) => (
+                                      <a
+                                        key={rIdx}
+                                        href={rec.youtubeUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-1.5 text-[10px] text-primary font-bold hover:underline"
+                                      >
+                                        <PlayCircle className="w-3.5 h-3.5 shrink-0" />
+                                        <span className="truncate">{rec.title}</span>
+                                        <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                      </a>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
