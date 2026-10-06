@@ -125,12 +125,18 @@ export function Login() {
     setLoading(true);
     try {
       const result = await authenticateUser(cleanUsername, cleanPassword, role);
-      setSuccessMsg('Giriş başarılı! Yönlendiriliyorsunuz...');
+      setSuccessMsg(
+        result.role === 'admin' 
+          ? 'Yönetici girişi başarılı! Yönlendiriliyorsunuz...' 
+          : result.role === 'teacher' 
+          ? 'Öğretmen girişi başarılı! Yönlendiriliyorsunuz...' 
+          : 'Öğrenci girişi başarılı! Yönlendiriliyorsunuz...'
+      );
       setTimeout(() => {
         if (result.role === 'student') navigate('/portal');
         else if (result.role === 'teacher') navigate('/my-students');
         else navigate('/');
-      }, 500);
+      }, 400);
     } catch (err: any) {
       console.error('Giriş hatası:', err);
       setError(err.message || 'Geçersiz kullanıcı adı/e-posta veya şifre.');
@@ -266,7 +272,15 @@ export function Login() {
                     autoComplete="username"
                     required
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setUsername(val);
+                      setError('');
+                      const lower = val.trim().toLowerCase();
+                      if (lower === 'admin' || lower === 'admin@okul.com' || lower === 'köksal' || lower === 'koksal') {
+                        setRole('admin');
+                      }
+                    }}
                     placeholder={role === 'student' ? "Örn: ruzgar veya ruzgar.colak@okul.com" : role === 'teacher' ? "Örn: gokce veya gokce@okul.com" : "Örn: admin veya admin@okul.com"} 
                     className="w-full pl-12 pr-4 py-3.5 bg-surface-container-high border border-outline-variant/15 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none text-sm"
                   />

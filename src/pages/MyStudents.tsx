@@ -16,6 +16,7 @@ import {
   subscribeTeacherMeetings
 } from '../lib/firestoreService';
 import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats } from '../lib/utils';
+import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
 import { 
   Users, 
   Search, 
@@ -477,28 +478,16 @@ export function MyStudents() {
       const savedErrors = JSON.parse(localStorage.getItem(`topic_errors_${targetStudent.id}`) || '[]');
       const savedArchives = explicitArchives || JSON.parse(localStorage.getItem(`archived_programs_${targetStudent.id}`) || '[]');
 
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          studentName: targetStudent.name,
-          grade: targetStudent.grade,
-          tasks: studentTasks.length > 0 ? studentTasks : savedTasks,
-          trialResults: studentTrials.length > 0 ? studentTrials : savedTrials,
-          detailedTrials,
-          topicErrors: studentErrors.length > 0 ? studentErrors : savedErrors,
-          archivedPrograms: archivedPrograms.length > 0 ? archivedPrograms : savedArchives
-        }),
+      const data = await fetchAiAnalysisSafely({
+        studentName: targetStudent.name,
+        grade: targetStudent.grade,
+        tasks: studentTasks.length > 0 ? studentTasks : savedTasks,
+        trialResults: studentTrials.length > 0 ? studentTrials : savedTrials,
+        detailedTrials,
+        topicErrors: studentErrors.length > 0 ? studentErrors : savedErrors,
+        archivedPrograms: archivedPrograms.length > 0 ? archivedPrograms : savedArchives
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Yapay Zeka analizi başarısız oldu.');
-      }
-
-      const data = await response.json();
       setAiAnalysis(data);
       localStorage.setItem(`ai_analysis_${targetStudent.id}`, JSON.stringify(data));
       showToast('Yapay zeka analizi başarıyla güncellendi! ✨');

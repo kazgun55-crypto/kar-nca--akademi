@@ -9,6 +9,7 @@ import {
   HelpCircle, Award, CheckSquare, Compass
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
 
 interface TrialResult {
   id: string;
@@ -80,28 +81,16 @@ export function Analytics() {
 
       const savedArchives = JSON.parse(localStorage.getItem(`archived_programs_${studentId}`) || '[]');
 
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          studentName,
-          grade,
-          tasks: savedTasks,
-          trialResults,
-          detailedTrials,
-          topicErrors: savedErrors.length > 0 ? savedErrors : topicErrors,
-          archivedPrograms: savedArchives
-        }),
+      const data = await fetchAiAnalysisSafely({
+        studentName,
+        grade,
+        tasks: savedTasks,
+        trialResults,
+        detailedTrials,
+        topicErrors: savedErrors.length > 0 ? savedErrors : topicErrors,
+        archivedPrograms: savedArchives
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Yapay Zeka analizi başarısız oldu.');
-      }
-
-      const data = await response.json();
       setAiAnalysis(data);
       localStorage.setItem(`ai_analysis_${studentId}`, JSON.stringify(data));
     } catch (err: any) {

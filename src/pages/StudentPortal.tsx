@@ -22,6 +22,7 @@ import {
 import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats } from '../lib/utils';
 import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
 
 interface Task {
   id: string;
@@ -215,27 +216,15 @@ export function StudentPortal() {
       const detailedTrials = localStorage.getItem(`trial_results_detailed_${targetStudentId}`);
       const savedErrors = localStorage.getItem(`topic_errors_${targetStudentId}`);
 
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          studentName,
-          grade: studentGrade,
-          tasks,
-          trialResults: savedTrials ? JSON.parse(savedTrials) : trialHistory,
-          detailedTrials: detailedTrials ? JSON.parse(detailedTrials) : trialHistory,
-          topicErrors: savedErrors ? JSON.parse(savedErrors) : []
-        }),
+      const data = await fetchAiAnalysisSafely({
+        studentName,
+        grade: studentGrade,
+        tasks,
+        trialResults: savedTrials ? JSON.parse(savedTrials) : trialHistory,
+        detailedTrials: detailedTrials ? JSON.parse(detailedTrials) : trialHistory,
+        topicErrors: savedErrors ? JSON.parse(savedErrors) : []
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Yapay Zeka analizi başarısız oldu.');
-      }
-
-      const data = await response.json();
       setStudentAiAnalysis(data);
       localStorage.setItem(`ai_analysis_${targetStudentId}`, JSON.stringify(data));
       setShowAiAnalysisModal(true);
