@@ -23,6 +23,7 @@ import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount,
 import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
+import { exportAiAnalysisToPdf } from '../lib/pdfExportService';
 
 interface Task {
   id: string;
@@ -3525,11 +3526,22 @@ export function StudentPortal() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {studentAiAnalysis && (
+                    <button
+                      type="button"
+                      onClick={() => exportAiAnalysisToPdf(studentAiAnalysis, studentName, studentGrade)}
+                      className="px-3.5 py-1.5 bg-secondary hover:bg-secondary/90 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                      title="Analizi PDF formatında indir veya yazdır"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>PDF İndir</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={runStudentAiAnalysis}
                     disabled={loadingStudentAi}
-                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                     title="Analizi yeniden oluştur"
                   >
                     <RefreshCw className={cn("w-3.5 h-3.5", loadingStudentAi && "animate-spin")} />
@@ -3538,7 +3550,7 @@ export function StudentPortal() {
                   <button
                     type="button"
                     onClick={() => setShowAiAnalysisModal(false)}
-                    className="p-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-colors"
+                    className="p-2 hover:bg-surface-container-high text-on-surface-variant rounded-xl transition-colors cursor-pointer"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -3807,6 +3819,27 @@ export function StudentPortal() {
                       </div>
                     </div>
                   )}
+
+                  {/* PDF İndir & Paylaşım Çubuğu */}
+                  <div className="p-4 sm:p-5 bg-gradient-to-r from-primary/5 via-secondary/5 to-surface-container-high rounded-2xl border border-primary/20 flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+                    <div className="space-y-1 text-center sm:text-left">
+                      <p className="text-xs font-black text-on-surface flex items-center justify-center sm:justify-start gap-1.5">
+                        <Download className="w-4 h-4 text-primary" />
+                        Pedagojik Gelişim Raporunu PDF Olarak İndir
+                      </p>
+                      <p className="text-[11px] text-on-surface-variant font-medium">
+                        Haftalık soru verileri, deneme netleri ve tespit edilen eksik konuları içeren resmi A4 raporu.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => exportAiAnalysisToPdf(studentAiAnalysis, studentName, studentGrade)}
+                      className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-primary to-primary-container text-white text-xs font-bold rounded-xl shadow-md hover:scale-102 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>PDF Raporunu İndir / Yazdır</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </motion.div>

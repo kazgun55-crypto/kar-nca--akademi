@@ -125,6 +125,9 @@ export function Login() {
     setLoading(true);
     try {
       const result = await authenticateUser(cleanUsername, cleanPassword, role);
+      if (result.role !== role) {
+        throw new Error(`Girdiğiniz bilgiler ${role === 'student' ? 'Öğrenci' : role === 'teacher' ? 'Öğretmen' : 'Yönetici'} Girişi bölümü ile uyuşmamaktadır.`);
+      }
       setSuccessMsg(
         result.role === 'admin' 
           ? 'Yönetici girişi başarılı! Yönlendiriliyorsunuz...' 
@@ -268,18 +271,19 @@ export function Login() {
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
                   <input 
                     type="text" 
-                    name="username"
-                    autoComplete="username"
+                    id={`login_username_${role}`}
+                    name={`login_user_${role}`}
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
                     required
                     value={username}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      setUsername(val);
+                      setUsername(e.target.value);
                       setError('');
-                      const lower = val.trim().toLowerCase();
-                      if (lower === 'admin' || lower === 'admin@okul.com' || lower === 'köksal' || lower === 'koksal') {
-                        setRole('admin');
-                      }
                     }}
                     placeholder={role === 'student' ? "Örn: ruzgar veya ruzgar.colak@okul.com" : role === 'teacher' ? "Örn: gokce veya gokce@okul.com" : "Örn: admin veya admin@okul.com"} 
                     className="w-full pl-12 pr-4 py-3.5 bg-surface-container-high border border-outline-variant/15 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none text-sm"
@@ -295,12 +299,17 @@ export function Login() {
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
                   <input 
                     type={showPassword ? "text" : "password"}
-                    name="password"
+                    id={`login_password_${role}`}
+                    name={`login_pass_${role}`}
                     autoComplete="current-password"
                     data-lpignore="true"
+                    data-1p-ignore="true"
                     required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setError('');
+                    }}
                     placeholder="Şifrenizi giriniz" 
                     className="w-full pl-12 pr-12 py-3.5 bg-surface-container-high border border-outline-variant/15 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none text-sm"
                   />

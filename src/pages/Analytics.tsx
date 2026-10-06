@@ -6,10 +6,11 @@ import {
 import { 
   TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, 
   Plus, History, Target, BookOpen, Trash2, PlayCircle, ExternalLink, Sparkles,
-  HelpCircle, Award, CheckSquare, Compass
+  HelpCircle, Award, CheckSquare, Compass, Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
+import { exportAiAnalysisToPdf } from '../lib/pdfExportService';
 
 interface TrialResult {
   id: string;
@@ -299,28 +300,45 @@ export function Analytics() {
               Tamamladığın ödevler, doğru/yanlış oranların ve deneme sonuçlarına göre kişiselleştirilmiş eksik analizi ve video önerileri.
             </p>
           </div>
-          <button
-            onClick={runAiAnalysis}
-            disabled={loadingAnalysis}
-            className={`px-8 py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary-container hover:to-purple-700 text-white font-black rounded-full shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shrink-0 ${
-              loadingAnalysis ? 'opacity-50 cursor-not-allowed animate-pulse' : ''
-            }`}
-          >
-            {loadingAnalysis ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Analiz Ediliyor...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-5 h-5" />
-                Analizi Güncelle
-              </>
+          <div className="flex items-center gap-3 shrink-0 flex-wrap">
+            {aiAnalysis && (
+              <button
+                type="button"
+                onClick={() => {
+                  const studentName = localStorage.getItem('currentUserName') || 'Öğrenci';
+                  const studentGrade = localStorage.getItem('currentUserGrade') || '12. Sınıf';
+                  exportAiAnalysisToPdf(aiAnalysis, studentName, studentGrade);
+                }}
+                className="px-6 py-4 bg-white/90 hover:bg-white text-on-surface border border-outline-variant/30 font-black rounded-full shadow-sm hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shrink-0 cursor-pointer text-xs sm:text-sm"
+                title="Yapay zeka analiz raporunu PDF formatında indir veya yazdır"
+              >
+                <Download className="w-4 h-4 text-primary" />
+                <span>PDF Olarak İndir</span>
+              </button>
             )}
-          </button>
+            <button
+              onClick={runAiAnalysis}
+              disabled={loadingAnalysis}
+              className={`px-8 py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary-container hover:to-purple-700 text-white font-black rounded-full shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shrink-0 text-xs sm:text-sm cursor-pointer ${
+                loadingAnalysis ? 'opacity-50 cursor-not-allowed animate-pulse' : ''
+              }`}
+            >
+              {loadingAnalysis ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Analiz Ediliyor...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5" />
+                  Analizi Güncelle
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {analysisError && (

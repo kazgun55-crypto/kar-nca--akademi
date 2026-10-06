@@ -17,6 +17,7 @@ import {
 } from '../lib/firestoreService';
 import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats } from '../lib/utils';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
+import { exportAiAnalysisToPdf } from '../lib/pdfExportService';
 import { 
   Users, 
   Search, 
@@ -43,6 +44,7 @@ import {
   Check,
   Bell,
   Clock,
+  Download,
   RotateCw,
   Lightbulb,
   FileText,
