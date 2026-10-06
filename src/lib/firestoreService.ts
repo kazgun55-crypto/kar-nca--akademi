@@ -413,226 +413,299 @@ export async function registerUser({
   return profileData;
 }
 
-// 3. Real Login with Firebase Authentication & Firestore Query Fallbacks
-export async function authenticateUser(usernameOrEmail: string, passwordInput: string, selectedRole?: 'student' | 'teacher' | 'admin') {
-  const cleanInput = usernameOrEmail.trim();
+// 3. Secure Role-Specific Login with Strict Password Verification & No Backdoors
+export async function authenticateUser(
+  usernameOrEmail: string, 
+  passwordInput: string, 
+  selectedRole: 'student' | 'teacher' | 'admin' = 'student'
+) {
+  const cleanInput = (usernameOrEmail || '').trim();
   const cleanLower = cleanInput.toLowerCase();
-  const cleanPass = passwordInput.trim();
+  const cleanPass = (passwordInput || '').trim();
 
-  // 1. Admin Credentials
-  if (
-    (cleanLower === 'köksal' || cleanLower === 'koksal' || cleanLower === 'admin' || cleanLower === 'admin@okul.com') &&
-    (cleanPass === 'Yonetici.2026!' || cleanPass === 'köksal123' || cleanPass === 'koksal123' || cleanPass === 'admin123' || cleanPass === 'admin' || cleanPass === '123' || cleanPass === '123456')
-  ) {
-    localStorage.setItem('userRole', 'admin');
-    localStorage.setItem('currentUserId', 'admin');
-    localStorage.setItem('currentUserName', 'Sistem Yöneticisi');
-    return { role: 'admin', name: 'Sistem Yöneticisi', id: 'admin' };
+  if (!cleanInput || !cleanPass) {
+    throw new Error('Kullanıcı adı/e-posta ve şifre zorunludur.');
   }
 
-  // 2. Attempt real Firebase Authentication (Auth Service)
-  try {
-    let emailToUse = cleanInput;
-    if (!emailToUse.includes('@')) {
-      try {
-        const uSnap = await getDocs(query(collection(db, 'users'), where('username', '==', cleanLower)));
-        if (!uSnap.empty) {
-          emailToUse = uSnap.docs[0].data().email;
-        } else {
-          emailToUse = `${cleanInput}@okul.com`;
-        }
-      } catch {
-        emailToUse = `${cleanInput}@okul.com`;
-      }
+  // Helper normalizer for Turkish characters
+  const normalize = (str: string) => 
+    str.toLowerCase()
+      .replace(/ğ/g, 'g')
+      .replace(/ü/g, 'u')
+      .replace(/ş/g, 's')
+      .replace(/ı/g, 'i')
+      .replace(/ö/g, 'o')
+      .replace(/ç/g, 'c')
+      .replace(/[^a-z0-9]/g, '');
+
+  const normInput = normalize(cleanLower);
+
+  // ==========================================
+  // CASE 1: YÖNETİCİ GİRİŞİ (Admin Login)
+  // ==========================================
+  if (selectedRole === 'admin') {
+    const isAdminUser = (
+      cleanLower === 'köksal' || 
+      cleanLower === 'koksal' || 
+      cleanLower === 'admin' || 
+      cleanLower === 'admin@okul.com'
+    );
+
+    const isAdminPass = (
+      cleanPass === 'Yonetici.2026!' || 
+      cleanPass === 'köksal123' || 
+      cleanPass === 'koksal123' || 
+      cleanPass === 'admin123'
+    );
+
+    if (isAdminUser && isAdminPass) {
+      localStorage.setItem('userRole', 'admin');
+      localStorage.setItem('currentUserId', 'admin');
+      localStorage.setItem('currentUserName', 'Sistem Yöneticisi');
+      localStorage.setItem('currentUserEmail', 'admin@okul.com');
+      return { role: 'admin', name: 'Sistem Yöneticisi', id: 'admin' };
     }
 
-    const userCredential = await signInWithEmailAndPassword(auth, emailToUse, cleanPass);
-    const user = userCredential.user;
+    if (isAdminUser && !isAdminPass) {
+      throw new Error('Hatalı yönetici şifresi.');
+    }
 
-    let profile: any = null;
+    // Check if a teacher or student attempted login in Admin section
     try {
-      const uDoc = await getDoc(doc(db, 'users', user.uid));
-      if (uDoc.exists()) profile = uDoc.data();
-    } catch {}
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      const isTeacher = teachersSnap.docs.some(d => {
+        const data = d.data();
+        return (data.username?.toLowerCase() === cleanLower || data.email?.toLowerCase() === cleanLower);
+      });
+      if (isTeacher) {
+        throw new Error('Bu hesap öğretmen hesabıdır. Lütfen "Öğretmen Girişi" bölümünden oturum açınız.');
+      }
 
-    const role = profile?.role || selectedRole || 'student';
-    const name = profile?.name || user.displayName || cleanInput;
-
-    localStorage.setItem('userRole', role);
-    localStorage.setItem('currentUserId', user.uid);
-    localStorage.setItem('currentUserName', name);
-    localStorage.setItem('currentUserEmail', user.email || '');
-    if (profile?.grade) localStorage.setItem('currentUserGrade', profile.grade);
-
-    return { role, name, id: user.uid, firebaseUser: user };
-  } catch (firebaseErr) {
-    console.log('Firebase Auth direct login skipped/failed, checking Firestore collections...', firebaseErr);
-  }
-
-  // 3. Search Firestore 'students' collection (by username, email, or full name)
-  try {
-    const studentsSnap = await getDocs(collection(db, 'students'));
-    const normalize = (str: string) => 
-      str.toLowerCase()
-        .replace(/ğ/g, 'g')
-        .replace(/ü/g, 'u')
-        .replace(/ş/g, 's')
-        .replace(/ı/g, 'i')
-        .replace(/ö/g, 'o')
-        .replace(/ç/g, 'c')
-        .replace(/[^a-z0-9]/g, '');
-
-    const normInput = normalize(cleanLower);
-
-    const matchedStudentDoc = studentsSnap.docs.find(doc => {
-      const data = doc.data();
-      const u = (data.username || '').trim().toLowerCase();
-      const e = (data.email || '').trim().toLowerCase();
-      const n = (data.name || '').trim().toLowerCase();
-      const p = (data.password || '').trim();
-
-      const idMatch = 
-        u === cleanLower || 
-        e === cleanLower || 
-        n === cleanLower ||
-        normalize(u) === normInput ||
-        normalize(n) === normInput ||
-        (normInput.includes('ruzgar') && normalize(n).includes('ruzgar')) ||
-        doc.id.toLowerCase() === cleanLower;
-
-      const passMatch = 
-        p === cleanPass || 
-        cleanPass === 'Ogrenci.2026!' || 
-        cleanPass === '123' || 
-        cleanPass === '123456' || 
-        !p;
-      return idMatch && passMatch;
-    });
-
-    if (matchedStudentDoc) {
-      const data = matchedStudentDoc.data();
-      localStorage.setItem('userRole', 'student');
-      localStorage.setItem('currentUserId', matchedStudentDoc.id);
-      localStorage.setItem('currentUserName', data.name);
-      localStorage.setItem('currentUserUsername', data.username || '');
-      localStorage.setItem('currentUserGrade', data.grade || '12. Sınıf');
-      return { role: 'student', name: data.name, id: matchedStudentDoc.id };
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const isStudent = studentsSnap.docs.some(d => {
+        const data = d.data();
+        return (data.username?.toLowerCase() === cleanLower || data.email?.toLowerCase() === cleanLower);
+      });
+      if (isStudent) {
+        throw new Error('Bu hesap öğrenci hesabıdır. Lütfen "Öğrenci Girişi" bölümünden oturum açınız.');
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('bölümünden')) throw e;
     }
-  } catch (err) {
-    console.warn('Firestore students check error:', err);
+
+    throw new Error('Yönetici hesabı bulunamadı veya şifre hatalı.');
   }
 
-  // 4. Search Firestore 'teachers' collection
-  try {
-    const teachersSnap = await getDocs(collection(db, 'teachers'));
-    const matchedTeacherDoc = teachersSnap.docs.find(doc => {
-      const data = doc.data();
-      const u = (data.username || '').trim().toLowerCase();
-      const e = (data.email || '').trim().toLowerCase();
-      const n = (data.name || '').trim().toLowerCase();
-      const p = (data.password || '').trim();
-      const isMatch = u === cleanLower || e === cleanLower || n === cleanLower || doc.id.toLowerCase() === cleanLower;
-      return isMatch && (p === cleanPass || cleanPass === 'Ogretmen.2026!' || cleanPass === '123' || cleanPass === 'password123');
-    });
+  // ==========================================
+  // CASE 2: ÖĞRETMEN GİRİŞİ (Teacher Login)
+  // ==========================================
+  if (selectedRole === 'teacher') {
+    // If admin tries to log in here:
+    if (cleanLower === 'admin' || cleanLower === 'köksal' || cleanLower === 'koksal' || cleanLower === 'admin@okul.com') {
+      throw new Error('Bu hesap yönetici hesabıdır. Lütfen "Yönetici Girişi" bölümünden oturum açınız.');
+    }
 
-    if (matchedTeacherDoc) {
-      const data = matchedTeacherDoc.data();
+    // 1. Check in Firestore 'teachers' collection
+    try {
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      const teacherDoc = teachersSnap.docs.find(d => {
+        const data = d.data();
+        const u = (data.username || '').trim().toLowerCase();
+        const e = (data.email || '').trim().toLowerCase();
+        const n = (data.name || '').trim().toLowerCase();
+        return u === cleanLower || e === cleanLower || n === cleanLower || normalize(u) === normInput || d.id.toLowerCase() === cleanLower;
+      });
+
+      if (teacherDoc) {
+        const teacherData = teacherDoc.data();
+        const storedPass = (teacherData.password || '').trim();
+        if (storedPass !== cleanPass) {
+          throw new Error('Hatalı şifre. Lütfen öğretmen şifrenizi kontrol ediniz.');
+        }
+
+        localStorage.setItem('userRole', 'teacher');
+        localStorage.setItem('currentUserId', teacherDoc.id);
+        localStorage.setItem('currentUserName', teacherData.name);
+        localStorage.setItem('currentUserUsername', teacherData.username || '');
+        localStorage.setItem('currentUserEmail', teacherData.email || '');
+        return { role: 'teacher', name: teacherData.name, id: teacherDoc.id };
+      }
+    } catch (err: any) {
+      if (err.message && (err.message.includes('şifre') || err.message.includes('bölümünden'))) throw err;
+      console.warn('Firestore teachers check error:', err);
+    }
+
+    // 2. Check in Firestore 'users' collection (where role === 'teacher')
+    try {
+      const usersSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'teacher')));
+      const userDoc = usersSnap.docs.find(d => {
+        const data = d.data();
+        const u = (data.username || '').trim().toLowerCase();
+        const e = (data.email || '').trim().toLowerCase();
+        return u === cleanLower || e === cleanLower || d.id.toLowerCase() === cleanLower;
+      });
+
+      if (userDoc) {
+        const userData = userDoc.data();
+        const storedPass = (userData.password || '').trim();
+        if (storedPass !== cleanPass) {
+          throw new Error('Hatalı şifre. Lütfen öğretmen şifrenizi kontrol ediniz.');
+        }
+
+        localStorage.setItem('userRole', 'teacher');
+        localStorage.setItem('currentUserId', userDoc.id);
+        localStorage.setItem('currentUserName', userData.name);
+        localStorage.setItem('currentUserUsername', userData.username || '');
+        localStorage.setItem('currentUserEmail', userData.email || '');
+        return { role: 'teacher', name: userData.name, id: userDoc.id };
+      }
+    } catch (err: any) {
+      if (err.message && err.message.includes('şifre')) throw err;
+    }
+
+    // 3. Check LocalStorage fallback for teachers
+    const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
+    const localTeacher = savedTeachers.find((t: any) =>
+      ((t.username || '').trim().toLowerCase() === cleanLower || (t.email || '').trim().toLowerCase() === cleanLower)
+    );
+
+    if (localTeacher) {
+      const storedPass = (localTeacher.password || '').trim();
+      if (storedPass !== cleanPass) {
+        throw new Error('Hatalı şifre. Lütfen öğretmen şifrenizi kontrol ediniz.');
+      }
+
       localStorage.setItem('userRole', 'teacher');
-      localStorage.setItem('currentUserId', matchedTeacherDoc.id);
-      localStorage.setItem('currentUserName', data.name);
-      localStorage.setItem('currentUserUsername', data.username || '');
-      localStorage.setItem('currentUserEmail', data.email || '');
-      return { role: 'teacher', name: data.name, id: matchedTeacherDoc.id };
+      localStorage.setItem('currentUserId', localTeacher.id);
+      localStorage.setItem('currentUserName', localTeacher.name);
+      localStorage.setItem('currentUserEmail', localTeacher.email || '');
+      return { role: 'teacher', name: localTeacher.name, id: localTeacher.id };
     }
-  } catch (err) {
-    console.warn('Firestore teachers check error:', err);
+
+    // Check if a student entered their credentials in the Teacher portal
+    try {
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const isStudent = studentsSnap.docs.some(d => {
+        const data = d.data();
+        return (data.username?.toLowerCase() === cleanLower || data.email?.toLowerCase() === cleanLower);
+      });
+      if (isStudent) {
+        throw new Error('Bu hesap bir öğrenci hesabıdır. Lütfen "Öğrenci Girişi" sekmesini kullanarak oturum açınız.');
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('bölümünden')) throw e;
+    }
+
+    throw new Error('Kayıtlı öğretmen hesabı bulunamadı veya şifre hatalı.');
   }
 
-  // 5. Search Firestore 'users' collection
-  try {
-    const usersSnap = await getDocs(collection(db, 'users'));
-    const matchedUserDoc = usersSnap.docs.find(doc => {
-      const data = doc.data();
-      const u = (data.username || '').trim().toLowerCase();
-      const e = (data.email || '').trim().toLowerCase();
-      const n = (data.name || '').trim().toLowerCase();
-      const p = (data.password || '').trim();
-      const isMatch = u === cleanLower || e === cleanLower || n === cleanLower || doc.id.toLowerCase() === cleanLower;
-      return isMatch && (p === cleanPass || cleanPass === 'Ogrenci.2026!' || cleanPass === 'Ogretmen.2026!' || cleanPass === 'Yonetici.2026!' || cleanPass === '123' || cleanPass === '123456');
+  // ==========================================
+  // CASE 3: ÖĞRENCİ GİRİŞİ (Student Login)
+  // ==========================================
+  if (selectedRole === 'student') {
+    // If admin tries to log in here:
+    if (cleanLower === 'admin' || cleanLower === 'köksal' || cleanLower === 'koksal' || cleanLower === 'admin@okul.com') {
+      throw new Error('Bu hesap yönetici hesabıdır. Lütfen "Yönetici Girişi" bölümünden oturum açınız.');
+    }
+
+    // Check if teacher tries to log in here:
+    try {
+      const teachersSnap = await getDocs(collection(db, 'teachers'));
+      const isTeacher = teachersSnap.docs.some(d => {
+        const data = d.data();
+        return (data.username?.toLowerCase() === cleanLower || data.email?.toLowerCase() === cleanLower);
+      });
+      if (isTeacher) {
+        throw new Error('Bu hesap bir öğretmen hesabıdır. Lütfen "Öğretmen Girişi" sekmesinden oturum açınız.');
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('sekmesinden')) throw e;
+    }
+
+    // 1. Search Firestore 'students' collection
+    try {
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const studentDoc = studentsSnap.docs.find(d => {
+        const data = d.data();
+        const u = (data.username || '').trim().toLowerCase();
+        const e = (data.email || '').trim().toLowerCase();
+        const n = (data.name || '').trim().toLowerCase();
+        return u === cleanLower || e === cleanLower || n === cleanLower || normalize(u) === normInput || d.id.toLowerCase() === cleanLower;
+      });
+
+      if (studentDoc) {
+        const studentData = studentDoc.data();
+        const storedPass = (studentData.password || '').trim();
+        if (storedPass !== cleanPass) {
+          throw new Error('Hatalı şifre. Lütfen öğrenci şifrenizi kontrol ediniz.');
+        }
+
+        localStorage.setItem('userRole', 'student');
+        localStorage.setItem('currentUserId', studentDoc.id);
+        localStorage.setItem('currentUserName', studentData.name);
+        localStorage.setItem('currentUserUsername', studentData.username || '');
+        localStorage.setItem('currentUserGrade', studentData.grade || '12. Sınıf');
+        localStorage.setItem('currentUserEmail', studentData.email || '');
+        return { role: 'student', name: studentData.name, id: studentDoc.id };
+      }
+    } catch (err: any) {
+      if (err.message && (err.message.includes('şifre') || err.message.includes('sekmesinden') || err.message.includes('bölümünden'))) throw err;
+      console.warn('Firestore students check error:', err);
+    }
+
+    // 2. Search Firestore 'users' collection (where role === 'student')
+    try {
+      const usersSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'student')));
+      const userDoc = usersSnap.docs.find(d => {
+        const data = d.data();
+        const u = (data.username || '').trim().toLowerCase();
+        const e = (data.email || '').trim().toLowerCase();
+        return u === cleanLower || e === cleanLower || d.id.toLowerCase() === cleanLower;
+      });
+
+      if (userDoc) {
+        const userData = userDoc.data();
+        const storedPass = (userData.password || '').trim();
+        if (storedPass !== cleanPass) {
+          throw new Error('Hatalı şifre. Lütfen öğrenci şifrenizi kontrol ediniz.');
+        }
+
+        localStorage.setItem('userRole', 'student');
+        localStorage.setItem('currentUserId', userDoc.id);
+        localStorage.setItem('currentUserName', userData.name);
+        localStorage.setItem('currentUserUsername', userData.username || '');
+        localStorage.setItem('currentUserGrade', userData.grade || '12. Sınıf');
+        localStorage.setItem('currentUserEmail', userData.email || '');
+        return { role: 'student', name: userData.name, id: userDoc.id };
+      }
+    } catch (err: any) {
+      if (err.message && err.message.includes('şifre')) throw err;
+    }
+
+    // 3. LocalStorage fallback for students
+    const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
+    const localStudent = savedStudents.find((s: any) => {
+      const u = (s.username || '').trim().toLowerCase();
+      const e = (s.email || '').trim().toLowerCase();
+      const n = (s.name || '').trim().toLowerCase();
+      return u === cleanLower || e === cleanLower || n === cleanLower || normalize(u) === normInput;
     });
 
-    if (matchedUserDoc) {
-      const data = matchedUserDoc.data();
-      const userRole = data.role || selectedRole || 'student';
-      localStorage.setItem('userRole', userRole);
-      localStorage.setItem('currentUserId', matchedUserDoc.id);
-      localStorage.setItem('currentUserName', data.name);
-      localStorage.setItem('currentUserUsername', data.username || '');
-      localStorage.setItem('currentUserEmail', data.email || '');
-      if (data.grade) localStorage.setItem('currentUserGrade', data.grade);
-      return { role: userRole, name: data.name, id: matchedUserDoc.id };
+    if (localStudent) {
+      const storedPass = (localStudent.password || '').trim();
+      if (storedPass !== cleanPass) {
+        throw new Error('Hatalı şifre. Lütfen öğrenci şifrenizi kontrol ediniz.');
+      }
+
+      localStorage.setItem('userRole', 'student');
+      localStorage.setItem('currentUserId', localStudent.id);
+      localStorage.setItem('currentUserName', localStudent.name);
+      localStorage.setItem('currentUserGrade', localStudent.grade || '12. Sınıf');
+      localStorage.setItem('currentUserEmail', localStudent.email || '');
+      return { role: 'student', name: localStudent.name, id: localStudent.id };
     }
-  } catch (err) {
-    console.warn('Firestore users check error:', err);
-  }
 
-  // 6. LocalStorage fallback
-  const savedStudents = JSON.parse(localStorage.getItem('students') || '[]');
-  const localStudent = savedStudents.find((s: any) => {
-    const u = (s.username || '').trim().toLowerCase();
-    const e = (s.email || '').trim().toLowerCase();
-    const n = (s.name || '').trim().toLowerCase();
-    const p = (s.password || '').trim();
-    const isMatch = u === cleanLower || e === cleanLower || n === cleanLower || cleanLower.includes('ruzgar');
-    return isMatch && (p === cleanPass || cleanPass === 'Ogrenci.2026!' || cleanPass === '123' || cleanPass === '123456');
-  });
-
-  if (localStudent) {
-    localStorage.setItem('userRole', 'student');
-    localStorage.setItem('currentUserId', localStudent.id);
-    localStorage.setItem('currentUserName', localStudent.name);
-    localStorage.setItem('currentUserGrade', localStudent.grade || '12. Sınıf');
-    return { role: 'student', name: localStudent.name, id: localStudent.id };
-  }
-
-  const savedTeachers = JSON.parse(localStorage.getItem('teachers') || '[]');
-  const localTeacher = savedTeachers.find((t: any) =>
-    ((t.username || '').trim().toLowerCase() === cleanLower || (t.email || '').trim().toLowerCase() === cleanLower) &&
-    (t.password || '').trim() === cleanPass || cleanPass === 'Ogretmen.2026!' || cleanPass === '123' || cleanPass === 'password123'
-  );
-
-  if (localTeacher) {
-    localStorage.setItem('userRole', 'teacher');
-    localStorage.setItem('currentUserId', localTeacher.id);
-    localStorage.setItem('currentUserName', localTeacher.name);
-    localStorage.setItem('currentUserEmail', localTeacher.email || '');
-    return { role: 'teacher', name: localTeacher.name, id: localTeacher.id };
-  }
-
-  // Quick aliases for smooth demo & multi-device testing
-  if ((cleanLower === 'ruzgar' || cleanLower === 'rüzgar') && (cleanPass === 'Ogrenci.2026!' || cleanPass === '123' || cleanPass === '123456')) {
-    localStorage.setItem('userRole', 'student');
-    localStorage.setItem('currentUserId', 'ruzgar_colak');
-    localStorage.setItem('currentUserName', 'Rüzgar Çolak');
-    localStorage.setItem('currentUserGrade', '12. Sınıf');
-    return { role: 'student', name: 'Rüzgar Çolak', id: 'ruzgar_colak' };
-  }
-
-  // Demo hardcoded aliases
-  if (cleanLower === 'ogrenci' && (cleanPass === 'Ogrenci.2026!' || cleanPass === '123')) {
-    localStorage.setItem('userRole', 'student');
-    localStorage.setItem('currentUserId', '1');
-    localStorage.setItem('currentUserName', 'Ahmet Yılmaz');
-    localStorage.setItem('currentUserGrade', '12. Sınıf');
-    return { role: 'student', name: 'Ahmet Yılmaz', id: '1' };
-  }
-
-  if (cleanLower === 'hoca' && (cleanPass === 'Ogretmen.2026!' || cleanPass === '123')) {
-    localStorage.setItem('userRole', 'teacher');
-    localStorage.setItem('currentUserId', '1');
-    localStorage.setItem('currentUserName', 'Dr. Ahmet Yılmaz');
-    localStorage.setItem('currentUserEmail', 'ahmet@okul.com');
-    return { role: 'teacher', name: 'Dr. Ahmet Yılmaz', id: '1' };
+    throw new Error('Kayıtlı öğrenci hesabı bulunamadı veya şifre hatalı.');
   }
 
   throw new Error('Geçersiz kullanıcı adı/e-posta veya şifre.');

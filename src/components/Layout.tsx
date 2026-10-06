@@ -1,14 +1,20 @@
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
-import { Menu, X, LayoutDashboard, Users, UserCircle, ClipboardCheck, BarChart3, Settings, ShieldCheck, BookOpen, Calendar, Trophy } from 'lucide-react';
+import { Menu, X, LayoutDashboard, Users, UserCircle, ClipboardCheck, BarChart3, Settings, ShieldCheck, BookOpen, Calendar, Trophy, LogOut } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
+import { logoutFirebase } from '@/src/lib/firestoreService';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const userRole = localStorage.getItem('userRole') || 'student';
   const currentUserName = localStorage.getItem('currentUserName') || 'Kullanıcı';
+
+  const handleLogout = () => {
+    logoutFirebase();
+    window.location.href = '/login';
+  };
 
   // Bottom Nav items depending on role
   const getBottomNavItems = () => {
@@ -64,9 +70,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
               {userRole === 'admin' ? 'Yönetici' : userRole === 'teacher' ? 'Öğretmen' : 'Öğrenci'}
             </span>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all shadow-2xs"
+              title="Güvenli Çıkış Yap"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-600" />
+              <span>Çıkış</span>
+            </button>
           </div>
         </header>
 

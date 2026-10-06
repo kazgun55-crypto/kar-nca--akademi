@@ -71,14 +71,8 @@ export function Login() {
       return;
     }
 
-    if (query === 'köksal' || query === 'koksal' || query === 'admin') {
-      setFoundAccount({
-        name: 'Sistem Yöneticisi',
-        username: 'köksal',
-        password: 'Yonetici.2026!',
-        email: 'admin@okul.com',
-        accountType: 'Yönetici'
-      });
+    if (query === 'köksal' || query === 'koksal' || query === 'admin' || query === 'admin@okul.com') {
+      setForgotError('Güvenlik nedeniyle yönetici hesap şifreleri bu form üzerinden sıfırlanamaz. Lütfen sistem yöneticisi ile doğrudan iletişime geçiniz.');
       return;
     }
 
@@ -198,86 +192,72 @@ export function Login() {
 
           <div>
             <div className="mb-6">
-              <h3 className="text-2xl font-manrope font-bold text-on-surface">Hoş Geldiniz</h3>
-              <p className="text-sm text-on-surface-variant font-medium">Sistemdeki yetkili hesabınızla oturum açın.</p>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold mb-2">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>
+                  {role === 'student' ? 'Öğrenci Portalı Girişi' : role === 'teacher' ? 'Öğretmen Portalı Girişi' : 'Yönetici Portalı Girişi'}
+                </span>
+              </div>
+              <h3 className="text-2xl font-manrope font-bold text-on-surface">
+                {role === 'student' ? 'Öğrenci Girişi' : role === 'teacher' ? 'Öğretmen Girişi' : 'Yönetici Girişi'}
+              </h3>
+              <p className="text-xs text-on-surface-variant font-medium mt-1">
+                {role === 'student' 
+                  ? 'Danışman öğretmeniniz veya okulunuz tarafından size verilen kullanıcı adı/şifrenizle giriş yapınız.' 
+                  : role === 'teacher' 
+                  ? 'Öğretmen hesabınıza ait şahsi kullanıcı adı ve şifrenizle giriş yapınız.' 
+                  : 'Sistem ve okul yöneticisi yetkili hesabınızla oturum açınız.'}
+              </p>
             </div>
 
-            {/* Role Toggle */}
-            <div className="flex p-1 bg-surface-container-high rounded-2xl mb-4">
+            {/* Role Portals Selection */}
+            <div className="flex p-1 bg-surface-container-high rounded-2xl mb-6">
               <button 
                 type="button"
                 onClick={() => {
                   setRole('student');
-                  setUsername('ruzgar');
-                  setPassword('Ogrenci.2026!');
+                  setUsername('');
+                  setPassword('');
                   setError('');
+                  setSuccessMsg('');
                 }}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'student' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'student' ? 'bg-white text-primary shadow-sm font-extrabold' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
-                Öğrenci
+                Öğrenci Girişi
               </button>
               <button 
                 type="button"
                 onClick={() => {
                   setRole('teacher');
-                  setUsername('gokce');
-                  setPassword('Ogretmen.2026!');
+                  setUsername('');
+                  setPassword('');
                   setError('');
+                  setSuccessMsg('');
                 }}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'teacher' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'teacher' ? 'bg-white text-primary shadow-sm font-extrabold' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
-                Öğretmen
+                Öğretmen Girişi
               </button>
               <button 
                 type="button"
                 onClick={() => {
                   setRole('admin');
-                  setUsername('admin');
-                  setPassword('Yonetici.2026!');
+                  setUsername('');
+                  setPassword('');
                   setError('');
+                  setSuccessMsg('');
                 }}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'admin' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'admin' ? 'bg-white text-primary shadow-sm font-extrabold' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
-                Yönetici
+                Yönetici Girişi
               </button>
             </div>
 
-            {/* Quick Demo Credentials Helper */}
-            <div className="mb-5 p-3 rounded-2xl bg-surface-container-high/60 border border-outline-variant/10 flex items-center justify-between text-xs">
-              <div className="text-[11px] text-on-surface-variant">
-                <span className="font-bold text-on-surface">Örnek Hesap: </span>
-                {role === 'student' ? (
-                  <span><strong>ruzgar</strong> / Ogrenci.2026!</span>
-                ) : role === 'teacher' ? (
-                  <span><strong>gokce</strong> / Ogretmen.2026!</span>
-                ) : (
-                  <span><strong>admin</strong> / Yonetici.2026!</span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (role === 'student') {
-                    setUsername('ruzgar');
-                    setPassword('Ogrenci.2026!');
-                  } else if (role === 'teacher') {
-                    setUsername('gokce');
-                    setPassword('Ogretmen.2026!');
-                  } else {
-                    setUsername('admin');
-                    setPassword('Yonetici.2026!');
-                  }
-                  setError('');
-                }}
-                className="px-2.5 py-1 bg-white hover:bg-primary/10 text-primary font-bold rounded-lg border border-outline-variant/20 shadow-2xs text-[10px] transition-all"
-              >
-                Doldur
-              </button>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-5">
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Kullanıcı Adı veya E-Posta</label>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant ml-1">
+                  {role === 'student' ? 'Öğrenci Kullanıcı Adı veya E-Posta' : role === 'teacher' ? 'Öğretmen Kullanıcı Adı veya E-Posta' : 'Yönetici Kullanıcı Adı veya E-Posta'}
+                </label>
                 <div className="relative group">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
                   <input 
@@ -287,14 +267,16 @@ export function Login() {
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Örn: ahmet veya ahmet@okul.com" 
-                    className="w-full pl-12 pr-4 py-3.5 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none"
+                    placeholder={role === 'student' ? "Örn: ruzgar veya ruzgar.colak@okul.com" : role === 'teacher' ? "Örn: gokce veya gokce@okul.com" : "Örn: admin veya admin@okul.com"} 
+                    className="w-full pl-12 pr-4 py-3.5 bg-surface-container-high border border-outline-variant/15 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none text-sm"
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Şifre</label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-on-surface-variant ml-1">
+                  {role === 'student' ? 'Öğrenci Şifresi' : role === 'teacher' ? 'Öğretmen Şifresi' : 'Yönetici Şifresi'}
+                </label>
                 <div className="relative group">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-outline transition-colors group-focus-within:text-primary" />
                   <input 
@@ -305,8 +287,8 @@ export function Login() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••" 
-                    className="w-full pl-12 pr-12 py-3.5 bg-surface-container-high border-none rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none"
+                    placeholder="Şifrenizi giriniz" 
+                    className="w-full pl-12 pr-12 py-3.5 bg-surface-container-high border border-outline-variant/15 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all font-medium text-on-surface outline-none text-sm"
                   />
                   <button
                     type="button"
@@ -319,7 +301,7 @@ export function Login() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between px-1">
+              <div className="flex items-center justify-between px-1 pt-1">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" className="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary/20" />
                   <span className="text-xs font-medium text-on-surface-variant">Beni hatırla</span>
@@ -342,17 +324,27 @@ export function Login() {
               <button 
                 type="submit" 
                 disabled={loading}
-                className="w-full py-4 bg-gradient-to-r from-primary to-primary-container text-white font-bold rounded-full shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50"
+                className="w-full py-3.5 bg-gradient-to-r from-primary to-primary-container text-white font-bold rounded-2xl shadow-lg shadow-primary/20 hover:scale-[1.01] active:scale-98 transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50 text-sm cursor-pointer"
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <>
-                    <span>Oturum Aç</span>
-                    <ArrowRight className="w-5 h-5" />
+                    <span>
+                      {role === 'student' ? 'Öğrenci Olarak Giriş Yap' : role === 'teacher' ? 'Öğretmen Olarak Giriş Yap' : 'Yönetici Olarak Giriş Yap'}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
+
+              {/* Security Policy Badge */}
+              <div className="mt-4 p-3 bg-surface-container-high/50 border border-outline-variant/10 rounded-2xl flex items-start gap-2.5 text-[11px] text-on-surface-variant">
+                <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <p className="leading-relaxed">
+                  <strong>Güvenlik Protokolü:</strong> Hazır ve otomatik hesap doldurma güvenlik nedeniyle kaldırılmıştır. Her kullanıcı yalnızca kendi yetki alanına ait bölümden ve şahsi şifresiyle giriş yapabilir.
+                </p>
+              </div>
             </form>
           </div>
         </div>

@@ -4,7 +4,7 @@ import {
   ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, 
   Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus, Quote,
   RefreshCw, Cloud, Smartphone, LayoutGrid, ListFilter, Check, Share2, Copy, Users, ExternalLink,
-  ChevronLeft, ChevronRight, Eye, Grid, Bell, Lightbulb, PlayCircle, Clock
+  ChevronLeft, ChevronRight, Eye, Grid, Bell, Lightbulb, PlayCircle, Clock, LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseVideoUrl, getYoutubeId } from '../lib/videoUtils';
@@ -16,7 +16,8 @@ import {
   subscribeStudentTasks, 
   saveStudentArchivedPrograms,
   getStudentById,
-  subscribeStudents
+  subscribeStudents,
+  logoutFirebase
 } from '../lib/firestoreService';
 import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats } from '../lib/utils';
 import { db } from '../lib/firebase';
@@ -893,6 +894,18 @@ export function StudentPortal() {
             title="Buluttan Yenile"
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-primary' : ''}`} />
+          </button>
+
+          <button
+            onClick={() => {
+              logoutFirebase();
+              window.location.href = '/login';
+            }}
+            className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+            title="Güvenli Çıkış Yap"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-600" />
+            <span>Çıkış Yap</span>
           </button>
         </div>
       </div>
