@@ -421,8 +421,8 @@ export async function authenticateUser(usernameOrEmail: string, passwordInput: s
 
   // 1. Admin Credentials
   if (
-    (cleanLower === 'köksal' || cleanLower === 'koksal' || cleanLower === 'admin') &&
-    (cleanPass === 'Yonetici.2026!' || cleanPass === 'köksal123' || cleanPass === 'koksal123' || cleanPass === 'admin123' || cleanPass === 'admin')
+    (cleanLower === 'köksal' || cleanLower === 'koksal' || cleanLower === 'admin' || cleanLower === 'admin@okul.com') &&
+    (cleanPass === 'Yonetici.2026!' || cleanPass === 'köksal123' || cleanPass === 'koksal123' || cleanPass === 'admin123' || cleanPass === 'admin' || cleanPass === '123' || cleanPass === '123456')
   ) {
     localStorage.setItem('userRole', 'admin');
     localStorage.setItem('currentUserId', 'admin');

@@ -44,6 +44,7 @@ export function Analytics() {
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisTab, setAnalysisTab] = useState<'all' | 'weekly' | 'under80' | 'trials'>('all');
   
   // Form states
   const [newScore, setNewScore] = useState('');
@@ -353,343 +354,526 @@ export function Analytics() {
         )}
 
         {!loadingAnalysis && aiAnalysis && (
-          <div className="space-y-8 relative z-10 animate-fade-in">
-            {/* Summary Banner */}
-            <div className="p-6 bg-white/80 backdrop-blur-md rounded-3xl border border-outline-variant/10 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-widest text-primary mb-2 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4" />
-                Genel Değerlendirme Raporu
-              </p>
-              <p className="text-on-surface font-semibold text-base leading-relaxed italic">
-                "{aiAnalysis.summary}"
-              </p>
+          <div className="space-y-6 relative z-10 animate-fade-in">
+            {/* View Selector Tabs */}
+            <div className="flex items-center gap-2 p-1.5 bg-surface-container-high rounded-2xl flex-wrap">
+              <button
+                type="button"
+                onClick={() => setAnalysisTab('all')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  analysisTab === 'all'
+                    ? 'bg-white text-primary shadow-xs font-black'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Genel Değerlendirme
+              </button>
+              <button
+                type="button"
+                onClick={() => setAnalysisTab('weekly')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  analysisTab === 'weekly'
+                    ? 'bg-white text-primary shadow-xs font-black'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
+                Haftalık Program Analizi
+              </button>
+              <button
+                type="button"
+                onClick={() => setAnalysisTab('under80')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  analysisTab === 'under80'
+                    ? 'bg-white text-rose-600 shadow-xs font-black'
+                    : 'text-on-surface-variant hover:text-rose-600'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                <span>%80 Altı Kritik Konular</span>
+                {aiAnalysis.under80Topics && aiAnalysis.under80Topics.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-700">
+                    {aiAnalysis.under80Topics.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAnalysisTab('trials')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  analysisTab === 'trials'
+                    ? 'bg-white text-secondary shadow-xs font-black'
+                    : 'text-on-surface-variant hover:text-secondary'
+                }`}
+              >
+                <Target className="w-3.5 h-3.5 text-secondary" />
+                Deneme Sınavları Analizi
+              </button>
             </div>
 
-            {/* Weekly Performance Stats: Doğru, Yanlış, Boş, Başarı % ve Deneme Neti */}
-            {aiAnalysis.weeklyPerformanceStats && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                <div className="p-4 bg-white rounded-2xl border border-outline-variant/10 shadow-xs text-center space-y-1">
-                  <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam Soru</p>
-                  <p className="text-xl sm:text-2xl font-black text-on-surface">{aiAnalysis.weeklyPerformanceStats.totalQuestions || 0}</p>
-                  <p className="text-[10px] text-on-surface-variant/70">Haftalık Çözülen</p>
+            {/* TAB 1: ALL / SUMMARY OVERVIEW */}
+            {(analysisTab === 'all') && (
+              <div className="space-y-6">
+                {/* Summary Banner */}
+                <div className="p-6 bg-white/80 backdrop-blur-md rounded-3xl border border-outline-variant/10 shadow-sm">
+                  <p className="text-xs font-black uppercase tracking-widest text-primary mb-2 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4" />
+                    Yapay Zeka Genel Koçluk Raporu
+                  </p>
+                  <p className="text-on-surface font-semibold text-base leading-relaxed italic">
+                    "{aiAnalysis.summary}"
+                  </p>
                 </div>
-                <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200/50 shadow-xs text-center space-y-1">
-                  <p className="text-[10px] font-bold text-emerald-800 uppercase">Doğru</p>
-                  <p className="text-xl sm:text-2xl font-black text-emerald-700">{aiAnalysis.weeklyPerformanceStats.totalCorrect || 0}</p>
-                  <p className="text-[10px] text-emerald-700/70">Başarılı Soru</p>
-                </div>
-                <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-200/50 shadow-xs text-center space-y-1">
-                  <p className="text-[10px] font-bold text-rose-800 uppercase">Yanlış</p>
-                  <p className="text-xl sm:text-2xl font-black text-rose-700">{aiAnalysis.weeklyPerformanceStats.totalIncorrect || 0}</p>
-                  <p className="text-[10px] text-rose-700/70">Hata Sayısı</p>
-                </div>
-                <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/50 shadow-xs text-center space-y-1">
-                  <p className="text-[10px] font-bold text-amber-800 uppercase">Boş</p>
-                  <p className="text-xl sm:text-2xl font-black text-amber-700">{aiAnalysis.weeklyPerformanceStats.totalEmpty || 0}</p>
-                  <p className="text-[10px] text-amber-700/70">Cevapsız</p>
-                </div>
-                <div className="p-4 bg-indigo-50/60 rounded-2xl border border-indigo-200/50 shadow-xs text-center space-y-1">
-                  <p className="text-[10px] font-bold text-indigo-800 uppercase">Doğruluk</p>
-                  <p className="text-xl sm:text-2xl font-black text-indigo-700">%{aiAnalysis.weeklyPerformanceStats.successRate || 0}</p>
-                  <p className="text-[10px] text-indigo-700/70">Haftalık Oran</p>
-                </div>
-                <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20 shadow-xs text-center space-y-1">
-                  <p className="text-[10px] font-bold text-primary uppercase">Son Deneme</p>
-                  <p className="text-xl sm:text-2xl font-black text-primary">{aiAnalysis.weeklyPerformanceStats.latestTrialNet || 0}</p>
-                  <p className="text-[10px] text-primary/70">Net Skoru</p>
-                </div>
-              </div>
-            )}
 
-            {/* Önceki Hafta Değerlendirmesi & Karnesi */}
-            {aiAnalysis.previousWeekEvaluation && (
-              <div className="p-6 bg-gradient-to-br from-indigo-500/5 via-primary/5 to-transparent rounded-3xl border border-primary/20 shadow-sm space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
-                      <History className="w-5 h-5" />
+                {/* KPI Metrics */}
+                {aiAnalysis.weeklyPerformanceStats && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="p-4 bg-white rounded-2xl border border-outline-variant/10 shadow-xs text-center space-y-1">
+                      <p className="text-[10px] font-bold text-on-surface-variant uppercase">Haftalık Soru</p>
+                      <p className="text-xl sm:text-2xl font-black text-on-surface">{aiAnalysis.weeklyPerformanceStats.solvedQuestions || aiAnalysis.weeklyPerformanceStats.totalQuestions || 0}</p>
+                      <p className="text-[10px] text-on-surface-variant/70">Hedef: {aiAnalysis.weeklyPerformanceStats.assignedQuestions || 0}</p>
                     </div>
-                    <div>
-                      <h4 className="font-black text-base text-on-surface">Önceki Hafta Değerlendirmesi & Karnesi</h4>
-                      <p className="text-xs text-on-surface-variant font-medium">
-                        Tamamlanan haftanın ödev performansı ve yapay zeka değerlendirmesi
-                      </p>
+                    <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200/50 shadow-xs text-center space-y-1">
+                      <p className="text-[10px] font-bold text-emerald-800 uppercase">Doğru</p>
+                      <p className="text-xl sm:text-2xl font-black text-emerald-700">{aiAnalysis.weeklyPerformanceStats.totalCorrect || 0}</p>
+                      <p className="text-[10px] text-emerald-700/70">Başarılı Soru</p>
                     </div>
-                  </div>
-                  <span className="text-xs font-black px-3 py-1 bg-white rounded-full border border-primary/20 text-primary shadow-2xs">
-                    🗓️ {aiAnalysis.previousWeekEvaluation.endDate || 'Geçen Hafta'}
-                  </span>
-                </div>
-
-                <div className="p-4 bg-white/90 rounded-2xl border border-outline-variant/10 text-sm font-semibold text-on-surface leading-relaxed">
-                  {aiAnalysis.previousWeekEvaluation.evaluationSummary}
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="p-3 bg-white rounded-xl border border-outline-variant/10 text-center">
-                    <span className="text-[10px] font-bold text-on-surface-variant block uppercase">Tamamlama</span>
-                    <span className="text-lg font-black text-primary">%{aiAnalysis.previousWeekEvaluation.completionRate}</span>
-                    <span className="text-[10px] text-on-surface-variant block">
-                      {aiAnalysis.previousWeekEvaluation.completedTasks}/{aiAnalysis.previousWeekEvaluation.totalTasks} Görev
-                    </span>
-                  </div>
-                  <div className="p-3 bg-white rounded-xl border border-outline-variant/10 text-center">
-                    <span className="text-[10px] font-bold text-on-surface-variant block uppercase">Toplam Soru</span>
-                    <span className="text-lg font-black text-on-surface">{aiAnalysis.previousWeekEvaluation.totalQuestions}</span>
-                    <span className="text-[10px] text-on-surface-variant block">Çözülen Soru</span>
-                  </div>
-                  <div className="p-3 bg-white rounded-xl border border-outline-variant/10 text-center">
-                    <span className="text-[10px] font-bold text-on-surface-variant block uppercase">Doğru / Yanlış / Boş</span>
-                    <span className="text-sm font-black text-emerald-700 block mt-0.5">
-                      {aiAnalysis.previousWeekEvaluation.correct}D • {aiAnalysis.previousWeekEvaluation.incorrect}Y • {aiAnalysis.previousWeekEvaluation.empty}B
-                    </span>
-                    <span className="text-[10px] text-emerald-700/80 block">Sonuç Dağılımı</span>
-                  </div>
-                  <div className="p-3 bg-white rounded-xl border border-outline-variant/10 text-center">
-                    <span className="text-[10px] font-bold text-on-surface-variant block uppercase">Net Skoru</span>
-                    <span className="text-lg font-black text-emerald-700">{aiAnalysis.previousWeekEvaluation.net} Net</span>
-                    <span className="text-[10px] text-on-surface-variant block">%{aiAnalysis.previousWeekEvaluation.successRate} Doğruluk</span>
-                  </div>
-                </div>
-
-                {aiAnalysis.previousWeekEvaluation.strengths && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1">
-                      <span className="text-[10px] font-black uppercase text-emerald-800 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Güçlü Yönler
-                      </span>
-                      <ul className="text-xs font-semibold text-emerald-950 space-y-1">
-                        {aiAnalysis.previousWeekEvaluation.strengths.map((s: string, idx: number) => (
-                          <li key={idx} className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                            {s}
-                          </li>
-                        ))}
-                      </ul>
+                    <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-200/50 shadow-xs text-center space-y-1">
+                      <p className="text-[10px] font-bold text-rose-800 uppercase">Yanlış</p>
+                      <p className="text-xl sm:text-2xl font-black text-rose-700">{aiAnalysis.weeklyPerformanceStats.totalIncorrect || 0}</p>
+                      <p className="text-[10px] text-rose-700/70">Hata Sayısı</p>
                     </div>
-                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl space-y-1">
-                      <span className="text-[10px] font-black uppercase text-amber-800 flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Gelişim Alanları
-                      </span>
-                      <ul className="text-xs font-semibold text-amber-950 space-y-1">
-                        {(aiAnalysis.previousWeekEvaluation.growthAreas || []).map((g: string, idx: number) => (
-                          <li key={idx} className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
-                            {g}
-                          </li>
-                        ))}
-                      </ul>
+                    <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/50 shadow-xs text-center space-y-1">
+                      <p className="text-[10px] font-bold text-amber-800 uppercase">Boş</p>
+                      <p className="text-xl sm:text-2xl font-black text-amber-700">{aiAnalysis.weeklyPerformanceStats.totalEmpty || 0}</p>
+                      <p className="text-[10px] text-amber-700/70">Cevapsız</p>
+                    </div>
+                    <div className="p-4 bg-indigo-50/60 rounded-2xl border border-indigo-200/50 shadow-xs text-center space-y-1">
+                      <p className="text-[10px] font-bold text-indigo-800 uppercase">Doğruluk</p>
+                      <p className="text-xl sm:text-2xl font-black text-indigo-700">%{aiAnalysis.weeklyPerformanceStats.successRate || 0}</p>
+                      <p className="text-[10px] text-indigo-700/70">Haftalık Oran</p>
+                    </div>
+                    <div className="p-4 bg-secondary/10 rounded-2xl border border-secondary/20 shadow-xs text-center space-y-1">
+                      <p className="text-[10px] font-bold text-secondary uppercase">Son Deneme</p>
+                      <p className="text-xl sm:text-2xl font-black text-secondary">{aiAnalysis.weeklyPerformanceStats.latestTrialNet || 0} Net</p>
+                      <p className="text-[10px] text-secondary/70">Hedef: {(Number(aiAnalysis.weeklyPerformanceStats.latestTrialNet) + 3).toFixed(1)}</p>
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Öğrencinin Neye İhtiyacı Var? (Öncelikli Eksikler) */}
-            {aiAnalysis.studentNeeds && aiAnalysis.studentNeeds.length > 0 && (
-              <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-black">
-                      <Target className="w-5 h-5" />
+            {/* TAB 2: HAFTALIK PROGRAM VE DOĞRU-YANLIŞ ANALİZİ */}
+            {(analysisTab === 'all' || analysisTab === 'weekly') && (
+              <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-6">
+                <div className="flex items-center justify-between flex-wrap gap-3 pb-4 border-b border-outline-variant/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black">
+                      <CheckSquare className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="font-black text-base text-on-surface">Öğrencinin Neye İhtiyacı Var? (Öncelikli Eksikler)</h4>
+                      <h4 className="font-black text-lg text-on-surface">Haftalık Program & Doğru-Yanlış Performansı</h4>
                       <p className="text-xs text-on-surface-variant font-medium">
-                        Önceki hafta ve deneme hatalarına göre odaklanılması gereken acil alanlar
+                        Programdaki ödev tamamlama, soru sayıları ve doğruluk oranlarının analizi
                       </p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-extrabold px-3 py-1 bg-rose-50 text-rose-700 rounded-full border border-rose-200">
-                    Öncelikli Gelişim
+                  <span className="text-xs font-black px-3.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200">
+                    Ödev Doğruluk Oranı: %{aiAnalysis.weeklyPerformanceStats?.successRate || 0}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {aiAnalysis.studentNeeds.map((need: any, idx: number) => (
-                    <div key={idx} className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-sm text-on-surface">{need.subject}</span>
-                          <span className="text-xs text-on-surface-variant font-medium">• {need.topic}</span>
-                        </div>
-                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
-                          need.urgency === 'urgent' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {need.urgencyLabel || (need.urgency === 'urgent' ? 'Acil İhtiyaç' : 'Öncelikli Gelişim')}
-                        </span>
-                      </div>
+                {/* Weekly Program AI Review */}
+                {aiAnalysis.weeklyProgramAnalysis?.summary && (
+                  <div className="p-4 rounded-2xl bg-indigo-50/40 border border-indigo-100 text-xs sm:text-sm font-medium text-indigo-950 leading-relaxed">
+                    <p className="font-bold text-indigo-900 mb-1 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      Haftalık Ödev ve Soru Değerlendirmesi:
+                    </p>
+                    {aiAnalysis.weeklyProgramAnalysis.summary}
+                  </div>
+                )}
 
-                      <p className="text-xs text-on-surface-variant leading-relaxed font-medium">
-                        {need.description}
-                      </p>
-
-                      <div className="p-2.5 bg-white rounded-xl border border-outline-variant/10">
-                        <span className="text-[9px] font-bold text-on-surface-variant uppercase block">Önerilen Telafi</span>
-                        <span className="text-xs font-black text-primary">{need.neededAction}</span>
-                      </div>
+                {/* Progress Indicators */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-on-surface-variant">
+                      <span>Ödev Tamamlama</span>
+                      <span className="text-primary font-black">%{aiAnalysis.weeklyPerformanceStats?.completionRate || 0}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {aiAnalysis.errorAnalysis && (
-              <div className="p-6 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-transparent rounded-3xl border border-rose-200/60 shadow-xs space-y-2">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-                  <h4 className="font-extrabold text-base text-rose-950">Yanlış Sayısı & Hata Odak Analizi</h4>
-                </div>
-                <p className="text-xs sm:text-sm text-rose-900 leading-relaxed font-medium">
-                  {aiAnalysis.errorAnalysis}
-                </p>
-              </div>
-            )}
-
-            {/* Recommendations & Pedagogy Notes Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Weekly Plan Recommendations */}
-              {aiAnalysis.weeklyPlanRecommendations && aiAnalysis.weeklyPlanRecommendations.length > 0 && (
-                <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-extrabold text-base text-on-surface flex items-center gap-2">
-                      <Target className="w-5 h-5 text-primary" />
-                      Yapay Zeka Çalışma Önerileri
-                    </h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary uppercase">
-                      Haftalık Planlama
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {aiAnalysis.weeklyPlanRecommendations.map((rec: any, idx: number) => (
-                      <div key={idx} className="p-3.5 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-1.5">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="font-bold text-sm text-on-surface">{rec.subject} - {rec.topic}</span>
-                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
-                            rec.priority === 'high' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {rec.priority === 'high' ? 'Yüksek Öncelik' : 'Önerilen'}
-                          </span>
-                        </div>
-                        <p className="text-xs font-semibold text-primary">{rec.suggestedAmount}</p>
-                        <p className="text-[11px] text-on-surface-variant font-medium">{rec.reason}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Coaching & Pedagogy Notes */}
-              {aiAnalysis.teacherPedagogyNotes && aiAnalysis.teacherPedagogyNotes.length > 0 && (
-                <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-extrabold text-base text-on-surface flex items-center gap-2">
-                      <Award className="w-5 h-5 text-amber-500" />
-                      Pedagojik Koçluk & Odak Noktaları
-                    </h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 uppercase">
-                      Gelişim Takibi
-                    </span>
-                  </div>
-                  <div className="space-y-2.5">
-                    {aiAnalysis.teacherPedagogyNotes.map((note: string, idx: number) => (
-                      <div key={idx} className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/40 border border-amber-200/40 text-xs text-on-surface font-medium leading-relaxed">
-                        <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-800 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
-                          {idx + 1}
-                        </span>
-                        <span>{note}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Subject Analysis Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {aiAnalysis.subjects?.map((sub: any, i: number) => {
-                const isDanger = sub.status === 'danger';
-                const isWarning = sub.status === 'warning';
-                
-                return (
-                  <div key={i} className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider ${
-                          isDanger ? 'bg-secondary/10 text-secondary' :
-                          isWarning ? 'bg-orange-100 text-orange-700' :
-                          'bg-tertiary/10 text-tertiary'
-                        }`}>
-                          {isDanger ? 'Geliştirilmeli' : isWarning ? 'Dikkat Edilmeli' : 'Başarılı'}
-                        </span>
-                        <h5 className="font-extrabold text-xl text-on-surface">{sub.name}</h5>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-bold text-on-surface-variant uppercase">Tahmini Başarı</p>
-                        <p className="text-2xl font-black text-primary">%{sub.accuracy}</p>
-                      </div>
-                    </div>
-
                     <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          isDanger ? 'bg-secondary' : isWarning ? 'bg-orange-500' : 'bg-tertiary'
-                        }`}
-                        style={{ width: `${sub.accuracy}%` }}
-                      />
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${aiAnalysis.weeklyPerformanceStats?.completionRate || 0}%` }} />
                     </div>
+                    <p className="text-[11px] text-on-surface-variant">
+                      {aiAnalysis.weeklyPerformanceStats?.completedTasksCount || 0} / {aiAnalysis.weeklyPerformanceStats?.totalTasksCount || 0} Görev Tamamlandı
+                    </p>
+                  </div>
 
-                    {/* Deficiencies */}
-                    <div className="space-y-3 pt-2">
-                      <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Konu Eksikleri & Çözüm Önerileri</p>
-                      {sub.deficiencies && sub.deficiencies.length > 0 ? (
-                        sub.deficiencies.map((def: any, idx: number) => (
-                          <div key={idx} className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/5 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="font-black text-sm text-on-surface">{def.topic}</span>
-                              <span className="text-[10px] font-bold text-secondary bg-secondary/10 px-2 py-0.5 rounded-full">
-                                Önem Derecesi: {def.errorCount}
+                  <div className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-on-surface-variant">
+                      <span>Haftalık Soru Hedefi</span>
+                      <span className="text-tertiary font-black">%{aiAnalysis.weeklyPerformanceStats?.questionCompletionRate || 0}</span>
+                    </div>
+                    <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
+                      <div className="h-full bg-tertiary rounded-full" style={{ width: `${aiAnalysis.weeklyPerformanceStats?.questionCompletionRate || 0}%` }} />
+                    </div>
+                    <p className="text-[11px] text-on-surface-variant">
+                      {aiAnalysis.weeklyPerformanceStats?.solvedQuestions || 0} / {aiAnalysis.weeklyPerformanceStats?.assignedQuestions || 0} Soru Çözüldü
+                    </p>
+                  </div>
+
+                  <div className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-on-surface-variant">
+                      <span>Net Doğruluk Oranı</span>
+                      <span className="text-emerald-700 font-black">%{aiAnalysis.weeklyPerformanceStats?.successRate || 0}</span>
+                    </div>
+                    <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-600 rounded-full" style={{ width: `${aiAnalysis.weeklyPerformanceStats?.successRate || 0}%` }} />
+                    </div>
+                    <p className="text-[11px] text-on-surface-variant">
+                      {aiAnalysis.weeklyPerformanceStats?.totalCorrect || 0} Doğru • {aiAnalysis.weeklyPerformanceStats?.totalIncorrect || 0} Yanlış
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: %80 BAŞARI EŞİĞİNİN ALTINDAKİ KONULAR VE ÖZEL TAVSİYELER */}
+            {(analysisTab === 'all' || analysisTab === 'under80' || analysisTab === 'weekly') && (
+              <div className="p-6 bg-gradient-to-br from-rose-50/80 via-white to-amber-50/60 rounded-3xl border border-rose-200/80 shadow-sm space-y-6">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-600 flex items-center justify-center font-black">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-lg text-rose-950 flex items-center gap-2">
+                        %80 Başarı Eşiğinin Altındaki Kritik Konular
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-600 text-white uppercase tracking-wider">
+                          Hedef: %80+
+                        </span>
+                      </h4>
+                      <p className="text-xs text-rose-900/80 font-medium">
+                        Öğrencinin haftalık programda doğru-yanlış girdiği ve başarı oranı %80'in altında kalan konuların teşhisi ve video önerileri
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-extrabold px-3 py-1 bg-white rounded-full border border-rose-300 text-rose-700 shadow-2xs">
+                    {aiAnalysis.under80Topics?.length || 0} Kritik Konu Tespit Edildi
+                  </span>
+                </div>
+
+                {aiAnalysis.under80Topics && aiAnalysis.under80Topics.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {aiAnalysis.under80Topics.map((topicItem: any, idx: number) => {
+                      const isCritical = topicItem.accuracy < 60;
+                      return (
+                        <div 
+                          key={idx} 
+                          className="p-5 bg-white rounded-2xl border border-rose-200 shadow-xs space-y-3.5 hover:shadow-md transition-shadow"
+                        >
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[10px] font-black uppercase tracking-wider text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md">
+                                {topicItem.subject}
+                              </span>
+                              <h5 className="font-black text-base text-on-surface mt-1">{topicItem.topic}</h5>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className={`text-xs font-black px-2.5 py-1 rounded-full uppercase block ${
+                                isCritical ? 'bg-rose-600 text-white' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                %{topicItem.accuracy} Başarı
+                              </span>
+                              <span className="text-[10px] font-bold text-on-surface-variant block mt-0.5">
+                                {topicItem.correct}D / {topicItem.incorrect}Y
                               </span>
                             </div>
-                            <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
-                              {def.description}
-                            </p>
-                            
-                            {/* Recommendations */}
-                            {def.recommendations && def.recommendations.length > 0 && (
-                              <div className="pt-2 border-t border-outline-variant/10 space-y-2">
-                                <p className="text-[9px] font-black text-on-surface-variant uppercase tracking-wider">Önerilen Kaynaklar & Ders Videoları</p>
-                                <div className="space-y-1.5">
-                                  {def.recommendations.map((rec: any, rIdx: number) => (
-                                    <a
-                                      key={rIdx}
-                                      href={rec.youtubeUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center justify-between p-2.5 bg-white hover:bg-primary/5 rounded-xl border border-outline-variant/5 text-xs text-primary font-bold hover:underline transition-all group"
-                                    >
-                                      <span className="flex items-center gap-2 truncate pr-4">
-                                        <PlayCircle className="w-4 h-4 text-primary shrink-0 group-hover:scale-110 transition-transform" />
-                                        <span className="truncate">{rec.title}</span>
-                                      </span>
-                                      <span className="flex items-center gap-1 text-[10px] text-on-surface-variant group-hover:text-primary transition-colors">
-                                        İzle
-                                        <ExternalLink className="w-3 h-3" />
-                                      </span>
-                                    </a>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
                           </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-tertiary font-bold">Harika! Bu branşta herhangi bir konu eksiği tespit edilmedi.</p>
-                      )}
+
+                          {/* Progress Bar */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[10px] font-bold text-on-surface-variant">
+                              <span>Mevcut Başarı: %{topicItem.accuracy}</span>
+                              <span className="text-rose-600 font-black">Hedef: %80</span>
+                            </div>
+                            <div className="h-2 bg-surface-container-high rounded-full overflow-hidden relative">
+                              {/* 80% mark */}
+                              <div className="absolute top-0 bottom-0 left-[80%] w-0.5 bg-rose-500 z-10" title="Hedef Eşik (%80)" />
+                              <div 
+                                className={`h-full rounded-full transition-all ${
+                                  isCritical ? 'bg-rose-600' : 'bg-amber-500'
+                                }`}
+                                style={{ width: `${Math.min(100, topicItem.accuracy)}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Diagnosis */}
+                          <p className="text-xs text-on-surface-variant leading-relaxed font-medium">
+                            {topicItem.diagnosis}
+                          </p>
+
+                          {/* Recommendation Box */}
+                          <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/60 text-xs text-amber-950 space-y-1">
+                            <p className="font-bold flex items-center gap-1.5 text-amber-900">
+                              <Target className="w-3.5 h-3.5 text-amber-700" />
+                              Yapay Zeka Telafi Tavsiyesi:
+                            </p>
+                            <p className="text-[11px] leading-relaxed font-medium">{topicItem.recommendation}</p>
+                          </div>
+
+                          {/* Video Link */}
+                          {topicItem.video && (
+                            <a
+                              href={topicItem.video.youtubeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-between p-3 bg-primary/5 hover:bg-primary/10 rounded-xl border border-primary/20 text-xs text-primary font-bold transition-all group"
+                            >
+                              <span className="flex items-center gap-2 truncate pr-2">
+                                <PlayCircle className="w-4 h-4 text-primary shrink-0 group-hover:scale-110 transition-transform" />
+                                <span className="truncate">{topicItem.video.title}</span>
+                              </span>
+                              <span className="flex items-center gap-1 text-[10px] text-primary shrink-0">
+                                İzle <ExternalLink className="w-3 h-3" />
+                              </span>
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-6 bg-white rounded-2xl border border-emerald-200 text-center space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                    <p className="text-sm font-bold text-emerald-950">Tebrikler! %80 Eşiğinin Altında Konu Yok</p>
+                    <p className="text-xs text-emerald-800">
+                      Öğrencinin haftalık programdaki görevlerinde çözülen tüm konularda %80 başarı oranının üzerinde performans kaydedilmiştir.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 4: DENEME SINAVLARI ANALİZİ */}
+            {(analysisTab === 'all' || analysisTab === 'trials') && (
+              <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-6">
+                <div className="flex items-center justify-between flex-wrap gap-3 pb-4 border-b border-outline-variant/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center font-black">
+                      <Target className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-lg text-on-surface">Deneme Sınavları Özel Analiz Modülü</h4>
+                      <p className="text-xs text-on-surface-variant font-medium">
+                        Deneme sınavı net trendleri, zaman yönetimi ve bir sonraki deneme için taktikler
+                      </p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                  <span className="text-xs font-black px-3.5 py-1.5 bg-secondary/10 text-secondary rounded-full border border-secondary/20">
+                    {aiAnalysis.trialAnalysis?.trendLabel || 'Net Takibi Aktif'}
+                  </span>
+                </div>
+
+                {/* Trial Review Text */}
+                {aiAnalysis.trialAnalysis?.summary && (
+                  <div className="p-4 rounded-2xl bg-secondary/5 border border-secondary/20 text-xs sm:text-sm font-medium text-secondary-950 leading-relaxed">
+                    <p className="font-bold text-secondary mb-1 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-secondary" />
+                      Deneme Sınavı Yapay Zeka Değerlendirmesi:
+                    </p>
+                    {aiAnalysis.trialAnalysis.summary}
+                  </div>
+                )}
+
+                {/* Trial Score Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-4 bg-surface-container-low rounded-2xl text-center space-y-1 border border-outline-variant/10">
+                    <span className="text-[10px] font-bold text-on-surface-variant uppercase block">Son Deneme</span>
+                    <span className="text-2xl font-black text-secondary block">{aiAnalysis.trialAnalysis?.latestTrialNet || 0} Net</span>
+                    <span className="text-[10px] text-on-surface-variant block">Mevcut Seviye</span>
+                  </div>
+                  <div className="p-4 bg-surface-container-low rounded-2xl text-center space-y-1 border border-outline-variant/10">
+                    <span className="text-[10px] font-bold text-on-surface-variant uppercase block">En Yüksek Net</span>
+                    <span className="text-2xl font-black text-emerald-700 block">{aiAnalysis.trialAnalysis?.highestTrialNet || 0} Net</span>
+                    <span className="text-[10px] text-emerald-700/80 block">Zirve Skoru</span>
+                  </div>
+                  <div className="p-4 bg-surface-container-low rounded-2xl text-center space-y-1 border border-outline-variant/10">
+                    <span className="text-[10px] font-bold text-on-surface-variant uppercase block">Ortalama Net</span>
+                    <span className="text-2xl font-black text-primary block">{aiAnalysis.trialAnalysis?.averageTrialNet || 0} Net</span>
+                    <span className="text-[10px] text-primary/80 block">Kayıtlı {aiAnalysis.trialAnalysis?.trialCount || 0} Deneme</span>
+                  </div>
+                  <div className="p-4 bg-surface-container-low rounded-2xl text-center space-y-1 border border-outline-variant/10">
+                    <span className="text-[10px] font-bold text-on-surface-variant uppercase block">Hedeflenen Net</span>
+                    <span className="text-2xl font-black text-purple-700 block">{aiAnalysis.trialAnalysis?.targetNet || 0} Net</span>
+                    <span className="text-[10px] text-purple-700/80 block">Gelecek Deneme Hedefi</span>
+                  </div>
+                </div>
+
+                {/* Trial Recommendations */}
+                {aiAnalysis.trialAnalysis?.trialRecommendations && (
+                  <div className="space-y-3 pt-2">
+                    <h5 className="text-xs font-black uppercase tracking-wider text-on-surface-variant">
+                      Deneme Sınavı Başarı Stratejileri & Taktikleri
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {aiAnalysis.trialAnalysis.trialRecommendations.map((tRec: any, idx: number) => (
+                        <div key={idx} className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-on-surface">{tRec.title}</span>
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-secondary/10 text-secondary uppercase">
+                              {tRec.badge}
+                            </span>
+                          </div>
+                          <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
+                            {tRec.description}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 5 / PEDAGOJİK NOTLAR VE DERS DETAYLARI */}
+            {(analysisTab === 'all') && (
+              <div className="space-y-6">
+                {/* Previous Week Card */}
+                {aiAnalysis.previousWeekEvaluation && (
+                  <div className="p-6 bg-gradient-to-br from-indigo-500/5 via-primary/5 to-transparent rounded-3xl border border-primary/20 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                          <History className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-base text-on-surface">Önceki Hafta Değerlendirmesi & Karnesi</h4>
+                          <p className="text-xs text-on-surface-variant font-medium">
+                            Tamamlanan haftanın ödev performansı ve yapay zeka değerlendirmesi
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-black px-3 py-1 bg-white rounded-full border border-primary/20 text-primary shadow-2xs">
+                        🗓️ {aiAnalysis.previousWeekEvaluation.endDate || 'Geçen Hafta'}
+                      </span>
+                    </div>
+
+                    <div className="p-4 bg-white/90 rounded-2xl border border-outline-variant/10 text-sm font-semibold text-on-surface leading-relaxed">
+                      {aiAnalysis.previousWeekEvaluation.evaluationSummary}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recommendations Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Weekly Plan Recommendations */}
+                  {aiAnalysis.weeklyPlanRecommendations && aiAnalysis.weeklyPlanRecommendations.length > 0 && (
+                    <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-extrabold text-base text-on-surface flex items-center gap-2">
+                          <Target className="w-5 h-5 text-primary" />
+                          Yapay Zeka Çalışma Önerileri
+                        </h4>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary uppercase">
+                          Haftalık Planlama
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {aiAnalysis.weeklyPlanRecommendations.map((rec: any, idx: number) => (
+                          <div key={idx} className="p-3.5 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-on-surface">{rec.subject} - {rec.topic}</span>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                rec.priority === 'high' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {rec.priority === 'high' ? 'Yüksek Öncelik' : 'Önerilen'}
+                              </span>
+                            </div>
+                            <p className="text-xs font-semibold text-primary">{rec.suggestedAmount}</p>
+                            <p className="text-[11px] text-on-surface-variant font-medium">{rec.reason}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Coaching & Pedagogy Notes */}
+                  {aiAnalysis.teacherPedagogyNotes && aiAnalysis.teacherPedagogyNotes.length > 0 && (
+                    <div className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-extrabold text-base text-on-surface flex items-center gap-2">
+                          <Award className="w-5 h-5 text-amber-500" />
+                          Pedagojik Koçluk & Odak Noktaları
+                        </h4>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 uppercase">
+                          Gelişim Takibi
+                        </span>
+                      </div>
+                      <div className="space-y-2.5">
+                        {aiAnalysis.teacherPedagogyNotes.map((note: string, idx: number) => (
+                          <div key={idx} className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/40 border border-amber-200/40 text-xs text-on-surface font-medium leading-relaxed">
+                            <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-800 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                              {idx + 1}
+                            </span>
+                            <span>{note}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Subject Breakdown */}
+                {aiAnalysis.subjects && aiAnalysis.subjects.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {aiAnalysis.subjects.map((sub: any, i: number) => {
+                      const isDanger = sub.status === 'danger';
+                      const isWarning = sub.status === 'warning';
+                      return (
+                        <div key={i} className="p-6 bg-white rounded-3xl border border-outline-variant/10 shadow-sm space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider ${
+                                isDanger ? 'bg-secondary/10 text-secondary' : isWarning ? 'bg-orange-100 text-orange-700' : 'bg-tertiary/10 text-tertiary'
+                              }`}>
+                                {isDanger ? 'Geliştirilmeli' : isWarning ? 'Dikkat Edilmeli' : 'Başarılı'}
+                              </span>
+                              <h5 className="font-extrabold text-xl text-on-surface mt-1">{sub.name}</h5>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] font-bold text-on-surface-variant uppercase">Tahmini Başarı</p>
+                              <p className="text-2xl font-black text-primary">%{sub.accuracy}</p>
+                            </div>
+                          </div>
+                          <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full ${
+                                isDanger ? 'bg-secondary' : isWarning ? 'bg-orange-500' : 'bg-tertiary'
+                              }`}
+                              style={{ width: `${sub.accuracy}%` }}
+                            />
+                          </div>
+                          {sub.deficiencies && sub.deficiencies.length > 0 && (
+                            <div className="space-y-2 pt-1">
+                              {sub.deficiencies.map((def: any, idx: number) => (
+                                <div key={idx} className="p-3 bg-surface-container-low rounded-xl text-xs space-y-1">
+                                  <p className="font-bold text-on-surface">{def.topic}</p>
+                                  <p className="text-on-surface-variant text-[11px]">{def.description}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

@@ -1949,8 +1949,151 @@ export function MyStudents() {
                         </div>
                       )}
 
+                      {/* Separate Deneme Sınavları & Haftalık Program Cards */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Deneme Sınavları Ayrı Analiz Kartı */}
+                        <div className="p-6 bg-white rounded-3xl border border-secondary/20 shadow-xs space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-black text-base text-on-surface flex items-center gap-2">
+                              <Target className="w-5 h-5 text-secondary" />
+                              Deneme Sınavları Analiz Modülü
+                            </h4>
+                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-secondary/10 text-secondary">
+                              {aiAnalysis.trialAnalysis?.trendLabel || 'Net Takibi'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-on-surface-variant leading-relaxed">
+                            {aiAnalysis.trialAnalysis?.summary || `Son deneme neti ${aiAnalysis.weeklyPerformanceStats?.latestTrialNet || 0} olarak kaydedildi.`}
+                          </p>
+                          <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                            <div className="p-2.5 bg-surface-container-low rounded-xl">
+                              <span className="text-[9px] font-bold text-on-surface-variant block uppercase">Son Net</span>
+                              <span className="text-sm font-black text-secondary block">{aiAnalysis.trialAnalysis?.latestTrialNet || 0}</span>
+                            </div>
+                            <div className="p-2.5 bg-surface-container-low rounded-xl">
+                              <span className="text-[9px] font-bold text-on-surface-variant block uppercase">Ortalama Net</span>
+                              <span className="text-sm font-black text-primary block">{aiAnalysis.trialAnalysis?.averageTrialNet || 0}</span>
+                            </div>
+                            <div className="p-2.5 bg-surface-container-low rounded-xl">
+                              <span className="text-[9px] font-bold text-on-surface-variant block uppercase">Hedef Net</span>
+                              <span className="text-sm font-black text-purple-700 block">{aiAnalysis.trialAnalysis?.targetNet || (Number(aiAnalysis.weeklyPerformanceStats?.latestTrialNet || 80) + 3).toFixed(1)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Haftalık Program Ayrı Analiz Kartı */}
+                        <div className="p-6 bg-white rounded-3xl border border-indigo-200 shadow-xs space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-black text-base text-on-surface flex items-center gap-2">
+                              <CheckSquare className="w-5 h-5 text-indigo-600" />
+                              Haftalık Program & Doğru-Yanlış
+                            </h4>
+                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                              %{aiAnalysis.weeklyPerformanceStats?.successRate || 0} Doğruluk
+                            </span>
+                          </div>
+                          <p className="text-xs text-on-surface-variant leading-relaxed">
+                            {aiAnalysis.weeklyProgramAnalysis?.summary || `Haftalık ödev tamamlama oranı %${aiAnalysis.weeklyPerformanceStats?.completionRate || 0} olarak hesaplandı.`}
+                          </p>
+                          <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                            <div className="p-2.5 bg-surface-container-low rounded-xl">
+                              <span className="text-[9px] font-bold text-on-surface-variant block uppercase">Çözülen Soru</span>
+                              <span className="text-sm font-black text-on-surface block">{aiAnalysis.weeklyPerformanceStats?.solvedQuestions || 0}</span>
+                            </div>
+                            <div className="p-2.5 bg-emerald-50 rounded-xl">
+                              <span className="text-[9px] font-bold text-emerald-800 block uppercase">Doğru</span>
+                              <span className="text-sm font-black text-emerald-700 block">{aiAnalysis.weeklyPerformanceStats?.totalCorrect || 0}</span>
+                            </div>
+                            <div className="p-2.5 bg-rose-50 rounded-xl">
+                              <span className="text-[9px] font-bold text-rose-800 block uppercase">Yanlış</span>
+                              <span className="text-sm font-black text-rose-700 block">{aiAnalysis.weeklyPerformanceStats?.totalIncorrect || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* %80 Başarı Eşiğinin Altındaki Kritik Konular & Özel Tavsiyeler */}
+                      {aiAnalysis.under80Topics && aiAnalysis.under80Topics.length > 0 && (
+                        <div className="p-6 bg-gradient-to-br from-rose-50/70 via-white to-amber-50/50 rounded-3xl border border-rose-200 space-y-4">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-black">
+                                <AlertTriangle className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h4 className="font-black text-base text-rose-950 flex items-center gap-2">
+                                  %80 Başarı Eşiğinin Altındaki Kritik Konular (&lt;%80)
+                                </h4>
+                                <p className="text-xs text-rose-900/80 font-medium">
+                                  Öğrencinin haftalık programda çözdüğü ve başarı oranı %80'in altında kalan konuların analizi
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-xs font-black px-3 py-1 bg-white rounded-full border border-rose-300 text-rose-700 shadow-2xs">
+                              {aiAnalysis.under80Topics.length} Konu Tespit Edildi
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {aiAnalysis.under80Topics.map((topicItem: any, idx: number) => (
+                              <div key={idx} className="p-4 bg-white rounded-2xl border border-rose-100 shadow-xs space-y-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md">
+                                      {topicItem.subject}
+                                    </span>
+                                    <h5 className="font-black text-sm text-on-surface mt-1">{topicItem.topic}</h5>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-xs font-black px-2 py-0.5 rounded-full bg-rose-600 text-white">
+                                      %{topicItem.accuracy} Başarı
+                                    </span>
+                                    <span className="text-[10px] text-on-surface-variant block mt-0.5">
+                                      {topicItem.correct}D • {topicItem.incorrect}Y
+                                    </span>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-on-surface-variant leading-relaxed">
+                                  {topicItem.diagnosis}
+                                </p>
+                                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200/50 text-xs text-amber-950">
+                                  <span className="font-bold text-amber-900 block mb-0.5">💡 Tavsiye:</span>
+                                  <span>{topicItem.recommendation}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2 pt-1 border-t border-outline-variant/10">
+                                  {topicItem.video ? (
+                                    <a
+                                      href={topicItem.video.youtubeUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-1.5 text-[10px] text-primary font-bold hover:underline truncate"
+                                    >
+                                      <PlayCircle className="w-3.5 h-3.5 text-primary shrink-0" />
+                                      <span className="truncate">{topicItem.video.title}</span>
+                                    </a>
+                                  ) : <span />}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddAiRecommendedTask({
+                                      subject: topicItem.subject,
+                                      topic: topicItem.topic,
+                                      suggestedAmount: '30 soru',
+                                      reason: `Başarı oranı %${topicItem.accuracy} olduğu için telafi gerekiyor.`
+                                    })}
+                                    className="px-3 py-1.5 bg-primary text-white rounded-xl text-xs font-black hover:bg-primary/90 transition-all flex items-center gap-1 shrink-0"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Telafi Ata</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Error Analysis Callout Card */}
-                      {aiAnalysis.errorAnalysis && (
+                      {aiAnalysis.errorAnalysis && !aiAnalysis.under80Topics?.length && (
                         <div className="p-6 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-transparent rounded-3xl border border-rose-200/60 shadow-xs space-y-2">
                           <div className="flex items-center gap-2">
                             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />

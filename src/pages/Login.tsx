@@ -203,27 +203,75 @@ export function Login() {
             </div>
 
             {/* Role Toggle */}
-            <div className="flex p-1 bg-surface-container-high rounded-2xl mb-6">
+            <div className="flex p-1 bg-surface-container-high rounded-2xl mb-4">
               <button 
                 type="button"
-                onClick={() => setRole('student')}
+                onClick={() => {
+                  setRole('student');
+                  setUsername('ruzgar');
+                  setPassword('Ogrenci.2026!');
+                  setError('');
+                }}
                 className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'student' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
                 Öğrenci
               </button>
               <button 
                 type="button"
-                onClick={() => setRole('teacher')}
+                onClick={() => {
+                  setRole('teacher');
+                  setUsername('gokce');
+                  setPassword('Ogretmen.2026!');
+                  setError('');
+                }}
                 className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'teacher' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
                 Öğretmen
               </button>
               <button 
                 type="button"
-                onClick={() => setRole('admin')}
+                onClick={() => {
+                  setRole('admin');
+                  setUsername('admin');
+                  setPassword('Yonetici.2026!');
+                  setError('');
+                }}
                 className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${role === 'admin' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
               >
                 Yönetici
+              </button>
+            </div>
+
+            {/* Quick Demo Credentials Helper */}
+            <div className="mb-5 p-3 rounded-2xl bg-surface-container-high/60 border border-outline-variant/10 flex items-center justify-between text-xs">
+              <div className="text-[11px] text-on-surface-variant">
+                <span className="font-bold text-on-surface">Örnek Hesap: </span>
+                {role === 'student' ? (
+                  <span><strong>ruzgar</strong> / Ogrenci.2026!</span>
+                ) : role === 'teacher' ? (
+                  <span><strong>gokce</strong> / Ogretmen.2026!</span>
+                ) : (
+                  <span><strong>admin</strong> / Yonetici.2026!</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (role === 'student') {
+                    setUsername('ruzgar');
+                    setPassword('Ogrenci.2026!');
+                  } else if (role === 'teacher') {
+                    setUsername('gokce');
+                    setPassword('Ogretmen.2026!');
+                  } else {
+                    setUsername('admin');
+                    setPassword('Yonetici.2026!');
+                  }
+                  setError('');
+                }}
+                className="px-2.5 py-1 bg-white hover:bg-primary/10 text-primary font-bold rounded-lg border border-outline-variant/20 shadow-2xs text-[10px] transition-all"
+              >
+                Doldur
               </button>
             </div>
 
