@@ -501,6 +501,45 @@ export function MyStudents() {
     }
   };
 
+  const handleExportParentPdf = async () => {
+    if (!selectedStudent) return;
+    if (aiAnalysis) {
+      exportAiAnalysisToPdf(aiAnalysis, selectedStudent.name, selectedStudent.grade || '12. Sınıf');
+      showToast('Veli bilgilendirme PDF raporu hazırlandı ve açıldı! 📄');
+      return;
+    }
+
+    setLoadingAnalysis(true);
+    setAnalysisError(null);
+    try {
+      const savedTasks = JSON.parse(localStorage.getItem(`tasks_${selectedStudent.id}`) || '[]');
+      const savedTrials = JSON.parse(localStorage.getItem(`trial_results_${selectedStudent.id}`) || '[]');
+      const detailedTrials = JSON.parse(localStorage.getItem(`trial_results_detailed_${selectedStudent.id}`) || '[]');
+      const savedErrors = JSON.parse(localStorage.getItem(`topic_errors_${selectedStudent.id}`) || '[]');
+      const savedArchives = JSON.parse(localStorage.getItem(`archived_programs_${selectedStudent.id}`) || '[]');
+
+      const data = await fetchAiAnalysisSafely({
+        studentName: selectedStudent.name,
+        grade: selectedStudent.grade,
+        tasks: studentTasks.length > 0 ? studentTasks : savedTasks,
+        trialResults: studentTrials.length > 0 ? studentTrials : savedTrials,
+        detailedTrials,
+        topicErrors: studentErrors.length > 0 ? studentErrors : savedErrors,
+        archivedPrograms: archivedPrograms.length > 0 ? archivedPrograms : savedArchives
+      });
+
+      setAiAnalysis(data);
+      localStorage.setItem(`ai_analysis_${selectedStudent.id}`, JSON.stringify(data));
+      exportAiAnalysisToPdf(data, selectedStudent.name, selectedStudent.grade || '12. Sınıf');
+      showToast('Gelişim analizi derlendi ve veli PDF raporu oluşturuldu! 📄✨');
+    } catch (err: any) {
+      console.error(err);
+      setAnalysisError(err.message || 'PDF raporu hazırlanırken bir hata oluştu.');
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  };
+
   const handleAddAiRecommendedTask = async (recOrNeed: any) => {
     if (!selectedStudent) return;
     const taskData = recOrNeed.suggestedTask || recOrNeed;
@@ -1690,28 +1729,40 @@ export function MyStudents() {
                         Öğrencinin tamamladığı ödevler, doğru/yanlış oranları ve deneme sonuçlarına göre kişiselleştirilmiş eksik analizi ve video önerileri.
                       </p>
                     </div>
-                    <button
-                      onClick={runAiAnalysis}
-                      disabled={loadingAnalysis}
-                      className={`px-8 py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary-container hover:to-purple-700 text-white font-black rounded-full shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shrink-0 ${
-                        loadingAnalysis ? 'opacity-50 cursor-not-allowed animate-pulse' : ''
-                      }`}
-                    >
-                      {loadingAnalysis ? (
-                        <>
-                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          Analiz Ediliyor...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-5 h-5" />
-                          Analizi Güncelle
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleExportParentPdf}
+                        disabled={loadingAnalysis}
+                        className="px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-full shadow-lg shadow-emerald-600/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shrink-0 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
+                        title="Öğrencinin velisiyle paylaşmak için resmi pedagojik gelişim raporunu PDF olarak indir veya yazdır"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Veli İçin PDF İndir</span>
+                      </button>
+                      <button
+                        onClick={runAiAnalysis}
+                        disabled={loadingAnalysis}
+                        className={`px-8 py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary-container hover:to-purple-700 text-white font-black rounded-full shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shrink-0 text-xs sm:text-sm cursor-pointer ${
+                          loadingAnalysis ? 'opacity-50 cursor-not-allowed animate-pulse' : ''
+                        }`}
+                      >
+                        {loadingAnalysis ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Analiz Ediliyor...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-5 h-5" />
+                            Analizi Güncelle
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   {analysisError && (
@@ -1744,6 +1795,30 @@ export function MyStudents() {
                         <p className="text-on-surface font-semibold text-base leading-relaxed italic">
                           "{aiAnalysis.summary}"
                         </p>
+                      </div>
+
+                      {/* Veli Bilgilendirme ve PDF Paylaşım Kartı */}
+                      <div className="p-6 bg-gradient-to-r from-emerald-500/10 via-primary/5 to-surface-container-high rounded-3xl border border-emerald-500/25 flex flex-col md:flex-row items-center justify-between gap-5 shadow-xs">
+                        <div className="space-y-1.5 text-center md:text-left">
+                          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider mb-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Veli Görüşme & Paylaşım Formatı</span>
+                          </div>
+                          <h5 className="text-base font-black text-on-surface">
+                            {selectedStudent?.name} - Velisi İçin Hazır PDF Gelişim Raporu
+                          </h5>
+                          <p className="text-xs text-on-surface-variant font-medium leading-relaxed max-w-2xl">
+                            Öğrencinin haftalık soru hedefleri, deneme sınavı net trendleri, başarı oranları ve eksik tespit edilen kritik konuları veliyle paylaşabileceğiniz resmi A4 formatında PDF olarak indirin.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleExportParentPdf}
+                          className="w-full md:w-auto px-7 py-4 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs sm:text-sm font-black rounded-2xl shadow-md hover:scale-102 active:scale-98 transition-all flex items-center justify-center gap-2.5 cursor-pointer shrink-0"
+                        >
+                          <Download className="w-5 h-5" />
+                          <span>PDF Raporunu İndir / Yazdır</span>
+                        </button>
                       </div>
 
                       {/* Weekly Performance Stats: Doğru, Yanlış, Boş, Başarı % ve Deneme Neti */}
@@ -2265,8 +2340,19 @@ export function MyStudents() {
                       <div className="space-y-2 max-w-sm mx-auto">
                         <p className="text-on-surface font-bold text-lg">Yapay Zeka Analizini Başlat</p>
                         <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
-                          Henüz bu öğrenci için yapay zeka analiz raporu oluşturulmamış. Verilerini analiz ederek ders bazlı gelişim önerileri çıkarmak için yukarıdaki butona tıklayabilirsiniz.
+                          Henüz bu öğrenci için yapay zeka analiz raporu oluşturulmamış. Verilerini analiz ederek ders bazlı gelişim önerileri çıkarmak ve veliyle paylaşmak üzere PDF raporu almak için butona tıklayabilirsiniz.
                         </p>
+                        <div className="pt-3 flex items-center justify-center gap-3 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={handleExportParentPdf}
+                            disabled={loadingAnalysis}
+                            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl shadow-md text-xs inline-flex items-center gap-2 cursor-pointer transition-all hover:scale-102 active:scale-98"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Veli İçin PDF Raporu Oluştur & İndir</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}

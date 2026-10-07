@@ -294,7 +294,7 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
 <body>
   <div class="no-print-bar">
     <div>
-      <strong>Scholar Pulse</strong> • Pedagojik AI Gelişim Raporu (${studentName})
+      <strong>Scholar Pulse</strong> • Öğrenci Gelişim & Veli Bilgilendirme Raporu (${studentName})
     </div>
     <div style="display: flex; gap: 8px;">
       <button class="btn" onclick="window.print()">
@@ -311,12 +311,12 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
     <div class="header">
       <div>
         <h1 class="logo-title">Scholar Pulse</h1>
-        <p class="sub-title">Yapay Zeka Destekli Pedagojik Gelişim & Performans Raporu</p>
+        <p class="sub-title">Öğrenci Gelişim & Veli Bilgilendirme Raporu (Yapay Zeka Destekli)</p>
       </div>
       <div class="meta-box">
         <div><strong>Tarih:</strong> ${printDate}</div>
-        <div><strong>Rapor Türü:</strong> Bireysel Gelişim Analizi</div>
-        <div><strong>Durum:</strong> Onaylandı & Güncel</div>
+        <div><strong>Rapor Türü:</strong> Bireysel Gelişim & Veli Bilgilendirme</div>
+        <div><strong>Paylaşım:</strong> Veli Görüşmesine Uygundur</div>
       </div>
     </div>
 
@@ -510,10 +510,24 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
     </div>
     ` : ''}
 
+    <!-- Signatures -->
+    <div style="margin-top: 24px; padding-top: 14px; border-top: 1px dashed #cbd5e1; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; font-size: 8.5pt;">
+      <div>
+        <p style="margin: 0 0 24px 0; color: #475569; font-weight: 700;">Danışman / Branş Öğretmeni:</p>
+        <div style="border-bottom: 1px solid #94a3b8; width: 80%;"></div>
+        <p style="margin: 4px 0 0 0; font-size: 7.5pt; color: #94a3b8;">İmza & Kaşe</p>
+      </div>
+      <div>
+        <p style="margin: 0 0 24px 0; color: #475569; font-weight: 700;">Öğrenci Velisi İnceleme Onayı:</p>
+        <div style="border-bottom: 1px solid #94a3b8; width: 80%;"></div>
+        <p style="margin: 4px 0 0 0; font-size: 7.5pt; color: #94a3b8;">Veli İmzası & Tarih</p>
+      </div>
+    </div>
+
     <!-- Footer -->
     <div class="footer">
       <div>Scholar Pulse Akademik İzleme & Koçluk Sistemi</div>
-      <div>Sayfa 1 / 1 • Bu rapor Yapay Zeka Eğitim Danışmanı tarafından otomatik derlenmiştir.</div>
+      <div>Sayfa 1 / 1 • Bu rapor veli görüşmesi ve akademik takip amacıyla oluşturulmuştur.</div>
     </div>
   </div>
 
