@@ -276,24 +276,6 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
 
   under80Topics.sort((a, b) => a.accuracy - b.accuracy);
 
-  if (under80Topics.length === 0 && weeklyIncorrect > 0) {
-    under80Topics.push({
-      subject: 'Matematik',
-      topic: 'Yeni Nesil Problem Çözme',
-      accuracy: 72,
-      correct: 18,
-      incorrect: weeklyIncorrect,
-      empty: weeklyEmpty,
-      totalAnswered: 18 + weeklyIncorrect,
-      severity: 'warning',
-      severityLabel: 'Geliştirilmeli (%72)',
-      diagnosis: `Haftalık sorularda ${weeklyIncorrect} hata tespit edildi. Soru kökünü anlama ve işlem basamaklarında dikkati artırma gerekmektedir.`,
-      recommendation: `Süre tutarak 20 adet paragraf tipi yeni nesil problem çözülmeli, yanlışların video analizleri incelenmelidir.`,
-      actionPlan: `Günde 20 Soru Süreli Çözüm`,
-      video: getRecommendedVideo('Matematik', 'Yeni Nesil Problemler')
-    });
-  }
-
   // 3. Topic Error Map
   const topicErrorMap: Record<string, { topic: string; subject: string; count: number }> = {};
   errorList.forEach((err: any) => {
@@ -445,57 +427,48 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     ]
   };
 
-  const subjectNames = ['Matematik', 'Türkçe', 'Fen Bilimleri', 'Sosyal Bilgiler', 'Yabancı Dil (İngilizce)'];
-  Object.keys(subjectTaskStats).forEach(s => {
-    if (!subjectNames.some(existing => existing.toLowerCase() === s.toLowerCase())) {
-      subjectNames.push(s);
-    }
-  });
+  // 5. Branch / Subject Breakdown Generator - SADECE öğrenciye verilmiş gerçek dersler analiz edilir
+  const actualSubjectNames = Array.from(new Set([
+    ...activeMetricsTasks.map((t: any) => (t.subject || '').trim()).filter(Boolean),
+    ...Object.keys(trialBranchStats)
+  ]));
 
-  const subjectsAnalysis = subjectNames.map(name => {
-    const stats = Object.entries(subjectTaskStats).find(([k]) => k.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(k.toLowerCase()))?.[1];
-    const relevantErrors = sortedErrors.filter(e => 
-      e.subject.toLowerCase().includes(name.toLowerCase()) || 
-      name.toLowerCase().includes(e.subject.toLowerCase())
-    );
+  const subjectsAnalysis = actualSubjectNames.map(name => {
+    const stats = Object.entries(subjectTaskStats).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
+    const relevantUnder80 = under80Topics.filter(u => u.subject.toLowerCase() === name.toLowerCase());
 
-    const errorCount = relevantErrors.reduce((sum, e) => sum + e.count, 0) + (stats?.incorrect || 0);
     const correctCount = stats?.correct || 0;
-    const totalSubjQuestions = correctCount + errorCount;
+    const incorrectCount = stats?.incorrect || 0;
+    const emptyCount = stats?.empty || 0;
+    const totalSubjQuestions = stats?.total || (correctCount + incorrectCount + emptyCount);
+    const answered = correctCount + incorrectCount;
 
-    let accuracy = 80;
-    if (totalSubjQuestions > 0) {
-      accuracy = Math.round((correctCount / totalSubjQuestions) * 100);
-    } else if (errorCount > 0) {
-      accuracy = Math.max(40, 85 - (errorCount * 6));
+    let accuracy = 100;
+    if (answered > 0) {
+      accuracy = Math.round((correctCount / answered) * 100);
+    } else if (totalSubjQuestions > 0) {
+      accuracy = 100;
     }
 
     let status: 'success' | 'warning' | 'danger' = 'success';
-    if (errorCount >= 5 || accuracy < 60) status = 'danger';
-    else if (errorCount >= 2 || accuracy < 75) status = 'warning';
+    if (accuracy < 60) status = 'danger';
+    else if (accuracy < 80) status = 'warning';
 
-    const deficiencies = relevantErrors.slice(0, 2).map(e => ({
-      topic: e.topic,
-      errorCount: e.count,
-      description: `${name} dersinde '${e.topic}' konusunda ${e.count} adet yanlış tespit edildi. Kavram pekiştirmesi ve soru analizi gereklidir.`,
+    // SADECE ve SADECE bu derste %80 altına düşen gerçek konular
+    const deficiencies = relevantUnder80.map(u => ({
+      topic: u.topic,
+      errorCount: u.incorrect,
+      accuracy: u.accuracy,
+      description: `${name} dersinde '${u.topic}' konusunda ${u.incorrect} yanlış kaydedildi. Gerçek başarı oranı %${u.accuracy} olup %80 eşiğinin altındadır.`,
       recommendations: [
-        getRecommendedVideo(name, e.topic)
+        getRecommendedVideo(name, u.topic)
       ]
     }));
-
-    if (deficiencies.length === 0 && (errorCount > 0 || status !== 'success')) {
-      deficiencies.push({
-        topic: `${name} Temel Pratik & Hız Soruları`,
-        errorCount: errorCount || 2,
-        description: `Zaman yönetimi ve dikkat hatalarını azaltmak için periyodik soru çözümü önerilir.`,
-        recommendations: [getRecommendedVideo(name, 'Konu Tekrarı')]
-      });
-    }
 
     return {
       name,
       status,
-      accuracy: Math.min(100, Math.max(30, accuracy)),
+      accuracy: Math.min(100, Math.max(0, accuracy)),
       deficiencies
     };
   });
@@ -505,18 +478,18 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     ? `Bu hafta toplam ${weeklySolvedQuestions} soru üzerinde çalışıldı: ${weeklyCorrect} Doğru, ${weeklyIncorrect} Yanlış, ${weeklyEmpty} Boş (Doğruluk Oranı: %${weeklyOverallAccuracy}).` 
     : `Haftalık ödev tamamlama oranı %${completionRate}.`;
 
-  const summary = `${studentName || 'Öğrenci'} (${grade || 'Güncel Seviye'}), haftalık programında ${activeMetricsTasks.length} görevden ${completedTasks.length}'ini tamamladı. ${taskText} ${trialText} ${under80Topics.length > 0 ? `%80 başarı eşiğinin altında kalan ${under80Topics.length} kritik konuya odaklanılması önerilmektedir.` : ''}`;
+  const summary = `${studentName || 'Öğrenci'} (${grade || 'Güncel Seviye'}), haftalık programında ${activeMetricsTasks.length} görevden ${completedTasks.length}'ini tamamladı. ${taskText} ${trialText} ${under80Topics.length > 0 ? `%80 başarı eşiğinin altında kalan ${under80Topics.length} kritik konuya odaklanılması önerilmektedir.` : 'Tüm çalışılan konularda başarı oranı %80 ve üzerindedir.'}`;
 
   const errorAnalysis = under80Topics.length > 0
     ? `Haftalık programda doğru-yanlış girişlerine göre %80 başarı eşiğinin altında kalan kritik konular: ${under80Topics.map(u => `${u.subject} - ${u.topic} (%${u.accuracy} Başarı, ${u.incorrect} Yanlış)`).join(', ')}. Bu konularda hata telafisi yapılmalı ve video destekli soru çözümü sağlanmalıdır.`
     : sortedErrors.length > 0
     ? `En çok yanlış yapılan ilk 3 kritik konu: ${sortedErrors.slice(0, 3).map((e, idx) => `${idx + 1}) ${e.subject} - ${e.topic} (${e.count} Yanlış)`).join(', ')}.`
-    : `Öğrencinin haftalık çalışmalarında yoğunlaşmış bir hata kümesi bulunmamaktadır. Mevcut disiplin korunmalıdır.`;
+    : `Öğrencinin verilen çalışmalarında %80 başarı eşiğinin altında kalan bir konu bulunmamaktadır. Tüm konularda %80 başarı kuralı sağlanmıştır.`;
 
   const teacherPedagogyNotes = [
     under80Topics.length > 0
       ? `Öğrencinin ${under80Topics[0].subject} dersi '${under80Topics[0].topic}' konusundaki başarı oranı %${under80Topics[0].accuracy}'de kalmıştır. Birebir koçluk görüşmesinde bu konunun yanlış soruları incelenmelidir.`
-      : `Öğrencinin konu doğruluk oranları hedeflenen %80 seviyesinin üzerindedir, tebrik edilerek motivasyonu desteklenmelidir.`,
+      : `Öğrencinin verilen tüm konulardaki doğruluk oranları hedeflenen %80 seviyesinin üzerindedir, tebrik edilerek motivasyonu desteklenmelidir.`,
     uncompletedTasks.length > 0 
       ? `Bu hafta öğrencinin yapmadığı ${uncompletedTasks.length} adet eksik ödev bulunmaktadır. Yeni plana geçmeden önce telafi edilmelidir.`
       : `Öğrenci haftalık programdaki tüm ödevleri eksiksiz tamamladı.`,
@@ -526,29 +499,32 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     `Öğrenciyle haftalık koçluk görüşmesinde haftanın özet doğruları (${weeklyCorrect}) ve telafi edilecek eksikleri ana gündem yapılmalıdır.`
   ];
 
-  const weeklyPlanRecommendations = under80Topics.slice(0, 3).map(u => ({
-    subject: u.subject,
-    topic: `${u.topic} (Telafi & Hata Analizi)`,
-    suggestedAmount: `Günde 25 soru + Yanlış Soru Analizi`,
-    reason: `Başarı oranı %${u.accuracy} olduğu için öncelikli telafi gerektirir.`,
-    priority: u.accuracy < 60 ? 'high' : 'medium'
-  }));
-
-  if (weeklyPlanRecommendations.length === 0) {
-    weeklyPlanRecommendations.push({
-      subject: sortedErrors[0]?.subject || "Matematik",
-      topic: sortedErrors[0]?.topic || "Problem Çözme & Hata Telafisi",
-      suggestedAmount: "Günde 25 soru + Yanlış Soru Analizi",
-      reason: "Soru çözüm kondisyonunu artırmak için.",
-      priority: "high"
+  // Actionable Weekly Plan Recommendations - SADECE ve SADECE verilen gerçek konulardan üretilir
+  const weeklyPlanRecommendations: any[] = [];
+  if (under80Topics.length > 0) {
+    under80Topics.slice(0, 3).forEach(u => {
+      weeklyPlanRecommendations.push({
+        subject: u.subject,
+        topic: `${u.topic} (Telafi & Hata Analizi)`,
+        suggestedAmount: `Günde 25 soru + Yanlış Soru Analizi`,
+        reason: `Başarı oranı %${u.accuracy} olduğu için öncelikli telafi gerektirir.`,
+        priority: u.accuracy < 60 ? 'high' : 'medium'
+      });
     });
-    weeklyPlanRecommendations.push({
-      subject: "Türkçe",
-      topic: "Paragraf Hız Kampı",
-      suggestedAmount: "Günde 20 Paragraf Sorusu (Süre Tutularak)",
-      reason: "Sınav kondisyonunu ve okuma hızını korumak için.",
-      priority: "high"
-    });
+  } else {
+    // Eğer %80 altında konu yoksa, SADECE öğrencinin programında olan gerçek konulardan pekiştirme öner
+    const realAssignedTopics = Object.values(topicPerformanceMap);
+    if (realAssignedTopics.length > 0) {
+      realAssignedTopics.slice(0, 2).forEach(tp => {
+        weeklyPlanRecommendations.push({
+          subject: tp.subject,
+          topic: `${tp.topic} (Pekiştirme & Soru Çözümü)`,
+          suggestedAmount: "Günde 25 soru",
+          reason: `Öğrencinin çalıştığı '${tp.topic}' konusunda başarısını korumak ve hız kazanmak için.`,
+          priority: "medium"
+        });
+      });
+    }
   }
 
   const latestArchive = archivedList[0] || null;

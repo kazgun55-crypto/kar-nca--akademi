@@ -1171,6 +1171,19 @@ export function MyStudents() {
                   Görüşme Planla / Not Al
                 </button>
 
+                {activeTab === 'analytics' && (
+                  <button 
+                    type="button"
+                    onClick={handleExportParentPdf}
+                    disabled={loadingAnalysis}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-4 rounded-3xl font-bold shadow-lg shadow-emerald-600/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 text-xs sm:text-sm"
+                    title="Öğrencinin velisiyle paylaşmak için resmi pedagojik gelişim raporunu PDF olarak indir veya yazdır"
+                  >
+                    <Download className="w-5 h-5" />
+                    Veli İçin Gelişim Raporu (PDF İndir)
+                  </button>
+                )}
+
                 {studentNextMeeting && (
                   <div className="bg-amber-500/10 border border-amber-500/25 px-5 py-3 rounded-3xl flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">

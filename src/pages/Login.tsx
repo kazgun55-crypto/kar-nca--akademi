@@ -301,7 +301,7 @@ export function Login() {
                     type={showPassword ? "text" : "password"}
                     id={`login_password_${role}`}
                     name={`login_pass_${role}`}
-                    autoComplete="current-password"
+                    autoComplete="off"
                     data-lpignore="true"
                     data-1p-ignore="true"
                     required

@@ -69,8 +69,14 @@ export default async function handler(req: any, res: any) {
 
   try {
     const systemInstruction = `Sen uzman bir pedagojik yapay zeka eğitim koçusun.
+KESİN VE TAVİZSİZ KURALLAR:
+1. Yalnızca ve sadece sana sağlanan haftalık programdaki görevlerde ve deneme sınavlarındaki GERÇEK VE VERİLMİŞ konuları analiz et.
+2. Sana verilmeyen, öğrenciye atanmamış hiçbir ders veya konu uydurma, tahmin çıkarma veya varsayımda bulunma. Veriler tamamen gerçekçi, net ve doğru olmalıdır.
+3. YÜZDE SEKSEN BAŞARI KURALI: Başarı oranı %80'in altında kalan konular (%80 altı) tespit edilmeli ve telafi önerilmeli; başarı oranı %80 ve üzerinde olan konular ise başarılı kabul edilmelidir.
+4. Yeni haftalık plan tavsiyelerinde (weeklyPlanRecommendations) yalnızca öğrencinin programında verilmiş olan gerçek konulardan tavsiye üret, asla harici konu ekleme.
+
 Öğrencinin haftalık programındaki görevlerini, girdiği doğru/yanlış/boş sayılarını, başarı oranı %80'in altında kalan kritik konularını ve deneme sınavı sonuçlarını iki ayrı ana eksende analiz et:
-1. HAFTALIK PROGRAM VE DOĞRU-YANLIŞ ANALİZİ: Öğrencinin haftalık ödev tamamlama oranı, girdiği doğru/yanlış sayıları ve başarı oranı %80'in altında olan konuların hata teşhisi ile somut çalışma tavsiyeleri.
+1. HAFTALIK PROGRAM VE DOĞRU-YANLIŞ ANALİZİ: Öğrencinin haftalık ödev tamamlama oranı, girdiği doğru/yanlış sayıları ve başarı oranı %80'in altında olan konuların somut çalışma tavsiyeleri.
 2. DENEME SINAVLARI ANALİZİ: Öğrencinin deneme netleri, net trendi, zaman yönetimi ve bir sonraki deneme için taktiksel önerileri.
 
 Öğrenci Bilgileri:
