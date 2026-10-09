@@ -1,5 +1,5 @@
-// PDF Export Service for AI Analysis Reports
-// Formats and generates a professional, high-resolution A4 pedagogical report for students & teachers
+// PDF Export Service for Student Development & Parent Reports
+// Generates a clean, simple, and professional A4 pedagogical report for parents and teachers
 
 export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğrenci', grade: string = 'Belirtilmemiş') {
   if (!analysis) {
@@ -18,27 +18,30 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
   const weekly = analysis.weeklyProgramAnalysis || {};
   const under80 = Array.isArray(analysis.under80Topics) ? analysis.under80Topics : [];
   const pedagogyNotes = Array.isArray(analysis.teacherPedagogyNotes) ? analysis.teacherPedagogyNotes : [];
-  const weeklyRecs = Array.isArray(analysis.weeklyPlanRecommendations) ? analysis.weeklyPlanRecommendations : [];
   const subjects = Array.isArray(analysis.subjects) ? analysis.subjects : [];
 
-  const assignedQ = stats.assignedQuestions || weekly.solvedQuestions || 0;
+  const assignedQ = stats.assignedQuestions || weekly.assignedQuestions || 0;
   const solvedQ = stats.solvedQuestions || weekly.solvedQuestions || 0;
   const correctQ = stats.totalCorrect ?? weekly.totalCorrect ?? 0;
   const incorrectQ = stats.totalIncorrect ?? weekly.totalIncorrect ?? 0;
   const emptyQ = stats.totalEmpty ?? weekly.totalEmpty ?? 0;
   const successRate = stats.successRate ?? weekly.successRate ?? 0;
+  const completionRate = stats.completionRate ?? weekly.completionRate ?? 0;
   const latestTrialNet = stats.latestTrialNet ?? trial.latestTrialNet ?? 0;
+  const highestTrialNet = stats.highestTrialNet ?? trial.highestTrialNet ?? latestTrialNet;
+  const avgTrialNet = trial.averageTrialNet ?? latestTrialNet;
+  const trialCount = stats.trialCount ?? trial.trialCount ?? 0;
 
   const htmlContent = `
 <!DOCTYPE html>
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <title>Scholar Pulse - ${studentName} - Pedagojik AI Gelişim Raporu</title>
+  <title>Öğrenci Gelişim & Veli Bilgilendirme Raporu - ${studentName}</title>
   <style>
     @page {
       size: A4 portrait;
-      margin: 12mm 15mm;
+      margin: 10mm 12mm;
     }
     * {
       box-sizing: border-box;
@@ -47,17 +50,17 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      color: #1e293b;
+      color: #0f172a;
       margin: 0;
       padding: 0;
       background: #ffffff;
-      font-size: 10.5pt;
-      line-height: 1.45;
+      font-size: 9.5pt;
+      line-height: 1.4;
     }
     .no-print-bar {
       background: #0f172a;
       color: #ffffff;
-      padding: 12px 20px;
+      padding: 10px 18px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -70,224 +73,202 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
       background: #2563eb;
       color: #ffffff;
       border: none;
-      padding: 8px 18px;
-      font-size: 13px;
+      padding: 7px 16px;
+      font-size: 12px;
       font-weight: 700;
-      border-radius: 8px;
+      border-radius: 6px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      transition: background 0.15s;
     }
-    .btn:hover {
-      background: #1d4ed8;
-    }
-    .btn-secondary {
-      background: #334155;
-    }
-    .btn-secondary:hover {
-      background: #475569;
-    }
+    .btn:hover { background: #1d4ed8; }
+    .btn-secondary { background: #334155; }
+    .btn-secondary:hover { background: #475569; }
     @media print {
-      .no-print-bar {
-        display: none !important;
-      }
-      body {
-        background: #ffffff !important;
-      }
+      .no-print-bar { display: none !important; }
+      body { background: #ffffff !important; }
     }
     .report-container {
-      max-width: 820px;
+      max-width: 800px;
       margin: 0 auto;
-      padding: 20px 24px;
+      padding: 14px 18px;
     }
     .header {
-      border-bottom: 2px solid #2563eb;
-      padding-bottom: 14px;
-      margin-bottom: 16px;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: flex-end;
     }
     .logo-title {
-      font-size: 20pt;
+      font-size: 16pt;
       font-weight: 900;
-      color: #1e3a8a;
-      letter-spacing: -0.5px;
+      color: #0369a1;
       margin: 0;
+      letter-spacing: -0.3px;
     }
     .sub-title {
-      font-size: 10pt;
+      font-size: 9.5pt;
       font-weight: 600;
-      color: #64748b;
-      margin: 3px 0 0 0;
+      color: #475569;
+      margin: 2px 0 0 0;
     }
     .meta-box {
       text-align: right;
-      font-size: 9pt;
-      color: #475569;
+      font-size: 8.5pt;
+      color: #64748b;
     }
-    .meta-box strong {
-      color: #0f172a;
-    }
-    .student-badge-grid {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 12px 16px;
+    .meta-box strong { color: #0f172a; }
+
+    /* 4 Essential Summary Cards */
+    .summary-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-      margin-bottom: 16px;
+      gap: 10px;
+      margin-bottom: 12px;
     }
-    .student-badge-item {
-      display: flex;
-      flex-direction: column;
+    .summary-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      text-align: center;
     }
-    .badge-label {
+    .summary-label {
       font-size: 7.5pt;
       font-weight: 700;
       color: #64748b;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
       margin-bottom: 2px;
     }
-    .badge-value {
-      font-weight: 800;
+    .summary-val {
+      font-size: 12pt;
+      font-weight: 900;
       color: #0f172a;
-      font-size: 11pt;
     }
+    .val-primary { color: #0284c7; }
+    .val-success { color: #16a34a; }
+    .val-warning { color: #ea580c; }
+
+    /* Clean Section Blocks */
     .section {
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       page-break-inside: avoid;
     }
     .section-title {
-      font-size: 11.5pt;
+      font-size: 10pt;
       font-weight: 800;
       color: #0f172a;
-      margin: 0 0 8px 0;
+      margin: 0 0 6px 0;
       display: flex;
       align-items: center;
       gap: 6px;
-      border-left: 4px solid #2563eb;
-      padding-left: 8px;
+      border-left: 3px solid #0284c7;
+      padding-left: 7px;
     }
-    .summary-box {
+    .summary-text-box {
       background: #f0fdf4;
       border: 1px solid #bbf7d0;
-      border-radius: 10px;
-      padding: 12px 14px;
-      font-size: 9.5pt;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 9pt;
+      line-height: 1.45;
       color: #14532d;
-      line-height: 1.5;
     }
-    .grid-2 {
+
+    /* 2 Columns Layout for Program & Trials */
+    .two-col {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      gap: 10px;
     }
-    .card {
+    .box-card {
       background: #ffffff;
       border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 12px 14px;
+      border-radius: 8px;
+      padding: 10px 12px;
     }
-    .card-title {
-      font-size: 10pt;
-      font-weight: 800;
+    .box-card h4 {
       margin: 0 0 6px 0;
-      color: #1e293b;
-    }
-    .stat-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 3.5px 0;
-      border-bottom: 1px dashed #f1f5f9;
       font-size: 9pt;
-    }
-    .stat-row:last-child {
-      border-bottom: none;
-    }
-    .stat-label {
-      color: #64748b;
-    }
-    .stat-val {
-      font-weight: 700;
-      color: #0f172a;
-    }
-    .danger-tag {
-      color: #be123c;
-      font-weight: 800;
-    }
-    .success-tag {
-      color: #15803d;
-      font-weight: 800;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 6px;
-      font-size: 8.5pt;
-    }
-    th, td {
-      border: 1px solid #e2e8f0;
-      padding: 6px 8px;
-      text-align: left;
-    }
-    th {
-      background: #f1f5f9;
       font-weight: 800;
       color: #334155;
     }
-    .weak-item {
-      background: #fff1f2;
-      border: 1px solid #fecdd3;
+    .stat-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 8.5pt;
+      padding: 3px 0;
+      border-bottom: 1px dashed #f1f5f9;
+    }
+    .stat-line:last-child { border-bottom: none; }
+    .stat-line span:first-child { color: #64748b; }
+    .stat-line span:last-child { font-weight: 700; color: #0f172a; }
+
+    /* Critical & Deficiency Box */
+    .rule80-box {
       border-radius: 8px;
       padding: 9px 12px;
-      margin-bottom: 7px;
-      page-break-inside: avoid;
-    }
-    .weak-header {
-      display: flex;
-      justify-content: space-between;
-      font-weight: 800;
-      color: #9f1239;
-      margin-bottom: 3px;
-      font-size: 9.5pt;
-    }
-    .weak-desc {
       font-size: 8.5pt;
-      color: #475569;
-      margin: 0 0 3px 0;
+      line-height: 1.4;
     }
-    .weak-rec {
-      font-size: 8.5pt;
+    .rule80-success {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #15803d;
+    }
+    .rule80-alert {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      color: #9a3412;
+    }
+    .topic-badge {
+      display: inline-block;
+      background: #fee2e2;
+      color: #991b1b;
       font-weight: 700;
-      color: #0369a1;
-      background: #f0f9ff;
-      border-radius: 6px;
-      padding: 5px 8px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin: 2px 4px 2px 0;
+      font-size: 8pt;
     }
-    .list-box {
+
+    /* Pedagogical / Teacher Notes */
+    .notes-list {
       background: #f8fafc;
       border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 10px 14px;
-    }
-    .list-box li {
-      margin-bottom: 4px;
-      font-size: 9pt;
+      border-radius: 8px;
+      padding: 8px 12px 8px 24px;
+      margin: 0;
+      font-size: 8.5pt;
       color: #334155;
+      line-height: 1.45;
     }
-    .footer {
-      margin-top: 20px;
-      border-top: 1px solid #e2e8f0;
+    .notes-list li { margin-bottom: 3px; }
+
+    /* Signature Footer */
+    .sig-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-top: 14px;
       padding-top: 10px;
-      display: flex;
-      justify-content: space-between;
+      border-top: 1px dashed #cbd5e1;
       font-size: 8pt;
+    }
+    .sig-line {
+      border-bottom: 1px solid #94a3b8;
+      width: 75%;
+      margin: 22px 0 4px 0;
+    }
+    .footer-note {
+      text-align: center;
+      font-size: 7.5pt;
       color: #94a3b8;
+      margin-top: 10px;
     }
   </style>
 </head>
@@ -298,7 +279,7 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
     </div>
     <div style="display: flex; gap: 8px;">
       <button class="btn" onclick="window.print()">
-        🖨️ PDF Olarak Kaydet / Yazdır
+        🖨️ PDF İndir / Yazdır
       </button>
       <button class="btn btn-secondary" onclick="window.close()">
         Kapat
@@ -310,235 +291,172 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
     <!-- Header -->
     <div class="header">
       <div>
-        <h1 class="logo-title">Scholar Pulse</h1>
-        <p class="sub-title">Öğrenci Gelişim & Veli Bilgilendirme Raporu (Yapay Zeka Destekli)</p>
+        <h1 class="logo-title">Scholar Pulse Danışmanlık</h1>
+        <p class="sub-title">Öğrenci Gelişim & Veli Bilgilendirme Raporu</p>
       </div>
       <div class="meta-box">
+        <div><strong>Öğrenci:</strong> ${studentName} (${grade})</div>
         <div><strong>Tarih:</strong> ${printDate}</div>
-        <div><strong>Rapor Türü:</strong> Bireysel Gelişim & Veli Bilgilendirme</div>
-        <div><strong>Paylaşım:</strong> Veli Görüşmesine Uygundur</div>
+        <div><strong>Format:</strong> Resmi Veli Paylaşım Özeti</div>
       </div>
     </div>
 
-    <!-- Student Info Bar -->
-    <div class="student-badge-grid">
-      <div class="student-badge-item">
-        <span class="badge-label">Öğrenci Adı</span>
-        <span class="badge-value">${studentName}</span>
+    <!-- 4 Essential Metrics -->
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-label">Program Tamamlama</div>
+        <div class="summary-val val-primary">%${completionRate}</div>
       </div>
-      <div class="student-badge-item">
-        <span class="badge-label">Sınıf Seviyesi</span>
-        <span class="badge-value">${grade}</span>
+      <div class="summary-card">
+        <div class="summary-label">Soru Doğruluğu</div>
+        <div class="summary-val ${successRate >= 80 ? 'val-success' : 'val-warning'}">%${successRate}</div>
       </div>
-      <div class="student-badge-item">
-        <span class="badge-label">Haftalık Soru Başarısı</span>
-        <span class="badge-value success-tag">%${successRate}</span>
+      <div class="summary-card">
+        <div class="summary-label">Son Deneme Neti</div>
+        <div class="summary-val">${latestTrialNet > 0 ? `${latestTrialNet} Net` : 'Kayıt Bekleniyor'}</div>
       </div>
-      <div class="student-badge-item">
-        <span class="badge-label">Son Deneme Neti</span>
-        <span class="badge-value">${latestTrialNet} Net</span>
-      </div>
-    </div>
-
-    <!-- Performance Numbers Bar -->
-    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; background: #f1f5f9; padding: 8px 12px; border-radius: 10px; font-size: 8.5pt;">
-      <div><span style="color: #64748b;">Verilen Soru:</span> <strong>${assignedQ}</strong></div>
-      <div><span style="color: #64748b;">Çözülen Soru:</span> <strong>${solvedQ}</strong></div>
-      <div><span style="color: #15803d;">Doğru:</span> <strong>${correctQ}</strong></div>
-      <div><span style="color: #be123c;">Yanlış:</span> <strong>${incorrectQ}</strong></div>
-      <div><span style="color: #b45309;">Boş:</span> <strong>${emptyQ}</strong></div>
-    </div>
-
-    <!-- Executive Summary -->
-    <div class="section">
-      <h2 class="section-title">📊 Yönetici & Pedagoji Özeti</h2>
-      <div class="summary-box">
-        "${analysis.summary || 'Öğrencinin haftalık çalışma ve deneme verileri analiz edilerek gelişim hedefleri haritalandırılmıştır.'}"
-      </div>
-    </div>
-
-    <!-- Trial & Weekly Highlights Side-by-Side -->
-    <div class="section">
-      <div class="grid-2">
-        <!-- Deneme Sınavları -->
-        <div class="card">
-          <h3 class="card-title">🎯 Deneme Sınavları Özel Analizi</h3>
-          <div class="stat-row">
-            <span class="stat-label">Kayıtlı Deneme Sayısı:</span>
-            <span class="stat-val">${trial.trialCount || 0} Adet</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Son Deneme Neti:</span>
-            <span class="stat-val success-tag">${latestTrialNet} Net</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Hedef Net:</span>
-            <span class="stat-val">${trial.targetNet || (Number(latestTrialNet) + 3).toFixed(1)} Net</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">En Yüksek Net:</span>
-            <span class="stat-val">${trial.highestTrialNet || latestTrialNet} Net</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Genel Net Ortalaması:</span>
-            <span class="stat-val">${trial.averageTrialNet || latestTrialNet} Net</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Net Trendi:</span>
-            <span class="stat-val">${trial.trendLabel || 'İstikrarlı ➡️'}</span>
-          </div>
-          <p style="font-size: 8pt; color: #475569; margin: 8px 0 0 0; line-height: 1.4;">
-            ${trial.summary || 'Deneme sınavı netleri takip edilmektedir.'}
-          </p>
+      <div class="summary-card">
+        <div class="summary-label">%80 Eşik Durumu</div>
+        <div class="summary-val ${under80.length === 0 ? 'val-success' : 'val-warning'}">
+          ${under80.length === 0 ? 'Hedefe Uygun ✨' : `${under80.length} Odak Alanı`}
         </div>
+      </div>
+    </div>
 
+    <!-- 1. Veli Genel Değerlendirme Özeti -->
+    <div class="section">
+      <h3 class="section-title">📋 Genel Akademik Değerlendirme & Veli Özeti</h3>
+      <div class="summary-text-box">
+        ${analysis.summary || 'Öğrencinin haftalık çalışma programı ve deneme sınavları verileri doğrultusunda akademik gelişimi yakından takip edilmektedir.'}
+      </div>
+    </div>
+
+    <!-- 2. Haftalık Çalışma Programı & Deneme Sınavları -->
+    <div class="section">
+      <div class="two-col">
         <!-- Haftalık Program -->
-        <div class="card">
-          <h3 class="card-title">📝 Haftalık Program & Soru Analizi</h3>
-          <div class="stat-row">
-            <span class="stat-label">Ödev Tamamlama Oranı:</span>
-            <span class="stat-val success-tag">%${weekly.completionRate ?? stats.completionRate ?? 0}</span>
+        <div class="box-card">
+          <h4>📝 Haftalık Program & Soru Çözümü</h4>
+          <div class="stat-line">
+            <span>Atanan Soru Hedefi:</span>
+            <span>${assignedQ} Soru</span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Çözülen Soru Sayısı:</span>
-            <span class="stat-val">${solvedQ} Soru</span>
+          <div class="stat-line">
+            <span>Çözülen Soru Sayısı:</span>
+            <span>${solvedQ} Soru</span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Doğru / Yanlış / Boş:</span>
-            <span class="stat-val">${correctQ} D / ${incorrectQ} Y / ${emptyQ} B</span>
+          <div class="stat-line">
+            <span>Doğru / Yanlış / Boş:</span>
+            <span>${correctQ} D / ${incorrectQ} Y / ${emptyQ} B</span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Genel Soru Doğruluk Oranı:</span>
-            <span class="stat-val ${successRate < 80 ? 'danger-tag' : 'success-tag'}">%${successRate}</span>
+          <div class="stat-line">
+            <span>Genel Soru Başarısı:</span>
+            <span style="color: ${successRate >= 80 ? '#16a34a' : '#ea580c'}; font-weight: 800;">%${successRate}</span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Kritik Konu Sayısı (&lt;%80):</span>
-            <span class="stat-val ${under80.length > 0 ? 'danger-tag' : 'success-tag'}">${under80.length} Konu</span>
+          <p style="margin: 6px 0 0 0; font-size: 8pt; color: #64748b; line-height: 1.35;">
+            ${weekly.summary || 'Öğrencinin ödev tamamlama ve soru çözme istikrarı düzenli olarak değerlendirilmektedir.'}
+          </p>
+        </div>
+
+        <!-- Deneme Sınavları -->
+        <div class="box-card">
+          <h4>🎯 Deneme Sınavı Performansı</h4>
+          <div class="stat-line">
+            <span>Kayıtlı Deneme Sayısı:</span>
+            <span>${trialCount} Adet</span>
           </div>
-          <p style="font-size: 8pt; color: #475569; margin: 8px 0 0 0; line-height: 1.4;">
-            ${weekly.summary || 'Haftalık program görevleri analiz edilmektedir.'}
+          <div class="stat-line">
+            <span>Son Deneme Neti:</span>
+            <span style="font-weight: 800; color: #0284c7;">${latestTrialNet > 0 ? `${latestTrialNet} Net` : '-'}</span>
+          </div>
+          <div class="stat-line">
+            <span>En Yüksek Net:</span>
+            <span>${highestTrialNet > 0 ? `${highestTrialNet} Net` : '-'}</span>
+          </div>
+          <div class="stat-line">
+            <span>Genel Ortalama:</span>
+            <span>${avgTrialNet > 0 ? `${avgTrialNet} Net` : '-'}</span>
+          </div>
+          <p style="margin: 6px 0 0 0; font-size: 8pt; color: #64748b; line-height: 1.35;">
+            ${trial.summary || 'Deneme sınavı netleri ve zaman yönetimi takip edilmektedir.'}
           </p>
         </div>
       </div>
     </div>
 
-    <!-- %80 Underperforming Critical Topics -->
+    <!-- 3. %80 Başarı Kuralına Göre Odaklanılacak Konular -->
     <div class="section">
-      <h2 class="section-title">🚨 %80 Başarı Eşiğinin Altındaki Kritik Konular & Tavsiyeler</h2>
+      <h3 class="section-title">⚖️ %80 Başarı Kuralına Göre Konu Analizi</h3>
       ${under80.length === 0 ? `
-        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; font-size: 9pt; color: #166534;">
-          ✨ Tebrikler! Öğrencinin çalıştığı tüm konularda başarı oranı %80 hedef eşiğinin üzerindedir. Kritik bir eksik tespit edilmemiştir.
+        <div class="rule80-box rule80-success">
+          ✨ <strong>Tebrikler:</strong> Öğrencinin çalıştığı tüm ders ve konularda başarı oranı hedeflenen %80 eşiğini aşmıştır. Şu an için acil telafi gerektiren bir konu bulunmamaktadır.
         </div>
-      ` : under80.map((u: any) => `
-        <div class="weak-item">
-          <div class="weak-header">
-            <span>${u.subject || 'Ders'} - ${u.topic || 'Konu'}</span>
-            <span>%${u.accuracy ?? 0} Başarı (${u.correct ?? 0}D / ${u.incorrect ?? 0}Y / ${u.empty ?? 0}B)</span>
+      ` : `
+        <div class="rule80-box rule80-alert">
+          <p style="margin: 0 0 5px 0;"><strong>⚠️ Desteklenmesi Gereken Konular (%80 Altı):</strong> Aşağıdaki konularda başarı oranı %80 eşiğinin altında kalmıştır. Telafi soru çözümleri planlanmıştır:</p>
+          <div>
+            ${under80.map((u: any) => `
+              <span class="topic-badge">${u.subject} - ${u.topic} (%${u.accuracy ?? 0} Başarı, ${u.incorrect ?? 0} Yanlış)</span>
+            `).join('')}
           </div>
-          <p class="weak-desc">${u.diagnosis || 'Bu konuda soru çözümü ve tekrar önerilir.'}</p>
-          <div class="weak-rec">
-            💡 <strong>Tavsiye:</strong> ${u.recommendation || 'Konu tekrarı ve 25 pekiştirme sorusu çözünüz.'}
-            ${u.video ? `<br/><span style="font-size: 8pt; color: #0369a1;">📺 Önerilen Video: ${u.video.title}</span>` : ''}
-          </div>
+          <p style="margin: 5px 0 0 0; font-size: 8pt; color: #7c2d12;">
+            ${analysis.errorAnalysis || 'Bu konuların yanlış soru videoları izlenmeli ve ek soru bankasından pekiştirme yapılmalıdır.'}
+          </p>
         </div>
-      `).join('')}
+      `}
     </div>
 
-    <!-- Subject Breakdown (if available) -->
+    <!-- 4. Çalışılan Ders Dağılımı (Sadece Verilen Dersler Varsa) -->
     ${subjects.length > 0 ? `
     <div class="section">
-      <h2 class="section-title">📚 Ders Bazlı Yetkinlik & Doğruluk Oranları</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Ders</th>
-            <th>Yetkinlik Oranı</th>
-            <th>Durum</th>
-            <th>Tespit Edilen Eksikler</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subjects.map((s: any) => `
-          <tr>
-            <td><strong>${s.name}</strong></td>
-            <td><strong>%${s.accuracy}</strong></td>
-            <td><span class="${s.status === 'danger' ? 'danger-tag' : 'success-tag'}">${s.status === 'danger' ? 'Kritik Dikkat' : s.status === 'warning' ? 'Orta Seviye' : 'İyi'}</span></td>
-            <td>${(s.deficiencies && s.deficiencies.length > 0) ? s.deficiencies.map((d: any) => d.topic).join(', ') : 'Önemli eksik bulunamadı'}</td>
-          </tr>
-          `).join('')}
-        </tbody>
-      </table>
+      <h3 class="section-title">📚 Çalışılan Dersler Yetkinlik Özeti</h3>
+      <div style="display: grid; grid-template-columns: repeat(${Math.min(subjects.length, 4)}, 1fr); gap: 6px;">
+        ${subjects.map((s: any) => `
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px; text-align: center;">
+            <div style="font-size: 7.5pt; font-weight: 700; color: #64748b;">${s.name}</div>
+            <div style="font-size: 10pt; font-weight: 900; color: ${s.accuracy >= 80 ? '#16a34a' : '#ea580c'};">%${s.accuracy}</div>
+          </div>
+        `).join('')}
+      </div>
     </div>
     ` : ''}
 
-    <!-- Weekly Plan Recommendations -->
-    ${weeklyRecs.length > 0 ? `
-    <div class="section">
-      <h2 class="section-title">📅 Yeni Haftalık Program İçin Telafi & Çalışma Hedefleri</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Ders</th>
-            <th>Hedef Konu</th>
-            <th>Önerilen Soru / Süre</th>
-            <th>Gerekçe</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${weeklyRecs.map((r: any) => `
-          <tr>
-            <td><strong>${r.subject}</strong></td>
-            <td>${r.topic}</td>
-            <td>${r.suggestedAmount}</td>
-            <td>${r.reason}</td>
-          </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-    ` : ''}
-
-    <!-- Teacher Pedagogy Notes -->
+    <!-- 5. Danışman & Veli Rehberlik Notları -->
     ${pedagogyNotes.length > 0 ? `
     <div class="section">
-      <h2 class="section-title">🎓 Öğretmen & Koçluk Pedagojik Notları</h2>
-      <div class="list-box">
-        <ul style="margin: 0; padding-left: 18px;">
-          ${pedagogyNotes.map((note: string) => `<li>${note}</li>`).join('')}
-        </ul>
-      </div>
+      <h3 class="section-title">💡 Danışman Öğretmen & Aile Rehberlik Notları</h3>
+      <ul class="notes-list">
+        ${pedagogyNotes.slice(0, 3).map((note: string) => `<li>${note}</li>`).join('')}
+      </ul>
     </div>
     ` : ''}
 
-    <!-- Signatures -->
-    <div style="margin-top: 24px; padding-top: 14px; border-top: 1px dashed #cbd5e1; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; font-size: 8.5pt;">
+    <!-- İmza Alanı -->
+    <div class="sig-grid">
       <div>
-        <p style="margin: 0 0 24px 0; color: #475569; font-weight: 700;">Danışman / Branş Öğretmeni:</p>
-        <div style="border-bottom: 1px solid #94a3b8; width: 80%;"></div>
-        <p style="margin: 4px 0 0 0; font-size: 7.5pt; color: #94a3b8;">İmza & Kaşe</p>
+        <span style="font-weight: 700; color: #334155;">Danışman / Rehber Öğretmen:</span>
+        <div class="sig-line"></div>
+        <span style="color: #94a3b8;">İmza & Tarih</span>
       </div>
       <div>
-        <p style="margin: 0 0 24px 0; color: #475569; font-weight: 700;">Öğrenci Velisi İnceleme Onayı:</p>
-        <div style="border-bottom: 1px solid #94a3b8; width: 80%;"></div>
-        <p style="margin: 4px 0 0 0; font-size: 7.5pt; color: #94a3b8;">Veli İmzası & Tarih</p>
+        <span style="font-weight: 700; color: #334155;">Öğrenci Velisi İnceleme Onayı:</span>
+        <div class="sig-line"></div>
+        <span style="color: #94a3b8;">Veli İmzası & Tarih</span>
       </div>
     </div>
 
-    <!-- Footer -->
-    <div class="footer">
-      <div>Scholar Pulse Akademik İzleme & Koçluk Sistemi</div>
-      <div>Sayfa 1 / 1 • Bu rapor veli görüşmesi ve akademik takip amacıyla oluşturulmuştur.</div>
+    <div class="footer-note">
+      Scholar Pulse Akademik Takip ve Koçluk Sistemi • Veli Bilgilendirme Raporu
     </div>
   </div>
 
   <script>
-    // Automatically trigger print dialog
     window.addEventListener('DOMContentLoaded', function() {
       setTimeout(function() {
         try {
           window.print();
         } catch(e) {}
-      }, 350);
+      }, 300);
     });
   </script>
 </body>
@@ -587,6 +505,6 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
           document.body.removeChild(iframe);
         } catch {}
       }, 5000);
-    }, 450);
+    }, 400);
   }
 }

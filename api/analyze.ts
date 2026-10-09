@@ -85,12 +85,46 @@ Sınıfı/Türü: ${grade || "Belirtilmemiş"}
 
 Yanıtını mutlaka JSON formatında döndür.`;
 
-    const userPrompt = `Aşağıdaki verileri incele ve deneme sınavları ile haftalık program doğru-yanlışlarını ayrı ayrı derinlemesine analiz et:
-Haftalık Program Görevleri (Doğru, Yanlış, Boş, Tamamlanma): ${JSON.stringify(tasks || [])}
-Tespit Edilen %80 Altı Konular: ${JSON.stringify(smartStats.under80Topics || [])}
-Deneme Sınav Geçmişi: ${JSON.stringify(trialResults || [])}
-Detaylı Deneme Netleri & Yanlışlar: ${JSON.stringify(detailedTrials || [])}
-Konu Hataları: ${JSON.stringify(topicErrors || [])}`;
+    const actualSubjectsList = Array.from(new Set([
+      ...(Array.isArray(tasks) ? tasks.map((t: any) => (t?.subject || '').trim()).filter(Boolean) : []),
+      ...Object.keys(smartStats.trialAnalysis?.branchAverages ? smartStats.trialAnalysis.branchAverages.reduce((acc: any, b: any) => ({ ...acc, [b.subject]: true }), {}) : {})
+    ]));
+
+    const formattedTasks = Array.isArray(tasks) && tasks.length > 0
+      ? tasks.map((t: any, i: number) => `${i + 1}) [${t.subject || 'Ders'}] ${t.topic || t.title || 'Konu'}: ${t.completed ? 'Tamamlandı' : 'Bekliyor'}, Doğru: ${t.correct || 0}, Yanlış: ${t.incorrect || 0}, Boş: ${t.empty || 0}`).join('\n')
+      : 'Haftalık programda henüz kayıtlı ödev bulunmuyor.';
+
+    const formattedTrials = Array.isArray(trialResults) && trialResults.length > 0
+      ? trialResults.map((tr: any, i: number) => `${i + 1}) ${tr.title || tr.name || 'Deneme'}: Net: ${tr.totalNet || tr.net || tr.score || 0} ${tr.date ? '(' + tr.date + ')' : ''}`).join('\n')
+      : 'Henüz deneme sınavı kaydı bulunmuyor.';
+
+    const userPrompt = `Aşağıdaki ELDEKİ VERİLERİ incele. Kesinlikle harici ders/konu uydurmadan, eldeki verileri temel alarak kendi pedagojik uzmanlık yorumlarını, deneme stratejilerini ve koçluk eklemelerini yap:
+
+ÖĞRENCİ: ${studentName || 'Öğrenci'} (${grade || 'Belirtilmemiş'})
+
+1. ELDEKİ HAFTALIK PROGRAM VERİLERİ:
+- Toplam Görev: ${smartStats.weeklyPerformanceStats.totalTasksCount}, Tamamlanan: ${smartStats.weeklyPerformanceStats.completedTasksCount} (%${smartStats.weeklyPerformanceStats.completionRate} Tamamlama)
+- Soru Verileri: Atanan: ${smartStats.weeklyPerformanceStats.assignedQuestions}, Çözülen: ${smartStats.weeklyPerformanceStats.solvedQuestions}, Doğru: ${smartStats.weeklyPerformanceStats.totalCorrect}, Yanlış: ${smartStats.weeklyPerformanceStats.totalIncorrect}, Boş: ${smartStats.weeklyPerformanceStats.totalEmpty}
+- Doğruluk Oranı: %${smartStats.weeklyPerformanceStats.successRate}
+Öğrencinin Programındaki Gerçek Ödevler:
+${formattedTasks}
+
+2. ELDEKİ DENEME SINAVLARI VERİLERİ:
+- Deneme Sayısı: ${smartStats.trialAnalysis.trialCount}
+- Son Deneme Neti: ${smartStats.trialAnalysis.latestTrialNet}, En Yüksek: ${smartStats.trialAnalysis.highestTrialNet}, Ortalama: ${smartStats.trialAnalysis.averageTrialNet}
+- Trend: ${smartStats.trialAnalysis.trendLabel}
+Öğrencinin Girdiği Gerçek Denemeler:
+${formattedTrials}
+
+3. %80 BAŞARI KURALI DEĞERLENDİRMESİ:
+${smartStats.under80Topics.length > 0
+  ? `Yüzde 80 Altında Kalan Kritik Konular:\n` + smartStats.under80Topics.map((u: any) => `- ${u.subject} / ${u.topic}: Doğruluk %${u.accuracy} (${u.incorrect} Yanlış)`).join('\n')
+  : `Tüm konularda %80 başarı eşiği sağlanmıştır.`}
+
+TALİMATLAR:
+1. SADECE ELDEKİ BU VERİLERİ KULLAN: Öğrencinin listesinde olmayan ders veya konuları asla ekleme veya tahmin çıkarma.
+2. PEDAGOJİK EKLEMELERİNİ YAP: Eldeki deneme ve program gidişatına göre öğrenciye ve velisine özel, sade, yapıcı çalışma tavsiyeleri ve deneme taktikleri ekle.
+3. YENİ PLAN TAVSİYELERİ: Yalnızca öğrencinin eldeki ders ve konularından telafi veya pekiştirme öner.`;
 
     let responseText: string | null = null;
     const modelsToTry = ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
@@ -162,12 +196,24 @@ Konu Hataları: ${JSON.stringify(topicErrors || [])}`;
         const cleanText = responseText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
         const parsedAi = JSON.parse(cleanText);
 
+        let sanitizedRecs = smartStats.weeklyPlanRecommendations;
+        if (Array.isArray(parsedAi.weeklyPlanRecommendations) && parsedAi.weeklyPlanRecommendations.length > 0) {
+          const validRecs = parsedAi.weeklyPlanRecommendations.filter((r: any) => {
+            if (!r || !r.subject) return false;
+            if (actualSubjectsList.length === 0) return true;
+            return actualSubjectsList.some((s: string) => s.toLowerCase() === String(r.subject).toLowerCase());
+          });
+          if (validRecs.length > 0) {
+            sanitizedRecs = validRecs;
+          }
+        }
+
         const mergedResponse = {
           ...smartStats,
           summary: parsedAi.summary || smartStats.summary,
           errorAnalysis: parsedAi.errorAnalysis || smartStats.errorAnalysis,
           teacherPedagogyNotes: (parsedAi.teacherPedagogyNotes && parsedAi.teacherPedagogyNotes.length > 0) ? parsedAi.teacherPedagogyNotes : smartStats.teacherPedagogyNotes,
-          weeklyPlanRecommendations: (parsedAi.weeklyPlanRecommendations && parsedAi.weeklyPlanRecommendations.length > 0) ? parsedAi.weeklyPlanRecommendations : smartStats.weeklyPlanRecommendations,
+          weeklyPlanRecommendations: sanitizedRecs,
           trialAnalysis: {
             ...smartStats.trialAnalysis,
             summary: parsedAi.trialReview || smartStats.trialAnalysis.summary
