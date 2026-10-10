@@ -88,9 +88,9 @@ export function StudentPortal() {
   const [videoTabFilter, setVideoTabFilter] = useState<'all' | 'today'>('all');
   const [countdown, setCountdown] = useState<GradeExamCountdown | null>(null);
   const [evaluatingTask, setEvaluatingTask] = useState<Task | null>(null);
-  const [evalCorrect, setEvalCorrect] = useState<number>(0);
-  const [evalIncorrect, setEvalIncorrect] = useState<number>(0);
-  const [evalEmpty, setEvalEmpty] = useState<number>(0);
+  const [evalCorrect, setEvalCorrect] = useState<number | string>('');
+  const [evalIncorrect, setEvalIncorrect] = useState<number | string>('');
+  const [evalEmpty, setEvalEmpty] = useState<number | string>('');
   const [showResultModal, setShowResultModal] = useState<boolean>(false);
   const [weeklyQuestionGoal, setWeeklyQuestionGoal] = useState<number | undefined>(undefined);
   const tasksRef = useRef<HTMLDivElement>(null);
@@ -186,13 +186,10 @@ export function StudentPortal() {
     const updatedTasks = tasks.map(t => {
       if (t.id === task.id) {
         const isNowCompleted = !t.completed;
-        const qCount = t.amount ? parseInt(t.amount, 10) || 20 : 20;
-        const c = t.correct !== undefined ? t.correct : (isNowCompleted ? qCount : undefined);
-        const inc = t.incorrect !== undefined ? t.incorrect : (isNowCompleted ? 0 : undefined);
-        const emp = t.empty !== undefined ? t.empty : (isNowCompleted ? 0 : undefined);
-        const n = isNowCompleted 
-          ? (t.net !== undefined ? t.net : calculateNetScore(c || 0, inc || 0, studentGrade))
-          : t.net;
+        const c = t.correct;
+        const inc = t.incorrect;
+        const emp = t.empty;
+        const n = t.net !== undefined ? t.net : ((c !== undefined || inc !== undefined) ? calculateNetScore(c || 0, inc || 0, studentGrade) : undefined);
 
         return {
           ...t,
@@ -483,13 +480,10 @@ export function StudentPortal() {
     const updatedTasks = tasks.map(t => {
       if (t.id === taskId) {
         const isNowCompleted = !t.completed;
-        const qCount = t.amount ? parseInt(t.amount, 10) || 20 : 20;
-        const c = t.correct !== undefined ? t.correct : (isNowCompleted ? qCount : undefined);
-        const inc = t.incorrect !== undefined ? t.incorrect : (isNowCompleted ? 0 : undefined);
-        const emp = t.empty !== undefined ? t.empty : (isNowCompleted ? 0 : undefined);
-        const n = isNowCompleted 
-          ? (t.net !== undefined ? t.net : calculateNetScore(c || 0, inc || 0, studentGrade))
-          : t.net;
+        const c = t.correct;
+        const inc = t.incorrect;
+        const emp = t.empty;
+        const n = t.net !== undefined ? t.net : ((c !== undefined || inc !== undefined) ? calculateNetScore(c || 0, inc || 0, studentGrade) : undefined);
 
         return {
           ...t,
@@ -531,10 +525,10 @@ export function StudentPortal() {
     }
     // Soru ve Test ödevlerinde veya herhangi bir ders çalışmasında Doğru/Yanlış/Boş giriş penceresi açılır
     setEvaluatingTask(task);
-    const defaultQ = task.amount ? parseInt(task.amount, 10) || 20 : 20;
-    setEvalCorrect(task.correct !== undefined ? task.correct : defaultQ);
-    setEvalIncorrect(task.incorrect !== undefined ? task.incorrect : 0);
-    setEvalEmpty(task.empty !== undefined ? task.empty : 0);
+    // Önceden girilmiş sonuç varsa onu göster, yoksa boş başlat ki öğrenci temizce girsin (full doğru varsayımı kaldırıldı)
+    setEvalCorrect(task.correct !== undefined ? task.correct : '');
+    setEvalIncorrect(task.incorrect !== undefined ? task.incorrect : '');
+    setEvalEmpty(task.empty !== undefined ? task.empty : '');
     setShowResultModal(true);
   };
 
@@ -3211,7 +3205,10 @@ export function StudentPortal() {
               {/* Net Score Calculation Banner */}
               {(() => {
                 const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5') || studentGrade.toLowerCase().includes('lgs') || studentGrade.toLowerCase().includes('ortaokul');
-                const penalty = isMiddleSchool ? 3 : 4;
+                const matchAmount = evaluatingTask.amount ? String(evaluatingTask.amount).match(/(\d+)/) : null;
+                const targetQCount = matchAmount ? parseInt(matchAmount[1], 10) : 0;
+                
+                const hasEnteredAny = evalCorrect !== '' || evalIncorrect !== '' || evalEmpty !== '' || evaluatingTask.correct !== undefined;
                 const c = Math.max(0, Number(evalCorrect) || 0);
                 const inc = Math.max(0, Number(evalIncorrect) || 0);
                 const emp = Math.max(0, Number(evalEmpty) || 0);
@@ -3229,12 +3226,21 @@ export function StudentPortal() {
                         {net.toFixed(2)} <span className="text-sm font-bold text-emerald-600/80">Net</span>
                       </div>
                       <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">
-                        {isMiddleSchool ? 'LGS / Ortaokul kuralı: 3 yanlış 1 doğruyu götürür' : 'Lise / YKS kuralı: 4 yanlış 1 doğruyu götürür'}
+                        {isMiddleSchool ? 'LGS / Ortaokul: 3 yanlış 1 doğruyu götürür' : 'Lise / YKS: 4 yanlış 1 doğruyu götürür'}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs font-black text-on-surface">Toplam Soru: {totalQuestions}</div>
-                      <div className="text-xs font-bold text-emerald-700 mt-0.5">Başarı: %{accuracy}</div>
+                    <div className="text-right space-y-0.5">
+                      <div className="text-xs font-black text-on-surface">
+                        Toplam Soru: {totalQuestions}
+                      </div>
+                      {targetQCount > 0 && (
+                        <div className="text-[10px] font-bold text-primary">
+                          Hedef: {targetQCount} Soru
+                        </div>
+                      )}
+                      <div className="text-xs font-bold text-emerald-700">
+                        {totalQuestions > 0 ? `Başarı: %${accuracy}` : 'Sonuç bekleniyor'}
+                      </div>
                     </div>
                   </div>
                 );
@@ -3250,18 +3256,24 @@ export function StudentPortal() {
                       type="button"
                       onClick={() => setEvalCorrect(prev => Math.max(0, (Number(prev) || 0) - 1))}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 font-black flex items-center justify-center shadow-xs transition-colors"
+                      title="1 Azalt"
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
                     <input 
                       type="number" 
                       min="0"
-                      value={evalCorrect === 0 ? '' : evalCorrect}
+                      value={evalCorrect}
                       placeholder="0"
                       onFocus={(e) => e.target.select()}
                       onChange={(e) => {
-                        const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
-                        setEvalCorrect(isNaN(val) ? 0 : Math.max(0, val));
+                        const val = e.target.value;
+                        if (val === '') {
+                          setEvalCorrect('');
+                        } else {
+                          const parsed = parseInt(val, 10);
+                          setEvalCorrect(isNaN(parsed) ? '' : Math.max(0, parsed));
+                        }
                       }}
                       className="w-16 text-center py-1.5 bg-white rounded-lg font-black text-lg text-emerald-800 outline-none border border-emerald-500/20 focus:ring-2 focus:ring-emerald-500"
                     />
@@ -3269,6 +3281,7 @@ export function StudentPortal() {
                       type="button"
                       onClick={() => setEvalCorrect(prev => (Number(prev) || 0) + 1)}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 font-black flex items-center justify-center shadow-xs transition-colors"
+                      title="1 Artır"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -3283,18 +3296,24 @@ export function StudentPortal() {
                       type="button"
                       onClick={() => setEvalIncorrect(prev => Math.max(0, (Number(prev) || 0) - 1))}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-rose-100 text-rose-800 font-black flex items-center justify-center shadow-xs transition-colors"
+                      title="1 Azalt"
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
                     <input 
                       type="number" 
                       min="0"
-                      value={evalIncorrect === 0 ? '' : evalIncorrect}
+                      value={evalIncorrect}
                       placeholder="0"
                       onFocus={(e) => e.target.select()}
                       onChange={(e) => {
-                        const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
-                        setEvalIncorrect(isNaN(val) ? 0 : Math.max(0, val));
+                        const val = e.target.value;
+                        if (val === '') {
+                          setEvalIncorrect('');
+                        } else {
+                          const parsed = parseInt(val, 10);
+                          setEvalIncorrect(isNaN(parsed) ? '' : Math.max(0, parsed));
+                        }
                       }}
                       className="w-16 text-center py-1.5 bg-white rounded-lg font-black text-lg text-rose-800 outline-none border border-rose-500/20 focus:ring-2 focus:ring-rose-500"
                     />
@@ -3302,6 +3321,7 @@ export function StudentPortal() {
                       type="button"
                       onClick={() => setEvalIncorrect(prev => (Number(prev) || 0) + 1)}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-rose-100 text-rose-800 font-black flex items-center justify-center shadow-xs transition-colors"
+                      title="1 Artır"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -3316,18 +3336,24 @@ export function StudentPortal() {
                       type="button"
                       onClick={() => setEvalEmpty(prev => Math.max(0, (Number(prev) || 0) - 1))}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center shadow-xs transition-colors"
+                      title="1 Azalt"
                     >
                       <Minus className="w-3.5 h-3.5" />
                     </button>
                     <input 
                       type="number" 
                       min="0"
-                      value={evalEmpty === 0 ? '' : evalEmpty}
+                      value={evalEmpty}
                       placeholder="0"
                       onFocus={(e) => e.target.select()}
                       onChange={(e) => {
-                        const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
-                        setEvalEmpty(isNaN(val) ? 0 : Math.max(0, val));
+                        const val = e.target.value;
+                        if (val === '') {
+                          setEvalEmpty('');
+                        } else {
+                          const parsed = parseInt(val, 10);
+                          setEvalEmpty(isNaN(parsed) ? '' : Math.max(0, parsed));
+                        }
                       }}
                       className="w-16 text-center py-1.5 bg-white rounded-lg font-black text-lg text-slate-700 outline-none border border-slate-300 focus:ring-2 focus:ring-slate-400"
                     />
@@ -3335,6 +3361,7 @@ export function StudentPortal() {
                       type="button"
                       onClick={() => setEvalEmpty(prev => (Number(prev) || 0) + 1)}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center shadow-xs transition-colors"
+                      title="1 Artır"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -3342,29 +3369,85 @@ export function StudentPortal() {
                 </div>
               </div>
 
-              {/* Hızlı Yanlış Şablonları */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-bold text-on-surface-variant">Hızlı Yanlış Ayarı:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setEvalIncorrect(0)}
-                    className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-bold transition-all"
-                  >
-                    ⭐ 0 Yanlış (Full Doğru)
-                  </button>
-                  {[1, 2, 3, 4, 5].map(cnt => (
-                    <button
-                      key={cnt}
-                      type="button"
-                      onClick={() => setEvalIncorrect(cnt)}
-                      className="px-2.5 py-1 bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant rounded-lg text-xs font-bold transition-all"
-                    >
-                      {cnt} Yanlış
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Hızlı İşlem Kısayolları */}
+              {(() => {
+                const matchAmount = evaluatingTask.amount ? String(evaluatingTask.amount).match(/(\d+)/) : null;
+                const targetQCount = matchAmount ? parseInt(matchAmount[1], 10) : 0;
+                const c = Math.max(0, Number(evalCorrect) || 0);
+                const inc = Math.max(0, Number(evalIncorrect) || 0);
+                const hasEnteredAny = evalCorrect !== '' || evalIncorrect !== '' || evalEmpty !== '';
+
+                return (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
+                        <Target className="w-3 h-3 text-primary" />
+                        Hızlı Seçenekler:
+                      </span>
+                      {hasEnteredAny && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEvalCorrect('');
+                            setEvalIncorrect('');
+                            setEvalEmpty('');
+                          }}
+                          className="text-[10px] font-bold text-rose-600 hover:underline"
+                        >
+                          Temizle
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {targetQCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEvalCorrect(targetQCount);
+                            setEvalIncorrect(0);
+                            setEvalEmpty(0);
+                          }}
+                          className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-bold transition-all shadow-xs"
+                          title="Tüm hedef soruları doğru olarak işaretle"
+                        >
+                          ⭐ Full Doğru ({targetQCount} D, 0 Y)
+                        </button>
+                      )}
+
+                      {[0, 1, 2, 3, 4, 5].map(cnt => (
+                        <button
+                          key={cnt}
+                          type="button"
+                          onClick={() => {
+                            setEvalIncorrect(cnt);
+                            // Hedef soru varsa ve doğru alanı henüz boşsa, otomatik olarak kalanı doğruya yazar
+                            if ((evalCorrect === '' || evalCorrect === 0) && targetQCount > 0) {
+                              setEvalCorrect(Math.max(0, targetQCount - cnt));
+                            }
+                          }}
+                          className="px-2.5 py-1 bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant rounded-lg text-xs font-bold transition-all"
+                        >
+                          {cnt === 0 ? '0 Yanlış' : `${cnt} Yanlış`}
+                        </button>
+                      ))}
+
+                      {targetQCount > 0 && (c + inc) < targetQCount && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const remaining = Math.max(0, targetQCount - (c + inc));
+                            setEvalEmpty(remaining);
+                          }}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-all"
+                          title="Kalan soruları boş olarak ata"
+                        >
+                          Kalanı Boş ({Math.max(0, targetQCount - (c + inc))})
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Action Buttons */}
               <div className="space-y-2 pt-2 border-t border-outline-variant/10">
@@ -3541,9 +3624,9 @@ export function StudentPortal() {
                               onClick={() => {
                                 handleDismissReminder(false);
                                 setEvaluatingTask(task);
-                                setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
-                                setEvalIncorrect(task.incorrect || 0);
-                                setEvalEmpty(task.empty || 0);
+                                setEvalCorrect(task.correct !== undefined ? task.correct : '');
+                                setEvalIncorrect(task.incorrect !== undefined ? task.incorrect : '');
+                                setEvalEmpty(task.empty !== undefined ? task.empty : '');
                                 setShowResultModal(true);
                               }}
                               className="px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
@@ -3613,9 +3696,9 @@ export function StudentPortal() {
                               onClick={() => {
                                 handleDismissReminder(false);
                                 setEvaluatingTask(task);
-                                setEvalCorrect(task.correct || (task.amount ? parseInt(task.amount, 10) || 20 : 20));
-                                setEvalIncorrect(task.incorrect || 0);
-                                setEvalEmpty(task.empty || 0);
+                                setEvalCorrect(task.correct !== undefined ? task.correct : '');
+                                setEvalIncorrect(task.incorrect !== undefined ? task.incorrect : '');
+                                setEvalEmpty(task.empty !== undefined ? task.empty : '');
                                 setShowResultModal(true);
                               }}
                               className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
