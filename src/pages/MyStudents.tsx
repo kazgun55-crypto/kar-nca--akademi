@@ -15,7 +15,7 @@ import {
   completeTeacherMeeting,
   subscribeTeacherMeetings
 } from '../lib/firestoreService';
-import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats } from '../lib/utils';
+import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats, calculateNetScore } from '../lib/utils';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
 import { exportAiAnalysisToPdf } from '../lib/pdfExportService';
 import { 
@@ -1461,16 +1461,14 @@ export function MyStudents() {
                           )}
 
                           {/* Öğrencinin girdiği Doğru / Yanlış / Net Sonuçları (Öğretmen Görünümü) */}
-                          {task.completed && (task.correct !== undefined || task.incorrect !== undefined) && (
+                          {(task.correct !== undefined || task.incorrect !== undefined) && (
                             <div className="pt-1.5 border-t border-outline-variant/10">
                               <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-xl space-y-0.5">
                                 <div className="flex items-center justify-between text-[9px] font-black text-emerald-800">
                                   <span>🎯 {task.correct ?? 0} D • {task.incorrect ?? 0} Y</span>
-                                  {task.net !== undefined && (
-                                    <span className="text-primary font-black bg-white px-1.5 py-0.5 rounded shadow-xs border border-primary/10">
-                                      {task.net} Net
-                                    </span>
-                                  )}
+                                  <span className="text-primary font-black bg-white px-1.5 py-0.5 rounded shadow-xs border border-primary/10">
+                                    {typeof task.net === 'number' && !isNaN(task.net) ? task.net.toFixed(2) : calculateNetScore(task.correct || 0, task.incorrect || 0, selectedStudent?.grade).toFixed(2)} Net
+                                  </span>
                                 </div>
                                 {task.empty !== undefined && task.empty > 0 && (
                                   <span className="text-[8px] text-slate-600 block font-medium">

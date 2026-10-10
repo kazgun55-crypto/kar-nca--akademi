@@ -11,6 +11,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
 import { exportAiAnalysisToPdf } from '../lib/pdfExportService';
+import { getStudentTrials, saveStudentTrials } from '../lib/firestoreService';
 
 interface TrialResult {
   id: string;
@@ -63,6 +64,20 @@ export function Analytics() {
       if (savedTrials) setTrialResults(JSON.parse(savedTrials));
       if (savedErrors) setTopicErrors(JSON.parse(savedErrors));
       if (savedAiAnalysis) setAiAnalysis(JSON.parse(savedAiAnalysis));
+
+      getStudentTrials(studentId).then(cloud => {
+        if (cloud.simpleTrials && cloud.simpleTrials.length > 0) {
+          setTrialResults(cloud.simpleTrials);
+        } else if (cloud.detailedTrials && cloud.detailedTrials.length > 0) {
+          const mapped = cloud.detailedTrials.map(dt => ({
+            id: dt.id,
+            date: dt.date,
+            score: dt.totalNet,
+            totalQuestions: 100
+          }));
+          setTrialResults(mapped);
+        }
+      }).catch(() => {});
     }
   }, []);
 

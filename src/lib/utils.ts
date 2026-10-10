@@ -25,9 +25,17 @@ export interface WeeklyQuestionStats {
 export function isQuestionTask(task: any): boolean {
   if (!task) return false;
 
+  // If the task has entered correct or incorrect scores, it is definitely a question-based evaluation!
+  const hasScores = (task.correct !== undefined && task.correct !== null) || 
+                    (task.incorrect !== undefined && task.incorrect !== null) ||
+                    ((Number(task.correct) || 0) + (Number(task.incorrect) || 0) + (Number(task.empty) || 0) > 0);
+  if (hasScores) {
+    return true;
+  }
+
   const type = String(task.type || '').toLowerCase().trim();
 
-  // Explicit non-question task types:
+  // Explicit non-question task types (unless scores were explicitly entered above):
   if (type === 'book' || type === 'reading' || type === 'video') {
     return false;
   }
@@ -59,11 +67,7 @@ export function isQuestionTask(task: any): boolean {
 
   // Test tasks: count if they explicitly specify questions (e.g. "20 Soru") or have eval scores
   if (type === 'test') {
-    const hasEval = (Number(task.correct) || 0) + (Number(task.incorrect) || 0) + (Number(task.empty) || 0) > 0;
-    if (amountStr.includes('soru') || typeof task.questionCount === 'number' || hasEval) {
-      return true;
-    }
-    return false;
+    return true;
   }
 
   // Fallback for legacy tasks where type wasn't set: ONLY if amount specifically contains "soru"
@@ -110,16 +114,32 @@ export function getTaskQuestionCount(task: any): number {
  * Returns how many questions were solved for a single task.
  */
 export function getTaskSolvedCount(task: any): number {
-  if (!task || !task.completed || !isQuestionTask(task)) return 0;
+  if (!task || !isQuestionTask(task)) return 0;
   const evalCount = (Number(task.correct) || 0) + (Number(task.incorrect) || 0) + (Number(task.empty) || 0);
   if (evalCount > 0) return evalCount;
-  return getTaskQuestionCount(task);
+  if (task.completed) {
+    return getTaskQuestionCount(task);
+  }
+  return 0;
+}
+
+/**
+ * Calculates net score based on correct, incorrect, and student grade level (LGS vs YKS penalty).
+ */
+export function calculateNetScore(correct: number, incorrect: number, grade?: string): number {
+  const g = String(grade || '').toLowerCase();
+  const isMiddleSchool = g.includes('8') || g.includes('7') || g.includes('6') || g.includes('5') || g.includes('lgs') || g.includes('ortaokul');
+  const penalty = isMiddleSchool ? 3 : 4;
+  const c = Math.max(0, Number(correct) || 0);
+  const inc = Math.max(0, Number(incorrect) || 0);
+  const net = Math.max(0, c - (inc / penalty));
+  return Number(net.toFixed(2));
 }
 
 /**
  * Calculates overall weekly question statistics from a list of tasks.
  */
-export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: number): WeeklyQuestionStats {
+export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: number, grade?: string): WeeklyQuestionStats {
   if (!Array.isArray(tasks) || tasks.length === 0) {
     const target = customWeeklyTarget && customWeeklyTarget > 0 ? customWeeklyTarget : 0;
     return {
@@ -145,12 +165,13 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
     const qCount = getTaskQuestionCount(t);
     assignedFromTasks += qCount;
 
-    if (t.completed) {
+    const hasScore = (t.correct !== undefined && t.correct !== null) || (t.incorrect !== undefined && t.incorrect !== null);
+    if (t.completed || hasScore) {
       solved += getTaskSolvedCount(t);
       const c = Number(t.correct) || 0;
       const inc = Number(t.incorrect) || 0;
       const emp = Number(t.empty) || 0;
-      const n = typeof t.net === 'number' ? t.net : Math.max(0, c - inc / 4);
+      const n = typeof t.net === 'number' && !isNaN(t.net) ? t.net : calculateNetScore(c, inc, grade);
 
       correct += c;
       incorrect += inc;

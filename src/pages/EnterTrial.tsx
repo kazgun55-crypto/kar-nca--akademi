@@ -25,6 +25,8 @@ import {
   getSubjectsForGrade,
   getGradeCategory
 } from '../lib/curriculum';
+import { calculateNetScore } from '../lib/utils';
+import { saveStudentTrials } from '../lib/firestoreService';
 
 interface TrialData {
   id: string;
@@ -46,8 +48,14 @@ function SubjectCard({
   trialResults, 
   updateResult, 
   toggleTopic, 
-  updateTopicCount 
+  updateTopicCount,
+  activeGradeCategory
 }: any) {
+  const c = Number(trialResults[subject.name]?.correct) || 0;
+  const inc = Number(trialResults[subject.name]?.incorrect) || 0;
+  const gradeStr = activeGradeCategory === '8' ? '8. Sınıf' : 'YKS';
+  const subjectNet = calculateNetScore(c, inc, gradeStr);
+
   return (
     <div 
       className={`bg-surface-container-lowest rounded-[2rem] border transition-all overflow-hidden ${
@@ -67,7 +75,10 @@ function SubjectCard({
           <div className="text-left">
             <h4 className="font-bold text-lg text-on-surface">{subject.name}</h4>
             <p className="text-xs font-bold text-on-surface-variant">
-              {trialResults[subject.name].correct} Doğru / {trialResults[subject.name].incorrect} Yanlış
+              <span className="text-emerald-700">{c} Doğru</span> / <span className="text-rose-700">{inc} Yanlış</span>
+              <span className="ml-2 px-2 py-0.5 rounded-md bg-primary/10 text-primary font-black text-[11px]">
+                {subjectNet.toFixed(2)} Net
+              </span>
             </p>
           </div>
         </div>
@@ -291,15 +302,20 @@ export function EnterTrial() {
 
   const calculateTotalNet = () => {
     let total = 0;
+    const penalty = activeGradeCategory === '8' ? 3 : 4;
     Object.values(trialResults).forEach((r) => {
       const res = r as { correct: number; incorrect: number };
-      total += (res.correct || 0) - ((res.incorrect || 0) * 0.25);
+      const c = Number(res.correct) || 0;
+      const inc = Number(res.incorrect) || 0;
+      total += Math.max(0, c - (inc / penalty));
     });
-    return Math.max(0, total);
+    return Math.max(0, Number(total.toFixed(2)));
   };
 
-  const saveTrial = () => {
-    const studentId = localStorage.getItem('currentUserId');
+  const saveTrial = async () => {
+    const params = new URLSearchParams(window.location.search);
+    const queryStudentId = params.get('studentId') || params.get('id');
+    const studentId = queryStudentId || localStorage.getItem('currentUserId') || '1';
     if (!studentId) return;
 
     const gradeLabel = activeGradeCategory === '8'
@@ -320,18 +336,25 @@ export function EnterTrial() {
     // Save to trial results history (student specific)
     const detailedKey = `trial_results_detailed_${studentId}`;
     const savedTrials = JSON.parse(localStorage.getItem(detailedKey) || '[]');
-    localStorage.setItem(detailedKey, JSON.stringify([...savedTrials, { ...newTrial, gradeLabel }]));
+    const updatedDetailed = [...savedTrials, { ...newTrial, gradeLabel }];
 
     // Update legacy trial_results for the existing analytics chart (student specific)
     const legacyKey = `trial_results_${studentId}`;
     const legacyTrials = JSON.parse(localStorage.getItem(legacyKey) || '[]');
+    let totalQuestionsCount = 0;
+    Object.values(trialResults).forEach((r: any) => {
+      totalQuestionsCount += (Number(r?.correct) || 0) + (Number(r?.incorrect) || 0);
+    });
     const legacyTrial = {
       id: newTrial.id,
       date: newTrial.date,
       score: newTrial.totalNet,
-      totalQuestions: 100 // placeholder
+      totalQuestions: Math.max(1, totalQuestionsCount)
     };
-    localStorage.setItem(legacyKey, JSON.stringify([...legacyTrials, legacyTrial]));
+    const updatedLegacy = [...legacyTrials, legacyTrial];
+
+    // Save to Firestore and cache
+    await saveStudentTrials(studentId, updatedDetailed, updatedLegacy);
 
     // Update topic errors for analytics (student specific)
     const errorsKey = `topic_errors_${studentId}`;
@@ -354,8 +377,8 @@ export function EnterTrial() {
     setShowSuccess(true);
     setTimeout(() => {
       setShowSuccess(false);
-      navigate('/analytics');
-    }, 2000);
+      navigate(`/portal?studentId=${studentId}`);
+    }, 1500);
   };
 
   const isMaarif = activeGradeCategory === '9' || activeGradeCategory === '10';
@@ -468,6 +491,7 @@ export function EnterTrial() {
                 updateResult={updateResult}
                 toggleTopic={toggleTopic}
                 updateTopicCount={updateTopicCount}
+                activeGradeCategory={activeGradeCategory}
               />
             ))}
 
@@ -487,6 +511,7 @@ export function EnterTrial() {
                 updateResult={updateResult}
                 toggleTopic={toggleTopic}
                 updateTopicCount={updateTopicCount}
+                activeGradeCategory={activeGradeCategory}
               />
             ))}
           </>
@@ -508,6 +533,7 @@ export function EnterTrial() {
                 updateResult={updateResult}
                 toggleTopic={toggleTopic}
                 updateTopicCount={updateTopicCount}
+                activeGradeCategory={activeGradeCategory}
               />
             ))}
 
@@ -527,6 +553,7 @@ export function EnterTrial() {
                 updateResult={updateResult}
                 toggleTopic={toggleTopic}
                 updateTopicCount={updateTopicCount}
+                activeGradeCategory={activeGradeCategory}
               />
             ))}
 
@@ -546,6 +573,7 @@ export function EnterTrial() {
                 updateResult={updateResult}
                 toggleTopic={toggleTopic}
                 updateTopicCount={updateTopicCount}
+                activeGradeCategory={activeGradeCategory}
               />
             ))}
           </>
@@ -560,6 +588,7 @@ export function EnterTrial() {
               updateResult={updateResult}
               toggleTopic={toggleTopic}
               updateTopicCount={updateTopicCount}
+              activeGradeCategory={activeGradeCategory}
             />
           ))
         )}

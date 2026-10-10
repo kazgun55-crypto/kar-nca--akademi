@@ -657,28 +657,29 @@ export function cleanForFirestore<T>(data: T): T {
 
 // 6. Student Tasks Persistence & Realtime Cloud Sync
 export async function saveStudentTasks(studentId: string, tasks: any[]) {
-  if (!studentId) return;
+  const cleanId = (studentId || (typeof localStorage !== 'undefined' ? localStorage.getItem('currentUserId') : '') || '1').trim();
+  if (!cleanId) return;
   const sanitizedTasks = cleanForFirestore(tasks);
   try {
     // 1. Save in Firestore students collection doc
-    await setDoc(doc(db, 'students', studentId), { 
+    await setDoc(doc(db, 'students', cleanId), { 
       tasks: sanitizedTasks, 
       lastTaskUpdate: new Date().toISOString() 
     }, { merge: true });
 
     // 2. Also save in student_tasks collection doc for dual resilience
-    await setDoc(doc(db, 'student_tasks', studentId), { 
+    await setDoc(doc(db, 'student_tasks', cleanId), { 
       tasks: sanitizedTasks, 
-      studentId, 
+      studentId: cleanId, 
       updatedAt: new Date().toISOString() 
     }, { merge: true });
     
-    console.log(`[Firestore] Successfully saved ${sanitizedTasks.length} tasks for student ${studentId}`);
+    console.log(`[Firestore] Successfully saved ${sanitizedTasks.length} tasks for student ${cleanId}`);
   } catch (err) {
     console.error('Error saving tasks to Firestore:', err);
   } finally {
     // Local cache update
-    localStorage.setItem(`tasks_${studentId}`, JSON.stringify(sanitizedTasks));
+    localStorage.setItem(`tasks_${cleanId}`, JSON.stringify(sanitizedTasks));
     window.dispatchEvent(new Event('storage'));
   }
 }
@@ -897,6 +898,66 @@ export async function saveStudentArchivedPrograms(studentId: string, archives: a
   } finally {
     localStorage.setItem(`archived_programs_${studentId}`, JSON.stringify(archives));
   }
+}
+
+// 7.1 Student Trial Results (Deneme Sınavları) Cloud Sync
+export async function saveStudentTrials(studentId: string, detailedTrials: any[], simpleTrials?: any[]) {
+  const cleanId = (studentId || (typeof localStorage !== 'undefined' ? localStorage.getItem('currentUserId') : '') || '1').trim();
+  if (!cleanId) return;
+  const cleanDetailed = cleanForFirestore(detailedTrials);
+  const cleanSimple = simpleTrials ? cleanForFirestore(simpleTrials) : undefined;
+
+  try {
+    const updatePayload: any = {
+      trialResultsDetailed: cleanDetailed,
+      lastTrialUpdate: new Date().toISOString()
+    };
+    if (cleanSimple) {
+      updatePayload.trialResults = cleanSimple;
+    }
+    await setDoc(doc(db, 'students', cleanId), updatePayload, { merge: true });
+    // Dual resilience in student_trials collection
+    await setDoc(doc(db, 'student_trials', cleanId), {
+      studentId: cleanId,
+      detailedTrials: cleanDetailed,
+      trialResults: cleanSimple || [],
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn('Error saving student trials to Firestore:', err);
+  } finally {
+    localStorage.setItem(`trial_results_detailed_${cleanId}`, JSON.stringify(cleanDetailed));
+    if (cleanSimple) {
+      localStorage.setItem(`trial_results_${cleanId}`, JSON.stringify(cleanSimple));
+    }
+    window.dispatchEvent(new Event('storage'));
+  }
+}
+
+export async function getStudentTrials(studentId: string): Promise<{ detailedTrials: any[], simpleTrials: any[] }> {
+  const cleanId = (studentId || '1').trim();
+  try {
+    const sDoc = await getDoc(doc(db, 'students', cleanId));
+    if (sDoc.exists()) {
+      const data = sDoc.data();
+      const detailed = Array.isArray(data.trialResultsDetailed) ? data.trialResultsDetailed : [];
+      const simple = Array.isArray(data.trialResults) ? data.trialResults : [];
+      if (detailed.length > 0 || simple.length > 0) {
+        return { detailedTrials: detailed, simpleTrials: simple };
+      }
+    }
+    const tDoc = await getDoc(doc(db, 'student_trials', cleanId));
+    if (tDoc.exists()) {
+      const data = tDoc.data();
+      return {
+        detailedTrials: Array.isArray(data.detailedTrials) ? data.detailedTrials : [],
+        simpleTrials: Array.isArray(data.trialResults) ? data.trialResults : []
+      };
+    }
+  } catch (err) {
+    console.warn('Error loading student trials from Firestore:', err);
+  }
+  return { detailedTrials: [], simpleTrials: [] };
 }
 
 // 8. Comprehensive Two-Way Synchronization across all devices

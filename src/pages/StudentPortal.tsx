@@ -15,11 +15,13 @@ import {
   getStudentTasks, 
   subscribeStudentTasks, 
   saveStudentArchivedPrograms,
+  saveStudentTrials,
+  getStudentTrials,
   getStudentById,
   subscribeStudents,
   logoutFirebase
 } from '../lib/firestoreService';
-import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats } from '../lib/utils';
+import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats, calculateNetScore } from '../lib/utils';
 import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
@@ -95,12 +97,12 @@ export function StudentPortal() {
 
   // Haftalık ve Günlük Soru Hesaplamaları (Öğretmenin verdiği haftalık soru sayısı ve öğrencinin çözdüğü)
   const weeklyQuestionStats = useMemo(() => {
-    return calculateWeeklyQuestionStats(tasks, weeklyQuestionGoal);
-  }, [tasks, weeklyQuestionGoal]);
+    return calculateWeeklyQuestionStats(tasks, weeklyQuestionGoal, studentGrade);
+  }, [tasks, weeklyQuestionGoal, studentGrade]);
 
   const todayQuestionStats = useMemo(() => {
-    return calculateWeeklyQuestionStats(todayTasks);
-  }, [todayTasks]);
+    return calculateWeeklyQuestionStats(todayTasks, undefined, studentGrade);
+  }, [todayTasks, studentGrade]);
 
   // Exam / Trial Entry States
   const [examSubject, setExamSubject] = useState<string>('Genel Deneme');
@@ -180,24 +182,32 @@ export function StudentPortal() {
   const [studentAiError, setStudentAiError] = useState<string | null>(null);
 
   const toggleTaskCompletionQuick = async (task: Task) => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
     const updatedTasks = tasks.map(t => {
       if (t.id === task.id) {
         const isNowCompleted = !t.completed;
         const qCount = t.amount ? parseInt(t.amount, 10) || 20 : 20;
+        const c = t.correct !== undefined ? t.correct : (isNowCompleted ? qCount : undefined);
+        const inc = t.incorrect !== undefined ? t.incorrect : (isNowCompleted ? 0 : undefined);
+        const emp = t.empty !== undefined ? t.empty : (isNowCompleted ? 0 : undefined);
+        const n = isNowCompleted 
+          ? (t.net !== undefined ? t.net : calculateNetScore(c || 0, inc || 0, studentGrade))
+          : t.net;
+
         return {
           ...t,
           completed: isNowCompleted,
-          correct: isNowCompleted ? (t.correct ?? qCount) : undefined,
-          incorrect: isNowCompleted ? (t.incorrect ?? 0) : undefined,
-          empty: isNowCompleted ? (t.empty ?? 0) : undefined,
-          net: isNowCompleted ? (t.net ?? qCount) : undefined
+          correct: c,
+          incorrect: inc,
+          empty: emp,
+          net: n
         };
       }
       return t;
     });
 
     setTasks(updatedTasks);
-    await saveStudentTasks(studentId, updatedTasks);
+    await saveStudentTasks(targetStudentId, updatedTasks);
 
     const dayIndex = new Date().getDay();
     const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
@@ -323,11 +333,25 @@ export function StudentPortal() {
       } catch {}
     }
 
-    const savedTrials = localStorage.getItem(`trial_results_detailed_${id}`);
-    if (savedTrials) {
-      try {
-        setTrialHistory(JSON.parse(savedTrials));
-      } catch {}
+    try {
+      const cloudTrials = await getStudentTrials(id);
+      if (cloudTrials.detailedTrials && cloudTrials.detailedTrials.length > 0) {
+        setTrialHistory(cloudTrials.detailedTrials);
+      } else {
+        const savedTrials = localStorage.getItem(`trial_results_detailed_${id}`);
+        if (savedTrials) {
+          try {
+            setTrialHistory(JSON.parse(savedTrials));
+          } catch {}
+        }
+      }
+    } catch {
+      const savedTrials = localStorage.getItem(`trial_results_detailed_${id}`);
+      if (savedTrials) {
+        try {
+          setTrialHistory(JSON.parse(savedTrials));
+        } catch {}
+      }
     }
 
     const savedAi = localStorage.getItem(`ai_analysis_${id}`);
@@ -455,11 +479,31 @@ export function StudentPortal() {
   };
 
   const toggleTask = async (taskId: string) => {
-    const updatedTasks = tasks.map(t => 
-      t.id === taskId ? { ...t, completed: !t.completed, correct: undefined, incorrect: undefined, empty: undefined, net: undefined } : t
-    );
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    const updatedTasks = tasks.map(t => {
+      if (t.id === taskId) {
+        const isNowCompleted = !t.completed;
+        const qCount = t.amount ? parseInt(t.amount, 10) || 20 : 20;
+        const c = t.correct !== undefined ? t.correct : (isNowCompleted ? qCount : undefined);
+        const inc = t.incorrect !== undefined ? t.incorrect : (isNowCompleted ? 0 : undefined);
+        const emp = t.empty !== undefined ? t.empty : (isNowCompleted ? 0 : undefined);
+        const n = isNowCompleted 
+          ? (t.net !== undefined ? t.net : calculateNetScore(c || 0, inc || 0, studentGrade))
+          : t.net;
+
+        return {
+          ...t,
+          completed: isNowCompleted,
+          correct: c,
+          incorrect: inc,
+          empty: emp,
+          net: n
+        };
+      }
+      return t;
+    });
     setTasks(updatedTasks);
-    await saveStudentTasks(studentId, updatedTasks);
+    await saveStudentTasks(targetStudentId, updatedTasks);
     
     // Update today's tasks view
     const dayIndex = new Date().getDay();
@@ -480,51 +524,58 @@ export function StudentPortal() {
       openVideo(task);
       return;
     }
-    // Soru ve Test ödevlerinde tıklandığında anında Doğru/Yanlış/Boş giriş penceresi açılır
-    if (task.type === 'question' || task.type === 'test') {
-      setEvaluatingTask(task);
-      setEvalCorrect(task.correct ?? 0);
-      setEvalIncorrect(task.incorrect ?? 0);
-      setEvalEmpty(task.empty ?? 0);
-      setShowResultModal(true);
-    } else {
+    // Kitap okuma görevinde hızlı tamamlama
+    if (task.type === 'book') {
       toggleTask(task.id);
+      return;
     }
+    // Soru ve Test ödevlerinde veya herhangi bir ders çalışmasında Doğru/Yanlış/Boş giriş penceresi açılır
+    setEvaluatingTask(task);
+    const defaultQ = task.amount ? parseInt(task.amount, 10) || 20 : 20;
+    setEvalCorrect(task.correct !== undefined ? task.correct : defaultQ);
+    setEvalIncorrect(task.incorrect !== undefined ? task.incorrect : 0);
+    setEvalEmpty(task.empty !== undefined ? task.empty : 0);
+    setShowResultModal(true);
   };
 
   const saveTaskEvaluation = async () => {
     if (!evaluatingTask) return;
-    const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5');
-    const penalty = isMiddleSchool ? 3 : 4; // LGS: 3 yanlış 1 doğruyu götürür, Lise/YKS: 4 yanlış 1 doğruyu götürür
-    const calculatedNet = Math.max(0, evalCorrect - (evalIncorrect / penalty));
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    const c = Math.max(0, Number(evalCorrect) || 0);
+    const inc = Math.max(0, Number(evalIncorrect) || 0);
+    const emp = Math.max(0, Number(evalEmpty) || 0);
+    const calculatedNet = calculateNetScore(c, inc, studentGrade);
 
     const updatedTasks = tasks.map(t => {
       if (t.id === evaluatingTask.id) {
         return {
           ...t,
           completed: true,
-          correct: Number(evalCorrect),
-          incorrect: Number(evalIncorrect),
-          empty: Number(evalEmpty),
-          net: Number(calculatedNet.toFixed(2))
+          correct: c,
+          incorrect: inc,
+          empty: emp,
+          net: calculatedNet
         };
       }
       return t;
     });
 
     setTasks(updatedTasks);
-    await saveStudentTasks(studentId, updatedTasks);
+    await saveStudentTasks(targetStudentId, updatedTasks);
 
     const dayIndex = new Date().getDay();
     const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
     setTodayTasks(updatedTasks.filter((t: Task) => t.day === todayName));
 
     setShowResultModal(false);
+    setSyncToast(`🎯 ${evaluatingTask.subject || 'Ödev'}: ${c} Doğru, ${inc} Yanlış (${calculatedNet.toFixed(2)} Net) kaydedildi! ✅`);
+    setTimeout(() => setSyncToast(null), 3500);
     setEvaluatingTask(null);
   };
 
   const resetTaskEvaluation = async () => {
     if (!evaluatingTask) return;
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
     const updatedTasks = tasks.map(t => {
       if (t.id === evaluatingTask.id) {
         return {
@@ -540,7 +591,7 @@ export function StudentPortal() {
     });
 
     setTasks(updatedTasks);
-    await saveStudentTasks(studentId, updatedTasks);
+    await saveStudentTasks(targetStudentId, updatedTasks);
 
     const dayIndex = new Date().getDay();
     const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
@@ -552,20 +603,17 @@ export function StudentPortal() {
 
   const handleSaveTrial = async (e: React.FormEvent) => {
     e.preventDefault();
-    const correct = Number(examCorrect) || 0;
-    const incorrect = Number(examIncorrect) || 0;
-    const empty = Number(examEmpty) || 0;
+    const correct = Math.max(0, Number(examCorrect) || 0);
+    const incorrect = Math.max(0, Number(examIncorrect) || 0);
+    const empty = Math.max(0, Number(examEmpty) || 0);
 
-    if (correct === 0 && incorrect === 0) {
+    if (correct === 0 && incorrect === 0 && empty === 0) {
       setExamSaveToast('Lütfen doğru veya yanlış soru sayısı giriniz!');
       setTimeout(() => setExamSaveToast(null), 3000);
       return;
     }
 
-    const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5');
-    const penalty = isMiddleSchool ? 3 : 4; // LGS: 3, Lise/YKS: 4
-    const net = Math.max(0, correct - (incorrect / penalty));
-
+    const net = calculateNetScore(correct, incorrect, studentGrade);
     const dateStr = new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
     const trialId = Math.random().toString(36).substr(2, 9);
     const subjectName = examSubject.trim() || 'Genel Deneme';
@@ -593,12 +641,12 @@ export function StudentPortal() {
     // 1. Detailed history
     const updatedHistory = [newTrial, ...trialHistory];
     setTrialHistory(updatedHistory);
-    localStorage.setItem(`trial_results_detailed_${targetStudentId}`, JSON.stringify(updatedHistory));
 
     // 2. Simple trial results for charts
+    let updatedTrials: any[] = [];
     try {
       const existingTrials = JSON.parse(localStorage.getItem(`trial_results_${targetStudentId}`) || '[]');
-      const updatedTrials = [
+      updatedTrials = [
         ...existingTrials,
         {
           id: trialId,
@@ -608,10 +656,20 @@ export function StudentPortal() {
           title: trialName
         }
       ];
-      localStorage.setItem(`trial_results_${targetStudentId}`, JSON.stringify(updatedTrials));
-    } catch {}
+    } catch {
+      updatedTrials = [{
+        id: trialId,
+        date: dateStr,
+        score: Number(net.toFixed(2)),
+        totalQuestions: correct + incorrect + empty,
+        title: trialName
+      }];
+    }
 
-    // 3. Error topics
+    // 3. Save to Firestore & localStorage
+    await saveStudentTrials(targetStudentId, updatedHistory, updatedTrials);
+
+    // 4. Error topics
     if (examWrongTopic.trim()) {
       try {
         const existingErrors = JSON.parse(localStorage.getItem(`topic_errors_${targetStudentId}`) || '[]');
@@ -626,26 +684,26 @@ export function StudentPortal() {
       } catch {}
     }
 
-    // 4. Reset form & feedback
+    // 5. Reset form & feedback
     setExamCorrect('');
     setExamIncorrect('');
     setExamEmpty('');
     setExamWrongTopic('');
     setExamTitle('');
-    setExamSaveToast(`✅ Deneme sınavı kaydedildi! Toplam Net: ${net.toFixed(2)}`);
+    setExamSaveToast(`✅ ${trialName}: ${correct} Doğru, ${incorrect} Yanlış (${net.toFixed(2)} Net) kaydedildi!`);
     setTimeout(() => setExamSaveToast(null), 4000);
   };
 
-  const deleteTrial = (trialId: string) => {
+  const deleteTrial = async (trialId: string) => {
     const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
     const updated = trialHistory.filter(t => t.id !== trialId);
     setTrialHistory(updated);
-    localStorage.setItem(`trial_results_detailed_${targetStudentId}`, JSON.stringify(updated));
+    let updatedSimple: any[] = [];
     try {
       const simple = JSON.parse(localStorage.getItem(`trial_results_${targetStudentId}`) || '[]');
-      const updatedSimple = simple.filter((t: any) => t.id !== trialId);
-      localStorage.setItem(`trial_results_${targetStudentId}`, JSON.stringify(updatedSimple));
+      updatedSimple = simple.filter((t: any) => t.id !== trialId);
     } catch {}
+    await saveStudentTrials(targetStudentId, updated, updatedSimple);
     if (selectedTrial?.id === trialId) setSelectedTrial(null);
   };
 
@@ -1043,44 +1101,41 @@ export function StudentPortal() {
                 </div>
               </div>
 
-              {/* 3. Deneme Sınavı Neti veya Soru Doğruluk Analizi */}
-              {trialHistory.length > 0 ? (
+              {/* 3. Haftalık Soru Doğruluk ve Net Başarısı */}
+              <div className="flex items-center gap-4 p-3 bg-emerald-500/[0.07] rounded-2xl border border-emerald-500/20">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-100/80 flex flex-col items-center justify-center text-center p-1 border border-emerald-300/40 shrink-0">
+                  <span className="text-base font-black text-emerald-800 leading-none">
+                    {weeklyQuestionStats.net}
+                  </span>
+                  <span className="text-[8px] font-black uppercase text-emerald-800 mt-0.5">Soru Neti</span>
+                </div>
+                <div className="space-y-0.5 min-w-0">
+                  <p className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider">Haftalık Soru Başarısı</p>
+                  <p className="text-xs font-black text-emerald-800 truncate">
+                    {weeklyQuestionStats.correct} Doğru • {weeklyQuestionStats.incorrect} Yanlış {weeklyQuestionStats.empty > 0 ? `• ${weeklyQuestionStats.empty} Boş` : ''}
+                  </p>
+                  <p className="text-[10px] font-bold text-emerald-700">
+                    Toplam Çözülen: {weeklyQuestionStats.solvedQuestions} Soru
+                  </p>
+                </div>
+              </div>
+
+              {/* 4. Deneme Sınavı Neti (Varsa) */}
+              {trialHistory.length > 0 && (
                 <div className="flex items-center gap-4 p-3 bg-secondary/[0.06] rounded-2xl border border-secondary/20">
                   <div className="w-16 h-16 rounded-2xl bg-secondary/10 flex flex-col items-center justify-center text-center p-1 border border-secondary/20 shrink-0">
                     <span className="text-base font-black text-secondary leading-none">
                       {trialHistory[0].totalNet.toFixed(1)}
                     </span>
-                    <span className="text-[8px] font-black uppercase text-secondary/80 mt-0.5">Net</span>
+                    <span className="text-[8px] font-black uppercase text-secondary/80 mt-0.5">Deneme Net</span>
                   </div>
-                  <div className="space-y-0.5">
+                  <div className="space-y-0.5 min-w-0">
                     <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Son Deneme Neti</p>
                     <p className="text-xs font-extrabold text-on-surface truncate max-w-[150px]">{trialHistory[0].date || 'Deneme'}</p>
                     <p className="text-[10px] text-on-surface-variant font-medium">
                       {trialHistory.length} deneme sınavı kaydı
                     </p>
                   </div>
-                </div>
-              ) : (weeklyQuestionStats.correct > 0 || weeklyQuestionStats.incorrect > 0) ? (
-                <div className="flex items-center gap-4 p-3 bg-emerald-500/[0.07] rounded-2xl border border-emerald-500/20">
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-100/80 flex flex-col items-center justify-center text-center p-1 border border-emerald-300/40 shrink-0">
-                    <span className="text-base font-black text-emerald-800 leading-none">
-                      {weeklyQuestionStats.correct}
-                    </span>
-                    <span className="text-[8px] font-black uppercase text-emerald-800 mt-0.5">Doğru</span>
-                  </div>
-                  <div className="space-y-0.5">
-                    <p className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider">Soru Başarısı</p>
-                    <p className="text-xs font-black text-emerald-800">
-                      {weeklyQuestionStats.correct} D • {weeklyQuestionStats.incorrect} Y {weeklyQuestionStats.empty > 0 ? `• ${weeklyQuestionStats.empty} B` : ''}
-                    </p>
-                    <p className="text-[10px] font-bold text-emerald-700">
-                      Net: {weeklyQuestionStats.net}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3 bg-surface-container-low rounded-2xl text-center text-xs text-on-surface-variant font-medium">
-                  💡 Görevlerinize tıklayarak doğru/yanlış sonuçlarınızı girebilirsiniz.
                 </div>
               )}
             </div>
@@ -1625,8 +1680,15 @@ export function StudentPortal() {
                                               <Play className="w-3 h-3 fill-current" />
                                               <span>Videoyu İzle</span>
                                             </button>
-                                          ) : (task.completed && (task.type === 'question' || task.type === 'test')) ? (
-                                            <div className="inline-flex items-center flex-wrap gap-1">
+                                          ) : (task.correct !== undefined || task.incorrect !== undefined) ? (
+                                            <div 
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleTaskClick(task);
+                                              }}
+                                              className="inline-flex items-center flex-wrap gap-1 cursor-pointer hover:opacity-85 transition-opacity"
+                                              title="Sonucu düzenlemek için tıklayın"
+                                            >
                                               <span className="text-[9px] font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded">
                                                 {task.correct ?? 0}D
                                               </span>
@@ -1639,13 +1701,21 @@ export function StudentPortal() {
                                                 </span>
                                               )}
                                               <span className="text-[9px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                                                {task.net !== undefined ? task.net : Math.max(0, (task.correct || 0) - ((task.incorrect || 0) / 4)).toFixed(2)} Net
+                                                {typeof task.net === 'number' && !isNaN(task.net) ? task.net.toFixed(2) : calculateNetScore(task.correct || 0, task.incorrect || 0, studentGrade).toFixed(2)} Net
                                               </span>
                                             </div>
-                                          ) : (!task.completed && (task.type === 'question' || task.type === 'test')) ? (
-                                            <span className="text-[9px] font-bold text-primary hover:underline">
-                                              Sonuç Gir
-                                            </span>
+                                          ) : (task.type !== 'video' && task.type !== 'book') ? (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleTaskClick(task);
+                                              }}
+                                              className="text-[9px] font-bold text-primary hover:underline inline-flex items-center gap-0.5"
+                                            >
+                                              <Target className="w-2.5 h-2.5" />
+                                              <span>Sonuç Gir</span>
+                                            </button>
                                           ) : (
                                             <span />
                                           )}
@@ -1730,16 +1800,39 @@ export function StudentPortal() {
                                 )}>
                                   {task.title}
                                 </p>
-                                {task.completed && (task.type === 'question' || task.type === 'test') && (
-                                  <div className="inline-flex items-center flex-wrap gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200/60 rounded-lg text-[10px] font-black">
+                                {(task.correct !== undefined || task.incorrect !== undefined) ? (
+                                  <div 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleTaskClick(task);
+                                    }}
+                                    className="inline-flex items-center flex-wrap gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/60 rounded-lg text-[10px] font-black cursor-pointer transition-colors shadow-2xs"
+                                    title="Sonucu düzenlemek için tıklayın"
+                                  >
                                     <span className="text-emerald-700">🎯 {task.correct ?? 0} Doğru</span>
                                     <span className="text-rose-700">• {task.incorrect ?? 0} Yanlış</span>
-                                    <span className="text-slate-600">• {task.empty ?? 0} Boş</span>
+                                    {task.empty !== undefined && task.empty > 0 && (
+                                      <span className="text-slate-600">• {task.empty} Boş</span>
+                                    )}
                                     <span className="text-primary font-black bg-white px-1.5 py-0.5 rounded shadow-2xs border border-primary/20">
-                                      {task.net !== undefined ? task.net : Math.max(0, (task.correct || 0) - ((task.incorrect || 0) / 4)).toFixed(2)} Net
+                                      {typeof task.net === 'number' && !isNaN(task.net) ? task.net.toFixed(2) : calculateNetScore(task.correct || 0, task.incorrect || 0, studentGrade).toFixed(2)} Net
                                     </span>
                                   </div>
-                                )}
+                                ) : (task.type !== 'video' && task.type !== 'book') ? (
+                                  <div className="pt-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleTaskClick(task);
+                                      }}
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary hover:text-white px-2 py-0.5 rounded-md transition-all"
+                                    >
+                                      <Target className="w-3 h-3" />
+                                      <span>Sonuç Gir</span>
+                                    </button>
+                                  </div>
+                                ) : null}
                               </div>
                             </td>
                             <td className="px-5 py-3.5 whitespace-nowrap">
@@ -1930,16 +2023,39 @@ export function StudentPortal() {
                                 )}>
                                   {task.title}
                                 </p>
-                                {task.completed && (task.type === 'question' || task.type === 'test') && (
-                                  <div className="inline-flex items-center flex-wrap gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200/60 rounded-lg text-[10px] font-black">
+                                {(task.correct !== undefined || task.incorrect !== undefined) ? (
+                                  <div 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleTaskClick(task);
+                                    }}
+                                    className="inline-flex items-center flex-wrap gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/60 rounded-lg text-[10px] font-black cursor-pointer transition-colors shadow-2xs"
+                                    title="Sonucu düzenlemek için tıklayın"
+                                  >
                                     <span className="text-emerald-700">🎯 {task.correct ?? 0} Doğru</span>
                                     <span className="text-rose-700">• {task.incorrect ?? 0} Yanlış</span>
-                                    <span className="text-slate-600">• {task.empty ?? 0} Boş</span>
+                                    {task.empty !== undefined && task.empty > 0 && (
+                                      <span className="text-slate-600">• {task.empty} Boş</span>
+                                    )}
                                     <span className="text-primary font-black bg-white px-1.5 py-0.5 rounded shadow-2xs border border-primary/20">
-                                      {task.net !== undefined ? task.net : Math.max(0, (task.correct || 0) - ((task.incorrect || 0) / 4)).toFixed(2)} Net
+                                      {calculateNetScore(task.correct || 0, task.incorrect || 0, studentGrade)} Net
                                     </span>
                                   </div>
-                                )}
+                                ) : (task.type !== 'video' && task.type !== 'book') ? (
+                                  <div className="pt-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleTaskClick(task);
+                                      }}
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary hover:text-white px-2 py-0.5 rounded-md transition-all"
+                                    >
+                                      <Target className="w-3 h-3" />
+                                      <span>Sonuç Gir</span>
+                                    </button>
+                                  </div>
+                                ) : null}
                               </div>
                             </td>
                             <td className="px-5 py-3.5 whitespace-nowrap">
@@ -2070,27 +2186,41 @@ export function StudentPortal() {
                           {task.title}
                         </p>
 
-                        {/* Completed Stats Tag */}
-                        {task.completed && (task.type === 'question' || task.type === 'test') && (
-                          <div className="mt-1.5 inline-flex items-center flex-wrap gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200/70 rounded-xl text-[10px] font-black">
+                        {/* Evaluated Stats Tag */}
+                        {(task.correct !== undefined || task.incorrect !== undefined) ? (
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTaskClick(task);
+                            }}
+                            className="mt-1.5 inline-flex items-center flex-wrap gap-1.5 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/70 rounded-xl text-[10px] font-black cursor-pointer transition-colors shadow-2xs"
+                            title="Sonucu düzenlemek için tıklayın"
+                          >
                             <span className="text-emerald-700">🎯 {task.correct ?? 0} Doğru</span>
                             <span className="text-rose-700">• {task.incorrect ?? 0} Yanlış</span>
-                            <span className="text-slate-600">• {task.empty ?? 0} Boş</span>
+                            {task.empty !== undefined && task.empty > 0 && (
+                              <span className="text-slate-600">• {task.empty} Boş</span>
+                            )}
                             <span className="text-primary font-black bg-white px-2 py-0.5 rounded-md shadow-2xs border border-primary/20">
-                              {task.net !== undefined ? task.net : Math.max(0, (task.correct || 0) - ((task.incorrect || 0) / 4)).toFixed(2)} Net
+                              {typeof task.net === 'number' && !isNaN(task.net) ? task.net.toFixed(2) : calculateNetScore(task.correct || 0, task.incorrect || 0, studentGrade).toFixed(2)} Net
                             </span>
                           </div>
-                        )}
-
-                        {/* Prompt to Enter D/Y Score */}
-                        {!task.completed && (task.type === 'question' || task.type === 'test') && (
+                        ) : (task.type !== 'video' && task.type !== 'book') ? (
                           <div className="mt-1.5">
-                            <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md inline-flex items-center gap-1 hover:bg-primary/20 transition-colors">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTaskClick(task);
+                              }}
+                              className="text-[10px] font-black text-primary bg-primary/10 hover:bg-primary hover:text-white px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 transition-colors"
+                              title="Doğru ve yanlış soru sayılarını girin"
+                            >
                               <Target className="w-3 h-3" />
-                              Sonuç Gir (D / Y)
-                            </span>
+                              <span>Sonuç Gir (D / Y)</span>
+                            </button>
                           </div>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Video Button */}
@@ -2622,10 +2752,19 @@ export function StudentPortal() {
 
               {/* Canlı Net Önizleme */}
               {Boolean(examCorrect || examIncorrect) && (
-                <div className="p-3 bg-primary/10 rounded-2xl flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary">Hesaplanan Tahmini Net:</span>
-                  <span className="text-base font-black text-primary">
-                    {Math.max(0, (Number(examCorrect) || 0) - ((Number(examIncorrect) || 0) / (studentGrade.includes('8') ? 3 : 4))).toFixed(2)} Net
+                <div className="p-3.5 bg-gradient-to-r from-emerald-500/10 via-primary/5 to-transparent border border-emerald-500/20 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Hesaplanan Net
+                    </span>
+                    <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">
+                      {(studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5') || studentGrade.toLowerCase().includes('lgs') || studentGrade.toLowerCase().includes('ortaokul'))
+                        ? 'LGS / Ortaokul: 3 Yanlış 1 Doğruyu Götürür' 
+                        : 'Lise / YKS: 4 Yanlış 1 Doğruyu Götürür'}
+                    </p>
+                  </div>
+                  <span className="text-xl font-black text-emerald-700">
+                    {calculateNetScore(Number(examCorrect) || 0, Number(examIncorrect) || 0, studentGrade).toFixed(2)} Net
                   </span>
                 </div>
               )}
@@ -2669,8 +2808,17 @@ export function StudentPortal() {
 
               <div className="space-y-3">
                 {trialHistory.map((trial) => {
-                  const subjectKey = Object.keys(trial.results)[0] || 'Genel Deneme';
-                  const subjectData = trial.results[subjectKey];
+                  const resultEntries = Object.entries(trial.results || {});
+                  const totalCorrect = resultEntries.reduce((s, [_, r]: [string, any]) => s + (Number(r?.correct) || 0), 0);
+                  const totalIncorrect = resultEntries.reduce((s, [_, r]: [string, any]) => s + (Number(r?.incorrect) || 0), 0);
+                  const totalEmpty = resultEntries.reduce((s, [_, r]: [string, any]) => s + (Number(r?.empty) || 0), 0);
+                  const calculatedNet = typeof trial.totalNet === 'number' && !isNaN(trial.totalNet) && trial.totalNet > 0
+                    ? trial.totalNet 
+                    : calculateNetScore(totalCorrect, totalIncorrect, studentGrade);
+
+                  const subjectTitle = resultEntries.length === 1 
+                    ? resultEntries[0][0] 
+                    : (resultEntries.length > 1 ? `${resultEntries[0][0]} + ${resultEntries.length - 1} Ders` : 'Genel Deneme');
 
                   return (
                     <div 
@@ -2684,20 +2832,18 @@ export function StudentPortal() {
                               {trial.date}
                             </span>
                             <span className="text-[10px] font-black uppercase text-primary bg-primary/10 px-2 py-0.5 rounded-lg">
-                              {subjectKey}
+                              {subjectTitle}
                             </span>
                           </div>
-                          {subjectData && (
-                            <p className="text-xs font-semibold text-on-surface-variant">
-                              {subjectData.correct} Doğru • {subjectData.incorrect} Yanlış
-                            </p>
-                          )}
+                          <p className="text-xs font-black text-emerald-800">
+                            🎯 {totalCorrect} Doğru • {totalIncorrect} Yanlış {totalEmpty > 0 ? `• ${totalEmpty} Boş` : ''}
+                          </p>
                         </div>
 
                         <div className="text-right">
                           <p className="text-[9px] font-black text-secondary uppercase tracking-widest">Net</p>
                           <p className="text-xl font-black text-secondary leading-none">
-                            {trial.totalNet.toFixed(2)}
+                            {calculatedNet.toFixed(2)}
                           </p>
                         </div>
                       </div>
@@ -3064,11 +3210,14 @@ export function StudentPortal() {
 
               {/* Net Score Calculation Banner */}
               {(() => {
-                const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5');
+                const isMiddleSchool = studentGrade.includes('8') || studentGrade.includes('7') || studentGrade.includes('6') || studentGrade.includes('5') || studentGrade.toLowerCase().includes('lgs') || studentGrade.toLowerCase().includes('ortaokul');
                 const penalty = isMiddleSchool ? 3 : 4;
-                const net = Math.max(0, evalCorrect - (evalIncorrect / penalty));
-                const totalQuestions = Number(evalCorrect) + Number(evalIncorrect) + Number(evalEmpty);
-                const accuracy = totalQuestions > 0 ? Math.round((evalCorrect / (evalCorrect + evalIncorrect || 1)) * 100) : 0;
+                const c = Math.max(0, Number(evalCorrect) || 0);
+                const inc = Math.max(0, Number(evalIncorrect) || 0);
+                const emp = Math.max(0, Number(evalEmpty) || 0);
+                const net = calculateNetScore(c, inc, studentGrade);
+                const totalQuestions = c + inc + emp;
+                const accuracy = totalQuestions > 0 ? Math.round((c / totalQuestions) * 100) : 0;
 
                 return (
                   <div className="bg-gradient-to-br from-emerald-500/10 via-primary/5 to-transparent border border-emerald-500/20 p-4 rounded-2xl flex items-center justify-between">
@@ -3080,7 +3229,7 @@ export function StudentPortal() {
                         {net.toFixed(2)} <span className="text-sm font-bold text-emerald-600/80">Net</span>
                       </div>
                       <p className="text-[10px] text-on-surface-variant font-medium mt-0.5">
-                        {isMiddleSchool ? 'LGS kuralı: 3 yanlış 1 doğruyu götürür' : 'Lise / YKS kuralı: 4 yanlış 1 doğruyu götürür'}
+                        {isMiddleSchool ? 'LGS / Ortaokul kuralı: 3 yanlış 1 doğruyu götürür' : 'Lise / YKS kuralı: 4 yanlış 1 doğruyu götürür'}
                       </p>
                     </div>
                     <div className="text-right">
@@ -3099,7 +3248,7 @@ export function StudentPortal() {
                   <div className="flex items-center justify-center gap-1.5">
                     <button 
                       type="button"
-                      onClick={() => setEvalCorrect(prev => Math.max(0, prev - 1))}
+                      onClick={() => setEvalCorrect(prev => Math.max(0, (Number(prev) || 0) - 1))}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 font-black flex items-center justify-center shadow-xs transition-colors"
                     >
                       <Minus className="w-3.5 h-3.5" />
@@ -3107,13 +3256,18 @@ export function StudentPortal() {
                     <input 
                       type="number" 
                       min="0"
-                      value={evalCorrect}
-                      onChange={(e) => setEvalCorrect(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-14 text-center py-1.5 bg-white rounded-lg font-black text-lg text-emerald-800 outline-none border border-emerald-500/20 focus:ring-2 focus:ring-emerald-500"
+                      value={evalCorrect === 0 ? '' : evalCorrect}
+                      placeholder="0"
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                        setEvalCorrect(isNaN(val) ? 0 : Math.max(0, val));
+                      }}
+                      className="w-16 text-center py-1.5 bg-white rounded-lg font-black text-lg text-emerald-800 outline-none border border-emerald-500/20 focus:ring-2 focus:ring-emerald-500"
                     />
                     <button 
                       type="button"
-                      onClick={() => setEvalCorrect(prev => prev + 1)}
+                      onClick={() => setEvalCorrect(prev => (Number(prev) || 0) + 1)}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-emerald-100 text-emerald-800 font-black flex items-center justify-center shadow-xs transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -3127,7 +3281,7 @@ export function StudentPortal() {
                   <div className="flex items-center justify-center gap-1.5">
                     <button 
                       type="button"
-                      onClick={() => setEvalIncorrect(prev => Math.max(0, prev - 1))}
+                      onClick={() => setEvalIncorrect(prev => Math.max(0, (Number(prev) || 0) - 1))}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-rose-100 text-rose-800 font-black flex items-center justify-center shadow-xs transition-colors"
                     >
                       <Minus className="w-3.5 h-3.5" />
@@ -3135,13 +3289,18 @@ export function StudentPortal() {
                     <input 
                       type="number" 
                       min="0"
-                      value={evalIncorrect}
-                      onChange={(e) => setEvalIncorrect(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-14 text-center py-1.5 bg-white rounded-lg font-black text-lg text-rose-800 outline-none border border-rose-500/20 focus:ring-2 focus:ring-rose-500"
+                      value={evalIncorrect === 0 ? '' : evalIncorrect}
+                      placeholder="0"
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                        setEvalIncorrect(isNaN(val) ? 0 : Math.max(0, val));
+                      }}
+                      className="w-16 text-center py-1.5 bg-white rounded-lg font-black text-lg text-rose-800 outline-none border border-rose-500/20 focus:ring-2 focus:ring-rose-500"
                     />
                     <button 
                       type="button"
-                      onClick={() => setEvalIncorrect(prev => prev + 1)}
+                      onClick={() => setEvalIncorrect(prev => (Number(prev) || 0) + 1)}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-rose-100 text-rose-800 font-black flex items-center justify-center shadow-xs transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -3155,7 +3314,7 @@ export function StudentPortal() {
                   <div className="flex items-center justify-center gap-1.5">
                     <button 
                       type="button"
-                      onClick={() => setEvalEmpty(prev => Math.max(0, prev - 1))}
+                      onClick={() => setEvalEmpty(prev => Math.max(0, (Number(prev) || 0) - 1))}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center shadow-xs transition-colors"
                     >
                       <Minus className="w-3.5 h-3.5" />
@@ -3163,13 +3322,18 @@ export function StudentPortal() {
                     <input 
                       type="number" 
                       min="0"
-                      value={evalEmpty}
-                      onChange={(e) => setEvalEmpty(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="w-14 text-center py-1.5 bg-white rounded-lg font-black text-lg text-slate-700 outline-none border border-slate-300 focus:ring-2 focus:ring-slate-400"
+                      value={evalEmpty === 0 ? '' : evalEmpty}
+                      placeholder="0"
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                        setEvalEmpty(isNaN(val) ? 0 : Math.max(0, val));
+                      }}
+                      className="w-16 text-center py-1.5 bg-white rounded-lg font-black text-lg text-slate-700 outline-none border border-slate-300 focus:ring-2 focus:ring-slate-400"
                     />
                     <button 
                       type="button"
-                      onClick={() => setEvalEmpty(prev => prev + 1)}
+                      onClick={() => setEvalEmpty(prev => (Number(prev) || 0) + 1)}
                       className="w-8 h-8 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center shadow-xs transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -3343,7 +3507,7 @@ export function StudentPortal() {
                               <div className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
                                 <Check className="w-3 h-3" />
                                 {task.correct !== undefined ? (
-                                  <span>{task.correct} Doğru • {task.incorrect || 0} Yanlış • {task.empty || 0} Boş {task.net !== undefined ? `• ${task.net} Net` : ''}</span>
+                                  <span>{task.correct} Doğru • {task.incorrect || 0} Yanlış • {task.empty || 0} Boş • {typeof task.net === 'number' && !isNaN(task.net) ? task.net.toFixed(2) : calculateNetScore(task.correct, task.incorrect || 0, studentGrade).toFixed(2)} Net</span>
                                 ) : (
                                   <span>Tamamlandı</span>
                                 )}
@@ -3371,7 +3535,7 @@ export function StudentPortal() {
                             <span>{task.completed ? "Tamamlandı" : (task.type === 'book' ? "Okudum" : "Hızlı İşaretle")}</span>
                           </button>
 
-                          {(task.type === 'question' || task.type === 'test') && (
+                          {(task.type !== 'video' && task.type !== 'book') && (
                             <button
                               type="button"
                               onClick={() => {
@@ -3443,7 +3607,7 @@ export function StudentPortal() {
                             <Check className="w-3.5 h-3.5" />
                             <span>Tamamla</span>
                           </button>
-                          {(task.type === 'question' || task.type === 'test') && (
+                          {(task.type !== 'video' && task.type !== 'book') && (
                             <button
                               type="button"
                               onClick={() => {
