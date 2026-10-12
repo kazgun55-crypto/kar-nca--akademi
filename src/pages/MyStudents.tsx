@@ -1832,38 +1832,43 @@ export function MyStudents() {
                         </button>
                       </div>
 
-                      {/* Weekly Performance Stats: Doğru, Yanlış, Boş, Başarı % ve Deneme Neti */}
+                      {/* Weekly Performance Stats: Verilen Soru, Çözülen Soru, Doğru, Yanlış, Boş, Başarı % ve Deneme Neti */}
                       {aiAnalysis.weeklyPerformanceStats && (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                          <div className="p-4 bg-white rounded-2xl border border-outline-variant/10 shadow-xs text-center space-y-1">
-                            <p className="text-[10px] font-bold text-on-surface-variant uppercase">Toplam Soru</p>
-                            <p className="text-xl sm:text-2xl font-black text-on-surface">{aiAnalysis.weeklyPerformanceStats.totalQuestions || 0}</p>
-                            <p className="text-[10px] text-on-surface-variant/70">Haftalık Çözülen</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                          <div className="p-3.5 bg-primary/10 rounded-2xl border border-primary/20 shadow-xs text-center space-y-0.5">
+                            <p className="text-[10px] font-bold text-primary uppercase">Verilen Soru</p>
+                            <p className="text-xl sm:text-2xl font-black text-on-surface">{aiAnalysis.weeklyPerformanceStats.assignedQuestions || selectedStudentWeeklyQuestionStats.assignedQuestions}</p>
+                            <p className="text-[10px] text-primary/70 font-semibold">Hedef</p>
                           </div>
-                          <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200/50 shadow-xs text-center space-y-1">
+                          <div className="p-3.5 bg-white rounded-2xl border border-outline-variant/10 shadow-xs text-center space-y-0.5">
+                            <p className="text-[10px] font-bold text-on-surface-variant uppercase">Çözülen Soru</p>
+                            <p className="text-xl sm:text-2xl font-black text-on-surface">{aiAnalysis.weeklyPerformanceStats.solvedQuestions || selectedStudentWeeklyQuestionStats.solvedQuestions}</p>
+                            <p className="text-[10px] text-tertiary font-bold">%{aiAnalysis.weeklyPerformanceStats.questionCompletionRate || selectedStudentWeeklyQuestionStats.progressPercent} İlerleme</p>
+                          </div>
+                          <div className="p-3.5 bg-emerald-50/60 rounded-2xl border border-emerald-200/50 shadow-xs text-center space-y-0.5">
                             <p className="text-[10px] font-bold text-emerald-800 uppercase">Doğru</p>
                             <p className="text-xl sm:text-2xl font-black text-emerald-700">{aiAnalysis.weeklyPerformanceStats.totalCorrect || 0}</p>
-                            <p className="text-[10px] text-emerald-700/70">Başarılı Soru</p>
+                            <p className="text-[10px] text-emerald-700/70 font-semibold">Başarılı</p>
                           </div>
-                          <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-200/50 shadow-xs text-center space-y-1">
+                          <div className="p-3.5 bg-rose-50/60 rounded-2xl border border-rose-200/50 shadow-xs text-center space-y-0.5">
                             <p className="text-[10px] font-bold text-rose-800 uppercase">Yanlış</p>
                             <p className="text-xl sm:text-2xl font-black text-rose-700">{aiAnalysis.weeklyPerformanceStats.totalIncorrect || 0}</p>
-                            <p className="text-[10px] text-rose-700/70">Hata Sayısı</p>
+                            <p className="text-[10px] text-rose-700/70 font-semibold">Hata</p>
                           </div>
-                          <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/50 shadow-xs text-center space-y-1">
+                          <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-200/50 shadow-xs text-center space-y-0.5">
                             <p className="text-[10px] font-bold text-amber-800 uppercase">Boş</p>
                             <p className="text-xl sm:text-2xl font-black text-amber-700">{aiAnalysis.weeklyPerformanceStats.totalEmpty || 0}</p>
-                            <p className="text-[10px] text-amber-700/70">Cevapsız</p>
+                            <p className="text-[10px] text-amber-700/70 font-semibold">Cevapsız</p>
                           </div>
-                          <div className="p-4 bg-indigo-50/60 rounded-2xl border border-indigo-200/50 shadow-xs text-center space-y-1">
+                          <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-200/50 shadow-xs text-center space-y-0.5">
                             <p className="text-[10px] font-bold text-indigo-800 uppercase">Doğruluk</p>
                             <p className="text-xl sm:text-2xl font-black text-indigo-700">%{aiAnalysis.weeklyPerformanceStats.successRate || 0}</p>
-                            <p className="text-[10px] text-indigo-700/70">Haftalık Oran</p>
+                            <p className="text-[10px] text-indigo-700/70 font-semibold">Net: {aiAnalysis.weeklyPerformanceStats.totalNet || 0}</p>
                           </div>
-                          <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20 shadow-xs text-center space-y-1">
+                          <div className="p-3.5 bg-primary/5 rounded-2xl border border-primary/20 shadow-xs text-center space-y-0.5 col-span-2 sm:col-span-1">
                             <p className="text-[10px] font-bold text-primary uppercase">Son Deneme</p>
                             <p className="text-xl sm:text-2xl font-black text-primary">{aiAnalysis.weeklyPerformanceStats.latestTrialNet || 0}</p>
-                            <p className="text-[10px] text-primary/70">Net Skoru</p>
+                            <p className="text-[10px] text-primary/70 font-semibold">Net Skoru</p>
                           </div>
                         </div>
                       )}

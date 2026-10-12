@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { generateSmartAnalysis } from '../src/lib/aiAnalysisService';
+import { generateSmartAnalysis, buildAiPromptData } from '../src/lib/aiAnalysisService';
 
 // Initialize Gemini API client if API key is provided
 const apiKey = process.env.GEMINI_API_KEY;
@@ -48,18 +48,8 @@ export default async function handler(req: any, res: any) {
     body = {};
   }
 
-  const { studentName, grade, tasks, trialResults, detailedTrials, topicErrors, archivedPrograms } = body;
-
   // Compute baseline analysis with 100% reliability
-  const smartStats = generateSmartAnalysis({
-    studentName,
-    grade,
-    tasks,
-    trialResults,
-    detailedTrials,
-    topicErrors,
-    archivedPrograms
-  });
+  const smartStats = generateSmartAnalysis(body);
 
   // If Gemini client is not initialized, return the calculation engine results directly
   if (!ai) {
@@ -68,63 +58,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const systemInstruction = `Sen uzman bir pedagojik yapay zeka eğitim koçusun.
-KESİN VE TAVİZSİZ KURALLAR:
-1. Yalnızca ve sadece sana sağlanan haftalık programdaki görevlerde ve deneme sınavlarındaki GERÇEK VE VERİLMİŞ konuları analiz et.
-2. Sana verilmeyen, öğrenciye atanmamış hiçbir ders veya konu uydurma, tahmin çıkarma veya varsayımda bulunma. Veriler tamamen gerçekçi, net ve doğru olmalıdır.
-3. YÜZDE SEKSEN BAŞARI KURALI: Başarı oranı %80'in altında kalan konular (%80 altı) tespit edilmeli ve telafi önerilmeli; başarı oranı %80 ve üzerinde olan konular ise başarılı kabul edilmelidir.
-4. Yeni haftalık plan tavsiyelerinde (weeklyPlanRecommendations) yalnızca öğrencinin programında verilmiş olan gerçek konulardan tavsiye üret, asla harici konu ekleme.
-
-Öğrencinin haftalık programındaki görevlerini, girdiği doğru/yanlış/boş sayılarını, başarı oranı %80'in altında kalan kritik konularını ve deneme sınavı sonuçlarını iki ayrı ana eksende analiz et:
-1. HAFTALIK PROGRAM VE DOĞRU-YANLIŞ ANALİZİ: Öğrencinin haftalık ödev tamamlama oranı, girdiği doğru/yanlış sayıları ve başarı oranı %80'in altında olan konuların somut çalışma tavsiyeleri.
-2. DENEME SINAVLARI ANALİZİ: Öğrencinin deneme netleri, net trendi, zaman yönetimi ve bir sonraki deneme için taktiksel önerileri.
-
-Öğrenci Bilgileri:
-Adı: ${studentName || "Öğrenci"}
-Sınıfı/Türü: ${grade || "Belirtilmemiş"}
-
-Yanıtını mutlaka JSON formatında döndür.`;
-
-    const actualSubjectsList = Array.from(new Set([
-      ...(Array.isArray(tasks) ? tasks.map((t: any) => (t?.subject || '').trim()).filter(Boolean) : []),
-      ...Object.keys(smartStats.trialAnalysis?.branchAverages ? smartStats.trialAnalysis.branchAverages.reduce((acc: any, b: any) => ({ ...acc, [b.subject]: true }), {}) : {})
-    ]));
-
-    const formattedTasks = Array.isArray(tasks) && tasks.length > 0
-      ? tasks.map((t: any, i: number) => `${i + 1}) [${t.subject || 'Ders'}] ${t.topic || t.title || 'Konu'}: ${t.completed ? 'Tamamlandı' : 'Bekliyor'}, Doğru: ${t.correct || 0}, Yanlış: ${t.incorrect || 0}, Boş: ${t.empty || 0}`).join('\n')
-      : 'Haftalık programda henüz kayıtlı ödev bulunmuyor.';
-
-    const formattedTrials = Array.isArray(trialResults) && trialResults.length > 0
-      ? trialResults.map((tr: any, i: number) => `${i + 1}) ${tr.title || tr.name || 'Deneme'}: Net: ${tr.totalNet || tr.net || tr.score || 0} ${tr.date ? '(' + tr.date + ')' : ''}`).join('\n')
-      : 'Henüz deneme sınavı kaydı bulunmuyor.';
-
-    const userPrompt = `Aşağıdaki ELDEKİ VERİLERİ incele. Kesinlikle harici ders/konu uydurmadan, eldeki verileri temel alarak kendi pedagojik uzmanlık yorumlarını, deneme stratejilerini ve koçluk eklemelerini yap:
-
-ÖĞRENCİ: ${studentName || 'Öğrenci'} (${grade || 'Belirtilmemiş'})
-
-1. ELDEKİ HAFTALIK PROGRAM VERİLERİ:
-- Toplam Görev: ${smartStats.weeklyPerformanceStats.totalTasksCount}, Tamamlanan: ${smartStats.weeklyPerformanceStats.completedTasksCount} (%${smartStats.weeklyPerformanceStats.completionRate} Tamamlama)
-- Soru Verileri: Atanan: ${smartStats.weeklyPerformanceStats.assignedQuestions}, Çözülen: ${smartStats.weeklyPerformanceStats.solvedQuestions}, Doğru: ${smartStats.weeklyPerformanceStats.totalCorrect}, Yanlış: ${smartStats.weeklyPerformanceStats.totalIncorrect}, Boş: ${smartStats.weeklyPerformanceStats.totalEmpty}
-- Doğruluk Oranı: %${smartStats.weeklyPerformanceStats.successRate}
-Öğrencinin Programındaki Gerçek Ödevler:
-${formattedTasks}
-
-2. ELDEKİ DENEME SINAVLARI VERİLERİ:
-- Deneme Sayısı: ${smartStats.trialAnalysis.trialCount}
-- Son Deneme Neti: ${smartStats.trialAnalysis.latestTrialNet}, En Yüksek: ${smartStats.trialAnalysis.highestTrialNet}, Ortalama: ${smartStats.trialAnalysis.averageTrialNet}
-- Trend: ${smartStats.trialAnalysis.trendLabel}
-Öğrencinin Girdiği Gerçek Denemeler:
-${formattedTrials}
-
-3. %80 BAŞARI KURALI DEĞERLENDİRMESİ:
-${smartStats.under80Topics.length > 0
-  ? `Yüzde 80 Altında Kalan Kritik Konular:\n` + smartStats.under80Topics.map((u: any) => `- ${u.subject} / ${u.topic}: Doğruluk %${u.accuracy} (${u.incorrect} Yanlış)`).join('\n')
-  : `Tüm konularda %80 başarı eşiği sağlanmıştır.`}
-
-TALİMATLAR:
-1. SADECE ELDEKİ BU VERİLERİ KULLAN: Öğrencinin listesinde olmayan ders veya konuları asla ekleme veya tahmin çıkarma.
-2. PEDAGOJİK EKLEMELERİNİ YAP: Eldeki deneme ve program gidişatına göre öğrenciye ve velisine özel, sade, yapıcı çalışma tavsiyeleri ve deneme taktikleri ekle.
-3. YENİ PLAN TAVSİYELERİ: Yalnızca öğrencinin eldeki ders ve konularından telafi veya pekiştirme öner.`;
+    const { systemInstruction, userPrompt, actualSubjectsList } = buildAiPromptData(smartStats, body);
 
     let responseText: string | null = null;
     const modelsToTry = ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
@@ -143,7 +77,7 @@ TALİMATLAR:
               properties: {
                 summary: {
                   type: Type.STRING,
-                  description: "Öğrencinin genel akademik durumunu özetleyen motive edici paragraf.",
+                  description: "Öğrencinin haftalık programını, tamamlanan ödev ve derslerini pedagojik ve motive edici şekilde özetleyen metin.",
                 },
                 trialReview: {
                   type: Type.STRING,
@@ -151,7 +85,7 @@ TALİMATLAR:
                 },
                 weeklyProgramReview: {
                   type: Type.STRING,
-                  description: "Haftalık ödevler, çözülen soru sayıları ve doğruluk oranlarına özel yapay zeka analizi."
+                  description: "Haftalık ödevler, soru sayıları, video/kitap görevleri ve doğruluk oranlarına özel yapay zeka analizi."
                 },
                 errorAnalysis: {
                   type: Type.STRING,
@@ -187,7 +121,7 @@ TALİMATLAR:
           break;
         }
       } catch (err: any) {
-        console.warn(`Model ${modelName} call bypassed, using robust fallback engine...`);
+        console.warn(`Model ${modelName} call bypassed, using robust fallback engine:`, err?.message || err);
       }
     }
 

@@ -223,14 +223,29 @@ export function StudentPortal() {
       const savedTrials = localStorage.getItem(`trial_results_${targetStudentId}`);
       const detailedTrials = localStorage.getItem(`trial_results_detailed_${targetStudentId}`);
       const savedErrors = localStorage.getItem(`topic_errors_${targetStudentId}`);
+      const savedArchives = localStorage.getItem(`archived_programs_${targetStudentId}`);
+      const savedTasks = localStorage.getItem(`tasks_${targetStudentId}`);
+
+      let effectiveTasks = tasks;
+      if (!effectiveTasks || effectiveTasks.length === 0) {
+        if (savedTasks) {
+          try { effectiveTasks = JSON.parse(savedTasks); } catch {}
+        }
+      }
+
+      let parsedArchives: any[] = archivedPrograms;
+      if ((!parsedArchives || parsedArchives.length === 0) && savedArchives) {
+        try { parsedArchives = JSON.parse(savedArchives); } catch {}
+      }
 
       const data = await fetchAiAnalysisSafely({
         studentName,
         grade: studentGrade,
-        tasks,
+        tasks: effectiveTasks,
         trialResults: savedTrials ? JSON.parse(savedTrials) : trialHistory,
         detailedTrials: detailedTrials ? JSON.parse(detailedTrials) : trialHistory,
-        topicErrors: savedErrors ? JSON.parse(savedErrors) : []
+        topicErrors: savedErrors ? JSON.parse(savedErrors) : [],
+        archivedPrograms: parsedArchives
       });
 
       setStudentAiAnalysis(data);
@@ -888,11 +903,7 @@ export function StudentPortal() {
           <button
             type="button"
             onClick={() => {
-              if (!studentAiAnalysis) {
-                runStudentAiAnalysis();
-              } else {
-                setShowAiAnalysisModal(true);
-              }
+              runStudentAiAnalysis();
             }}
             disabled={loadingStudentAi}
             className="px-3.5 py-2 bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/90 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-primary/20"
@@ -3922,9 +3933,10 @@ export function StudentPortal() {
                         {studentAiAnalysis.weeklyProgramAnalysis?.summary || `Haftalık ödev tamamlama oranı %${studentAiAnalysis.weeklyPerformanceStats?.completionRate || 0} olarak hesaplandı.`}
                       </p>
                       <div className="flex items-center justify-between text-xs pt-1 border-t border-indigo-100">
-                        <span className="text-on-surface-variant font-medium">Çözülen Soru:</span>
+                        <span className="text-on-surface-variant font-medium">Sonuç Girilen:</span>
                         <span className="font-black text-indigo-700">
                           {studentAiAnalysis.weeklyPerformanceStats?.totalCorrect || 0} Doğru / {studentAiAnalysis.weeklyPerformanceStats?.totalIncorrect || 0} Yanlış
+                          {studentAiAnalysis.weeklyPerformanceStats?.totalNet !== undefined ? ` • ${studentAiAnalysis.weeklyPerformanceStats.totalNet} Net` : ''}
                         </span>
                       </div>
                     </div>

@@ -14,6 +14,15 @@ export interface WeeklyQuestionStats {
   incorrect: number;
   empty: number;
   net: number;
+  evaluatedQuestions: number;
+  unevaluatedQuestions: number;
+  accuracyRate: number;
+  videoTasksCount: number;
+  completedVideoTasksCount: number;
+  readingTasksCount: number;
+  completedReadingTasksCount: number;
+  questionTasksCount: number;
+  completedQuestionTasksCount: number;
 }
 
 /**
@@ -150,7 +159,16 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
       correct: 0,
       incorrect: 0,
       empty: 0,
-      net: 0
+      net: 0,
+      evaluatedQuestions: 0,
+      unevaluatedQuestions: 0,
+      accuracyRate: 0,
+      videoTasksCount: 0,
+      completedVideoTasksCount: 0,
+      readingTasksCount: 0,
+      completedReadingTasksCount: 0,
+      questionTasksCount: 0,
+      completedQuestionTasksCount: 0
     };
   }
 
@@ -160,23 +178,57 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
   let incorrect = 0;
   let empty = 0;
   let net = 0;
+  let evaluatedQuestions = 0;
+  let videoTasksCount = 0;
+  let completedVideoTasksCount = 0;
+  let readingTasksCount = 0;
+  let completedReadingTasksCount = 0;
+  let questionTasksCount = 0;
+  let completedQuestionTasksCount = 0;
 
   for (const t of tasks) {
-    const qCount = getTaskQuestionCount(t);
-    assignedFromTasks += qCount;
+    if (!t) continue;
+    const isQ = isQuestionTask(t);
+    const type = String(t.type || '').toLowerCase().trim();
+    const amountStr = String(t.amount || '').toLowerCase().trim();
+    const titleStr = String(t.title || t.topic || '').toLowerCase().trim();
 
-    const hasScore = (t.correct !== undefined && t.correct !== null) || (t.incorrect !== undefined && t.incorrect !== null);
-    if (t.completed || hasScore) {
-      solved += getTaskSolvedCount(t);
-      const c = Number(t.correct) || 0;
-      const inc = Number(t.incorrect) || 0;
-      const emp = Number(t.empty) || 0;
-      const n = typeof t.net === 'number' && !isNaN(t.net) ? t.net : calculateNetScore(c, inc, grade);
+    const isVideo = type === 'video' || amountStr.includes('video');
+    const isReading = type === 'book' || type === 'reading' || 
+                      amountStr.includes('sayfa') || amountStr.includes('syf') || 
+                      titleStr.includes('kitap') || titleStr.includes('okuma');
 
-      correct += c;
-      incorrect += inc;
-      empty += emp;
-      net += n;
+    if (isVideo) {
+      videoTasksCount++;
+      if (t.completed) completedVideoTasksCount++;
+    } else if (isReading) {
+      readingTasksCount++;
+      if (t.completed) completedReadingTasksCount++;
+    }
+
+    if (isQ) {
+      questionTasksCount++;
+      if (t.completed) completedQuestionTasksCount++;
+
+      const qCount = getTaskQuestionCount(t);
+      assignedFromTasks += qCount;
+
+      const hasScore = (t.correct !== undefined && t.correct !== null) || (t.incorrect !== undefined && t.incorrect !== null);
+      if (hasScore) {
+        const c = Math.max(0, Number(t.correct) || 0);
+        const inc = Math.max(0, Number(t.incorrect) || 0);
+        const emp = Math.max(0, Number(t.empty) || 0);
+        const n = typeof t.net === 'number' && !isNaN(t.net) ? t.net : calculateNetScore(c, inc, grade);
+
+        correct += c;
+        incorrect += inc;
+        empty += emp;
+        net += n;
+        evaluatedQuestions += (c + inc + emp);
+        solved += getTaskSolvedCount(t);
+      } else if (t.completed) {
+        solved += getTaskSolvedCount(t);
+      }
     }
   }
 
@@ -186,6 +238,9 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
 
   const remaining = Math.max(0, assigned - solved);
   const progressPercent = assigned > 0 ? Math.min(100, Math.round((solved / assigned) * 100)) : 0;
+  const unevaluatedQuestions = Math.max(0, solved - evaluatedQuestions);
+  const answeredEvaluated = correct + incorrect;
+  const accuracyRate = answeredEvaluated > 0 ? Math.round((correct / answeredEvaluated) * 100) : 0;
 
   return {
     assignedQuestions: assigned,
@@ -195,7 +250,16 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
     correct,
     incorrect,
     empty,
-    net: Number(net.toFixed(2))
+    net: Number(net.toFixed(2)),
+    evaluatedQuestions,
+    unevaluatedQuestions,
+    accuracyRate,
+    videoTasksCount,
+    completedVideoTasksCount,
+    readingTasksCount,
+    completedReadingTasksCount,
+    questionTasksCount,
+    completedQuestionTasksCount
   };
 }
 
