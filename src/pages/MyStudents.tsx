@@ -18,6 +18,7 @@ import {
 import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats, calculateNetScore } from '../lib/utils';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
 import { exportAiAnalysisToPdf } from '../lib/pdfExportService';
+import { StudentTrialAnalysis, AllStudentsTrialOverview } from '../components/StudentTrialAnalysis';
 import { 
   Users, 
   Search, 
@@ -102,7 +103,8 @@ export function MyStudents() {
   const [allDirectoryStudents, setAllDirectoryStudents] = useState<any[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [view, setView] = useState<'list' | 'details'>('list');
-  const [activeTab, setActiveTab] = useState<'program' | 'analytics' | 'books'>('program');
+  const [activeTab, setActiveTab] = useState<'program' | 'trials' | 'analytics' | 'books'>('program');
+  const [mainViewMode, setMainViewMode] = useState<'cards' | 'trial_tracking'>('cards');
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [studentBooks, setStudentBooks] = useState<StudentBook[]>([]);
   const [teacherMeetings, setTeacherMeetings] = useState<TeacherMeeting[]>([]);
@@ -890,6 +892,42 @@ export function MyStudents() {
               </div>
             )}
 
+            {/* Ana Görünüm Modu: Öğrenci Kartları (Programlar) vs Toplu Deneme Takip */}
+            <div className="flex flex-wrap items-center justify-between gap-4 p-2 bg-surface-container-low rounded-2xl border border-outline-variant/10">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMainViewMode('cards')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    mainViewMode === 'cards'
+                      ? 'bg-white text-primary shadow-xs'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Öğrenci Kartları & Programlar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMainViewMode('trial_tracking')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    mainViewMode === 'trial_tracking'
+                      ? 'bg-white text-secondary shadow-xs font-black'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <ClipboardCheck className="w-4 h-4 text-secondary" />
+                  <span>Toplu Deneme Takip & Analiz Listesi</span>
+                </button>
+              </div>
+
+              {mainViewMode === 'trial_tracking' && (
+                <span className="text-[11px] font-bold text-secondary bg-secondary/10 px-3 py-1 rounded-xl">
+                  Öğrencilerinizin en son girdiği deneme sınavları ve net değişimleri
+                </span>
+              )}
+            </div>
+
             {/* Sınıf Filtreleri */}
             {uniqueClasses.length > 0 && (
               <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-none">
@@ -966,7 +1004,19 @@ export function MyStudents() {
               </div>
             )}
 
-            {filteredStudents.length === 0 ? (
+            {mainViewMode === 'trial_tracking' ? (
+              <AllStudentsTrialOverview
+                students={activeStudentList}
+                onOpenStudentTrials={(st) => {
+                  handleStudentClick(st);
+                  setActiveTab('trials');
+                }}
+                onQuickAddTrial={(st) => {
+                  handleStudentClick(st);
+                  setActiveTab('trials');
+                }}
+              />
+            ) : filteredStudents.length === 0 ? (
               <div className="bg-surface-container-lowest p-12 rounded-[2.5rem] border border-outline-variant/10 text-center space-y-4 max-w-2xl mx-auto my-8 shadow-sm">
                 <div className="w-16 h-16 bg-primary/10 text-primary rounded-3xl flex items-center justify-center mx-auto mb-2">
                   <Users className="w-8 h-8" />
@@ -1058,23 +1108,34 @@ export function MyStudents() {
                       </div>
                     </div>
 
-                    {/* Paylaşım Butonları */}
-                    <div className="mt-4 pt-3 border-t border-outline-variant/10 flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                    {/* Paylaşım & Deneme Butonları */}
+                    <div className="mt-4 pt-3 border-t border-outline-variant/10 flex items-center justify-between gap-1.5" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => copyStudentLink(student.id, student.name)}
-                        className="flex-1 py-2 px-2.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                        className="flex-1 py-2 px-2 bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded-xl text-[10px] sm:text-[11px] font-bold flex items-center justify-center gap-1 transition-colors shadow-2xs"
                         title="Öğrencinin şifresiz girebileceği program linkini kopyala"
                       >
                         <Copy className="w-3.5 h-3.5 text-primary" />
-                        <span>Linki Kopyala</span>
+                        <span>Link</span>
                       </button>
                       <button
                         onClick={() => shareStudentWhatsApp(student)}
-                        className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs shadow-emerald-600/20"
+                        className="py-2 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] sm:text-[11px] font-bold flex items-center justify-center gap-1 transition-colors shadow-xs shadow-emerald-600/20"
                         title="WhatsApp ile Öğrenciye Gönder"
                       >
                         <Share2 className="w-3.5 h-3.5" />
                         <span>WhatsApp</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleStudentClick(student);
+                          setActiveTab('trials');
+                        }}
+                        className="py-2 px-2.5 bg-secondary/10 hover:bg-secondary hover:text-white text-secondary rounded-xl text-[10px] sm:text-[11px] font-black flex items-center justify-center gap-1 transition-colors border border-secondary/20 shadow-2xs"
+                        title="Öğrencinin Deneme Analizi sekmesini aç"
+                      >
+                        <ClipboardCheck className="w-3.5 h-3.5" />
+                        <span>Deneme Analizi</span>
                       </button>
                     </div>
 
@@ -1121,22 +1182,29 @@ export function MyStudents() {
                 )}
               </div>
 
-              <div className="flex bg-surface-container-high p-1 rounded-2xl">
+              <div className="flex bg-surface-container-high p-1 rounded-2xl flex-wrap">
                 <button 
                   onClick={() => setActiveTab('program')}
-                  className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'program' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
+                  className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'program' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
                 >
                   Program Hazırla
                 </button>
                 <button 
+                  onClick={() => setActiveTab('trials')}
+                  className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 ${activeTab === 'trials' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
+                >
+                  <ClipboardCheck className="w-4 h-4 text-primary" />
+                  <span>Deneme Analizi</span>
+                </button>
+                <button 
                   onClick={() => setActiveTab('analytics')}
-                  className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'analytics' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
+                  className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'analytics' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
                 >
                   Gelişim Analizi
                 </button>
                 <button 
                   onClick={() => setActiveTab('books')}
-                  className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'books' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
+                  className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'books' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
                 >
                   Okunan Kitaplar ({studentBooks.length})
                 </button>
@@ -1530,6 +1598,26 @@ export function MyStudents() {
                 </div>
               )}
             </div>
+          ) : activeTab === 'trials' ? (
+            <StudentTrialAnalysis
+              student={selectedStudent!}
+              onAssignTopicTask={(subject, topic) => {
+                setNewTask(prev => ({
+                  ...prev,
+                  subject,
+                  title: `${topic} Telafi ve Soru Çözümü`,
+                  type: 'question',
+                  amount: '40 Soru'
+                }));
+                setActiveTab('program');
+              }}
+              onTrialUpdated={() => {
+                if (selectedStudent) {
+                  handleStudentClick(selectedStudent);
+                }
+              }}
+              showToast={showToast}
+            />
           ) : activeTab === 'books' ? (
             <div className="space-y-6">
               {/* Books Summary Cards for Teacher */}
