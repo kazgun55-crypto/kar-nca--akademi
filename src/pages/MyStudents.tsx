@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { parseVideoUrl } from '../lib/videoUtils';
 import { 
   subscribeStudents, 
@@ -8,6 +8,7 @@ import {
   saveStudentTasks, 
   getStudentTasks, 
   subscribeStudentTasks,
+  saveStudentArchivedPrograms,
   StudentBook,
   subscribeStudentBooks,
   TeacherMeeting,
@@ -47,6 +48,7 @@ import {
   Clock,
   Download,
   RotateCw,
+  RotateCcw,
   Lightbulb,
   FileText,
   CheckSquare,
@@ -77,6 +79,7 @@ interface Student {
   tasks?: Task[];
   weeklyQuestionTarget?: number;
   weeklyQuestionGoal?: number;
+  archivedPrograms?: any[];
 }
 
 interface Task {
@@ -112,9 +115,17 @@ export function MyStudents() {
   const userRole = localStorage.getItem('userRole') || 'teacher';
   const currentUserId = localStorage.getItem('currentUserId') || '';
   const currentUserName = (localStorage.getItem('currentUserName') || '').toLowerCase();
-  const currentUserUsername = (localStorage.getItem('currentUserUsername') || '').toLowerCase();
-  
   const [studentScope, setStudentScope] = useState<'my' | 'all'>('my');
+
+  const location = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const viewParam = params.get('view') || params.get('tab');
+    if (viewParam === 'trials' || viewParam === 'deneme') {
+      setMainViewMode('trial_tracking');
+      setView('list');
+    }
+  }, [location.search]);
   
   const calculateCountdownDays = (examType: 'LGS' | 'YKS') => {
     const now = new Date();
@@ -171,6 +182,8 @@ export function MyStudents() {
 
   // Program modal states
   const [showProgramModal, setShowProgramModal] = useState(false);
+  const [showNewWeekModal, setShowNewWeekModal] = useState(false);
+  const [replaceExistingTasks, setReplaceExistingTasks] = useState(false);
   const [selectedDay, setSelectedDay] = useState('Pazartesi');
   const [selectedDays, setSelectedDays] = useState<string[]>(['Pazartesi']);
   const [newTask, setNewTask] = useState({
@@ -357,6 +370,7 @@ export function MyStudents() {
   const handleStudentClick = (student: Student) => {
     setSelectedStudent(student);
     setView('details');
+    localStorage.setItem('lastViewedStudentId', student.id);
     
     // Load real data for this student if exists
     const savedTrials = localStorage.getItem(`trial_results_${student.id}`);
@@ -387,25 +401,29 @@ export function MyStudents() {
     setStudentErrors(parsedErrors);
 
     let currentTaskList: any[] = [];
-    if (savedTasks) {
-      try { currentTaskList = JSON.parse(savedTasks); } catch {}
-      setStudentTasks(currentTaskList);
-    } else if (student.tasks && Array.isArray(student.tasks)) {
+    if (student.tasks && Array.isArray(student.tasks)) {
       currentTaskList = student.tasks;
       setStudentTasks(student.tasks);
-      localStorage.setItem(`tasks_${student.id}`, JSON.stringify(student.tasks));
+    } else if (savedTasks) {
+      try { currentTaskList = JSON.parse(savedTasks); } catch {}
+      setStudentTasks(currentTaskList);
     } else {
       setStudentTasks([]);
     }
 
-    // Trigger instant cloud fetch for student tasks to ensure fresh sync
+    // Trigger instant cloud fetch for student tasks to ensure fresh sync from Firestore
     getStudentTasks(student.id).then(tasks => {
-      if (tasks && tasks.length > 0) setStudentTasks(tasks);
+      if (Array.isArray(tasks)) {
+        setStudentTasks(tasks);
+        localStorage.setItem(`tasks_${student.id}`, JSON.stringify(tasks));
+      }
     });
 
     const savedArchives = localStorage.getItem(`archived_programs_${student.id}`);
     if (savedArchives) setArchivedPrograms(JSON.parse(savedArchives));
-    else setArchivedPrograms([]);
+    else if (student.archivedPrograms && Array.isArray(student.archivedPrograms)) {
+      setArchivedPrograms(student.archivedPrograms);
+    } else setArchivedPrograms([]);
 
     // Subject performance from real detailed trials or real task completion
     if (savedDetailedTrials) {
@@ -568,23 +586,43 @@ export function MyStudents() {
       showToast('Tebrikler! Geçen haftadan eksik kalan veya yapılmayan ödev bulunmuyor.');
       return;
     }
+
+    // Archive current week first if it had tasks
+    if (studentTasks.length > 0) {
+      const completedCount = studentTasks.filter(t => t.completed).length;
+      const rate = Math.round((completedCount / (studentTasks.length || 1)) * 100);
+      const archiveItem = {
+        id: 'arch_' + Date.now(),
+        endDate: new Date().toLocaleDateString('tr-TR'),
+        completionRate: rate,
+        tasks: [...studentTasks]
+      };
+      const updatedArchives = [archiveItem, ...archivedPrograms];
+      setArchivedPrograms(updatedArchives);
+      await saveStudentArchivedPrograms(selectedStudent.id, updatedArchives);
+    }
+
     const rollOverTasks: Task[] = incomplete.map((t, idx) => ({
       ...t,
       id: Math.random().toString(36).substr(2, 9),
       day: DAYS[idx % 3],
       topic: t.topic.startsWith('[Telafi]') ? t.topic : `[Telafi] ${t.topic}`,
-      completed: false
+      completed: false,
+      correct: undefined,
+      incorrect: undefined,
+      empty: undefined,
+      net: undefined
     }));
-    const updated = [...studentTasks, ...rollOverTasks];
-    setStudentTasks(updated);
-    await saveStudentTasks(selectedStudent.id, updated);
+    setStudentTasks(rollOverTasks);
+    await saveStudentTasks(selectedStudent.id, rollOverTasks);
     showToast(`${incomplete.length} adet eksik ödev telafi olarak yeni haftalık plana aktarıldı! 🔄`);
+    setShowNewWeekModal(false);
   };
 
   const handleArchiveAndStartNewWeek = async () => {
     if (!selectedStudent) return;
     if (studentTasks.length === 0) {
-      showToast('Arşivlenecek görev bulunamadı.');
+      showToast('Arşivlenecek görev bulunamadı. Program zaten boş.');
       return;
     }
     const completedCount = studentTasks.filter(t => t.completed).length;
@@ -593,21 +631,30 @@ export function MyStudents() {
       id: 'arch_' + Date.now(),
       endDate: new Date().toLocaleDateString('tr-TR'),
       completionRate: rate,
-      tasks: studentTasks
+      tasks: [...studentTasks]
     };
     const updatedArchives = [archiveItem, ...archivedPrograms];
     setArchivedPrograms(updatedArchives);
-    localStorage.setItem(`archived_programs_${selectedStudent.id}`, JSON.stringify(updatedArchives));
+    await saveStudentArchivedPrograms(selectedStudent.id, updatedArchives);
     
-    // Clear tasks for the upcoming week - explicitly empty so no automatic tasks exist
+    // Clear tasks for the upcoming week - explicitly empty
     setStudentTasks([]);
     await saveStudentTasks(selectedStudent.id, []);
-    showToast('Geçen haftanın ödevleri başarıyla arşivlendi! Yeni haftalık program sayfası hazır. 🚀');
+    showToast('Önceki haftanın programı arşivlendi! Yeni haftalık program sayfası hazır. 🚀');
+    setShowNewWeekModal(false);
 
     // Immediately trigger AI analysis for the newly archived week so development analysis is up to date
     setTimeout(() => {
       runAiAnalysis(selectedStudent, updatedArchives);
     }, 150);
+  };
+
+  const handleClearCurrentWeek = async () => {
+    if (!selectedStudent) return;
+    setStudentTasks([]);
+    await saveStudentTasks(selectedStudent.id, []);
+    showToast('Mevcut haftalık ödevler temizlendi. Boş program hazır.');
+    setShowNewWeekModal(false);
   };
 
   // Meeting Modal State & Handlers
@@ -701,9 +748,10 @@ export function MyStudents() {
       completed: false
     }));
 
-    const updatedTasks = [...studentTasks, ...newTasks];
+    const updatedTasks = replaceExistingTasks ? [...newTasks] : [...studentTasks, ...newTasks];
     setStudentTasks(updatedTasks);
     await saveStudentTasks(selectedStudent.id, updatedTasks);
+    showToast(`✅ ${newTasks.length > 1 ? `${newTasks.length} adet görev` : `"${newTask.subject} - ${newTask.title}"`} ${selectedStudent.name} için kaydedildi ve öğrenci ekranına yansıtıldı! 🎯`);
     
     setNewTask({ 
       type: 'question', 
@@ -712,6 +760,7 @@ export function MyStudents() {
       amount: '', 
       videoUrl: '' 
     });
+    setReplaceExistingTasks(false);
     setShowProgramModal(false);
   };
 
@@ -1438,17 +1487,30 @@ export function MyStudents() {
                       />
                     </div>
                   </div>
-                  <button 
-                    onClick={() => {
-                      setSelectedDay(DAYS[0]);
-                      setSelectedDays([...DAYS]);
-                      setShowProgramModal(true);
-                    }}
-                    className="px-5 py-2.5 bg-primary text-white rounded-2xl text-xs font-black hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-md shadow-primary/20 shrink-0"
-                  >
-                    <Repeat className="w-4 h-4" />
-                    Çoklu Güne / Haftalık Ödev Ekle
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button 
+                      type="button"
+                      onClick={() => setShowNewWeekModal(true)}
+                      className="px-4 py-2.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface border border-outline-variant/20 rounded-2xl text-xs font-black hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                      title="Önceki haftanın ödevlerini arşivle veya yeni hafta için programı sıfırla"
+                    >
+                      <RotateCcw className="w-4 h-4 text-secondary" />
+                      <span>Yeni Hafta Başlat & Arşivle</span>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setSelectedDay(DAYS[0]);
+                        setSelectedDays([...DAYS]);
+                        setReplaceExistingTasks(false);
+                        setShowProgramModal(true);
+                      }}
+                      className="px-5 py-2.5 bg-primary text-white rounded-2xl text-xs font-black hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-md shadow-primary/20 shrink-0 cursor-pointer"
+                    >
+                      <Repeat className="w-4 h-4" />
+                      <span>Çoklu Güne / Haftalık Ödev Ekle</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
@@ -3128,6 +3190,24 @@ export function MyStudents() {
                     )}
                   </div>
 
+                  {/* Program Ekleme / Sıfırlama Seçeneği */}
+                  <div className="pt-2 border-t border-outline-variant/10">
+                    <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-surface-container-low border border-outline-variant/10 cursor-pointer hover:bg-surface-container-high transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={replaceExistingTasks}
+                        onChange={(e) => setReplaceExistingTasks(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
+                      />
+                      <div className="text-xs">
+                        <span className="font-bold text-on-surface block">Mevcut Programı Temizle & Sıfırdan Yeni Program Olarak Kaydet</span>
+                        <span className="text-[11px] text-on-surface-variant block">
+                          İşaretlerseniz, eski haftalık ödevler silinir ve sadece bu yeni eklediğiniz görevler aktif olur.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+
                   <button 
                     onClick={addTask}
                     disabled={!newTask.title}
@@ -3137,6 +3217,111 @@ export function MyStudents() {
                     {selectedDays.length > 1 ? `${selectedDays.length} Güne Birden Görev Ekle` : 'Programa Ekle'}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* New Week / Archive Program Modal */}
+      <AnimatePresence>
+        {showNewWeekModal && selectedStudent && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-white w-full max-w-lg p-7 rounded-[2.5rem] shadow-2xl border border-outline-variant/10 space-y-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-outline-variant/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center">
+                    <RotateCcw className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-black text-on-surface">Yeni Haftalık Program Başlat</h4>
+                    <p className="text-xs text-on-surface-variant">{selectedStudent.name} ({studentTasks.length} Mevcut Görev)</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowNewWeekModal(false)}
+                  className="p-2 text-on-surface-variant hover:text-on-surface rounded-full hover:bg-surface-container-high transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={handleArchiveAndStartNewWeek}
+                  className="w-full p-4 rounded-2xl border-2 border-primary/20 hover:border-primary bg-primary/5 hover:bg-primary/10 transition-all text-left flex items-start gap-3.5 group cursor-pointer"
+                >
+                  <div className="p-2.5 rounded-xl bg-primary text-white shadow-sm mt-0.5 group-hover:scale-105 transition-transform">
+                    <Archive className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-black text-sm text-primary flex items-center gap-2">
+                      Önceki Programı Arşivle ve Temiz Yeni Hafta Aç
+                      <span className="text-[10px] font-bold bg-primary/20 text-primary px-2 py-0.5 rounded-full">Önerilen</span>
+                    </h5>
+                    <p className="text-xs text-on-surface-variant mt-0.5">
+                      Mevcut haftalık ödevler geçmiş programlar arşivine (% tamamlama oranıyla) kaydedilir. Öğrencinin aktif programı temizlenir ve yeni haftanın ödevlerini ekleyebilirsiniz.
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRollOverIncompleteTasks}
+                  className="w-full p-4 rounded-2xl border-2 border-outline-variant/15 hover:border-secondary bg-surface-container-low hover:bg-secondary/5 transition-all text-left flex items-start gap-3.5 group cursor-pointer"
+                >
+                  <div className="p-2.5 rounded-xl bg-secondary text-white shadow-sm mt-0.5 group-hover:scale-105 transition-transform">
+                    <Repeat className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-black text-sm text-secondary">
+                      Yapılmayan / Eksik Ödevleri Yeni Haftaya Aktar (Telafi)
+                    </h5>
+                    <p className="text-xs text-on-surface-variant mt-0.5">
+                      Tamamlanan ödevler arşivlenir, eksik kalan ödevler telafi olarak yeni haftalık programa otomatik kopyalanır.
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleClearCurrentWeek}
+                  className="w-full p-4 rounded-2xl border border-rose-200/50 hover:border-rose-400 bg-rose-50/50 hover:bg-rose-50 transition-all text-left flex items-start gap-3.5 group cursor-pointer"
+                >
+                  <div className="p-2.5 rounded-xl bg-rose-500 text-white shadow-sm mt-0.5 group-hover:scale-105 transition-transform">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="font-black text-sm text-rose-600">
+                      Mevcut Programı Sıfırla (Temizle)
+                    </h5>
+                    <p className="text-xs text-rose-900/70 mt-0.5">
+                      Arşivlemeden mevcut haftanın görevlerini sıfırlar, boş bir program açar.
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNewWeekModal(false)}
+                  className="px-5 py-2.5 rounded-xl font-bold text-xs bg-surface-container-high text-on-surface hover:bg-surface-container-highest transition-colors cursor-pointer"
+                >
+                  Vazgeç
+                </button>
               </div>
             </motion.div>
           </motion.div>

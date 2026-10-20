@@ -24,6 +24,7 @@ const navItems = [
   { icon: Trophy, label: 'Performans Sıralaması', path: '/leaderboard', roles: ['admin'] },
   { icon: ShieldCheck, label: 'Öğretmen Yönetimi', path: '/teachers', roles: ['admin'] },
   { icon: Users, label: 'Öğrencilerim', path: '/my-students', roles: ['teacher'] },
+  { icon: ClipboardCheck, label: 'Deneme Analiz & Takip', path: '/my-students?view=trials', roles: ['teacher'] },
   { icon: Calendar, label: 'Takvim & Görüşmeler', path: '/calendar', roles: ['teacher', 'admin'] },
   { icon: Users, label: 'Öğrenci Dizini', path: '/students', roles: ['admin'] },
   { icon: UserCircle, label: 'Öğrenci Portalı', path: '/portal', roles: ['student'] },

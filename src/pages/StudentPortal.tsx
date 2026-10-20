@@ -266,33 +266,54 @@ export function StudentPortal() {
   const loadData = async (forceCloud = false, targetId?: string) => {
     const params = new URLSearchParams(window.location.search);
     const queryStudentId = params.get('studentId') || params.get('id') || params.get('student');
+    const userRole = localStorage.getItem('userRole');
+    const lastViewedId = localStorage.getItem('lastViewedStudentId');
     
-    let id = targetId || queryStudentId || localStorage.getItem('currentUserId');
+    let id = targetId || queryStudentId;
+
     if (!id) {
-      const email = localStorage.getItem('currentUserEmail');
-      const name = localStorage.getItem('currentUserName');
-      const savedStudents = localStorage.getItem('students');
-      if (savedStudents) {
-        try {
-          const students = JSON.parse(savedStudents);
-          const currentStudent = students.find((s: any) => (email && s.email === email) || (name && s.name === name));
-          if (currentStudent) {
-            id = currentStudent.id;
+      if (userRole === 'student') {
+        id = localStorage.getItem('currentUserId');
+        if (!id) {
+          const email = localStorage.getItem('currentUserEmail');
+          const name = localStorage.getItem('currentUserName');
+          const savedStudents = localStorage.getItem('students');
+          if (savedStudents) {
+            try {
+              const students = JSON.parse(savedStudents);
+              const currentStudent = students.find((s: any) => (email && s.email === email) || (name && s.name === name));
+              if (currentStudent) {
+                id = currentStudent.id;
+              }
+            } catch {}
           }
-        } catch {}
+        }
+      } else {
+        // Teacher or Admin previewing
+        id = lastViewedId;
+        if (!id || id === 'admin' || id.startsWith('teacher_')) {
+          const savedStudents = localStorage.getItem('students');
+          if (savedStudents) {
+            try {
+              const students = JSON.parse(savedStudents);
+              if (students.length > 0) id = students[0].id;
+            } catch {}
+          }
+        }
       }
     }
 
-    if (!id) {
-      id = '1';
+    if (!id || id === 'admin' || id.startsWith('teacher_')) {
+      id = 'ruzgar_colak';
     }
 
-    localStorage.setItem('currentUserId', id);
     setStudentId(id);
 
-    // 1. Fetch student info from Firestore or cache
+    // 1. Fetch student info from Firestore (canonical doc)
+    let canonicalDocId = id;
+    let studentDoc: any = null;
     try {
-      const studentDoc = await getStudentById(id);
+      studentDoc = await getStudentById(id);
       if (studentDoc) {
         setStudentName(studentDoc.name || 'Öğrenci');
         setStudentGrade(studentDoc.grade || '');
@@ -300,57 +321,51 @@ export function StudentPortal() {
         if (studentDoc.weeklyQuestionGoal || studentDoc.weeklyTargetQuestions) {
           setWeeklyQuestionGoal(Number(studentDoc.weeklyQuestionGoal || studentDoc.weeklyTargetQuestions));
         }
-        if (studentDoc.id && studentDoc.id !== id) {
+        if (studentDoc.id) {
+          canonicalDocId = studentDoc.id;
           id = studentDoc.id;
           setStudentId(studentDoc.id);
-          localStorage.setItem('currentUserId', studentDoc.id);
+          if (userRole === 'student') {
+            localStorage.setItem('currentUserId', studentDoc.id);
+          }
         }
-        if (Array.isArray(studentDoc.tasks) && studentDoc.tasks.length > 0) {
-          setTasks(studentDoc.tasks);
-          const dayIndex = new Date().getDay();
-          const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
-          setTodayTasks(studentDoc.tasks.filter((t: Task) => t.day === todayName));
+        if (Array.isArray(studentDoc.archivedPrograms)) {
+          setArchivedPrograms(studentDoc.archivedPrograms);
         }
       }
     } catch (err) {
       console.warn('Student profile fetch error:', err);
     }
 
-    // 2. Fetch tasks directly from Firestore (and cache)
+    // 2. Fetch fresh tasks directly from Firestore for the canonical doc
     try {
-      const freshTasks = await getStudentTasks(id);
-      if (freshTasks && freshTasks.length > 0) {
+      const freshTasks = await getStudentTasks(canonicalDocId);
+      if (Array.isArray(freshTasks)) {
         setTasks(freshTasks);
         const dayIndex = new Date().getDay();
         const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
         setTodayTasks(freshTasks.filter((t: Task) => t.day === todayName));
-      } else {
-        const savedTasks = localStorage.getItem(`tasks_${id}`);
-        if (savedTasks) {
-          const localTasks = JSON.parse(savedTasks);
-          setTasks(localTasks);
-          const dayIndex = new Date().getDay();
-          const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
-          setTodayTasks(localTasks.filter((t: Task) => t.day === todayName));
-        }
       }
     } catch (err) {
-      console.warn('Error loading student tasks:', err);
+      console.warn('Error loading student tasks from Firestore:', err);
     }
 
-    const savedArchives = localStorage.getItem(`archived_programs_${id}`);
-    if (savedArchives) {
-      try {
-        setArchivedPrograms(JSON.parse(savedArchives));
-      } catch {}
+    // 3. Load archives - only fallback to local storage if Firestore has no archives
+    if (!studentDoc || !Array.isArray(studentDoc.archivedPrograms) || studentDoc.archivedPrograms.length === 0) {
+      const savedArchives = localStorage.getItem(`archived_programs_${canonicalDocId}`);
+      if (savedArchives) {
+        try {
+          setArchivedPrograms(JSON.parse(savedArchives));
+        } catch {}
+      }
     }
 
     try {
-      const cloudTrials = await getStudentTrials(id);
+      const cloudTrials = await getStudentTrials(canonicalDocId);
       if (cloudTrials.detailedTrials && cloudTrials.detailedTrials.length > 0) {
         setTrialHistory(cloudTrials.detailedTrials);
       } else {
-        const savedTrials = localStorage.getItem(`trial_results_detailed_${id}`);
+        const savedTrials = localStorage.getItem(`trial_results_detailed_${canonicalDocId}`);
         if (savedTrials) {
           try {
             setTrialHistory(JSON.parse(savedTrials));
@@ -358,7 +373,7 @@ export function StudentPortal() {
         }
       }
     } catch {
-      const savedTrials = localStorage.getItem(`trial_results_detailed_${id}`);
+      const savedTrials = localStorage.getItem(`trial_results_detailed_${canonicalDocId}`);
       if (savedTrials) {
         try {
           setTrialHistory(JSON.parse(savedTrials));
@@ -366,7 +381,7 @@ export function StudentPortal() {
       }
     }
 
-    const savedAi = localStorage.getItem(`ai_analysis_${id}`);
+    const savedAi = localStorage.getItem(`ai_analysis_${canonicalDocId}`);
     if (savedAi) {
       try {
         setStudentAiAnalysis(JSON.parse(savedAi));
@@ -436,10 +451,14 @@ export function StudentPortal() {
   }, [studentId, tasks]);
 
   const switchStudent = (newId: string) => {
-    localStorage.setItem('currentUserId', newId);
+    const userRole = localStorage.getItem('userRole');
+    if (userRole === 'student') {
+      localStorage.setItem('currentUserId', newId);
+    }
+    localStorage.setItem('lastViewedStudentId', newId);
     setStudentId(newId);
     setShowStudentMenu(false);
-    // Update URL query parameter without full reload
+    // Update URL query parameter
     const newUrl = `${window.location.pathname}?studentId=${newId}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
     loadData(true, newId);
@@ -477,11 +496,15 @@ export function StudentPortal() {
     try {
       const id = studentId || localStorage.getItem('currentUserId') || '1';
       const fresh = await getStudentTasks(id);
-      setTasks(fresh);
-      const dayIndex = new Date().getDay();
-      const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
-      setTodayTasks(fresh.filter((t: Task) => t.day === todayName));
-      setSyncToast('Ödevler güncellendi! ✨');
+      if (Array.isArray(fresh)) {
+        setTasks(fresh);
+        const dayIndex = new Date().getDay();
+        const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+        setTodayTasks(fresh.filter((t: Task) => t.day === todayName));
+        setSyncToast(`Program buluttan başarıyla güncellendi! (${fresh.length} görev) ✨`);
+      } else {
+        setSyncToast('Program güncel! ✨');
+      }
       setTimeout(() => setSyncToast(null), 3000);
     } catch (err) {
       console.error('Cloud sync error:', err);
