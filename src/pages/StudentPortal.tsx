@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  Play, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, 
+  Play, Pause, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, 
   ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, 
   Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus, Quote,
   RefreshCw, Cloud, Smartphone, LayoutGrid, ListFilter, Check, Share2, Copy, Users, ExternalLink,
@@ -19,7 +19,12 @@ import {
   getStudentTrials,
   getStudentById,
   subscribeStudents,
-  logoutFirebase
+  logoutFirebase,
+  saveStudentStudySession,
+  subscribeStudentStudySessions,
+  getStudentDailyStudySummary,
+  DailyStudySummary,
+  StudentStudySession
 } from '../lib/firestoreService';
 import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats, calculateNetScore } from '../lib/utils';
 import { db } from '../lib/firebase';
@@ -41,6 +46,8 @@ interface Task {
   empty?: number;
   net?: number;
   topic?: string;
+  durationMinutes?: number;
+  studySeconds?: number;
 }
 
 interface TrialData {
@@ -117,6 +124,230 @@ export function StudentPortal() {
   const [showStudentMenu, setShowStudentMenu] = useState<boolean>(false);
   const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
+  // ⏱️ Çalışma Sayacı & Süre Takip State'leri
+  const [activeTimerTaskId, setActiveTimerTaskId] = useState<string | null>(null);
+  const [activeTimerTaskTitle, setActiveTimerTaskTitle] = useState<string>('');
+  const [activeTimerTaskSubject, setActiveTimerTaskSubject] = useState<string>('');
+  const [activeTimerSeconds, setActiveTimerSeconds] = useState<number>(0);
+  const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
+  const [todayStudyMinutes, setTodayStudyMinutes] = useState<number>(0);
+  const [todayStudySessions, setTodayStudySessions] = useState<StudentStudySession[]>([]);
+  const [dailyStudySummary, setDailyStudySummary] = useState<DailyStudySummary>({});
+  const timerStartTimeRef = useRef<number | null>(null);
+
+  // Load and subscribe to student study sessions
+  useEffect(() => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    if (!targetStudentId) return;
+
+    // Restore cached timer if available
+    try {
+      const savedTimerRaw = localStorage.getItem(`active_timer_${targetStudentId}`);
+      if (savedTimerRaw) {
+        const savedTimer = JSON.parse(savedTimerRaw);
+        if (savedTimer && savedTimer.taskId) {
+          setActiveTimerTaskId(savedTimer.taskId);
+          setActiveTimerTaskTitle(savedTimer.taskTitle || 'Ödev Çalışması');
+          setActiveTimerTaskSubject(savedTimer.subject || 'Ders');
+          
+          let currentSec = savedTimer.seconds || 0;
+          if (savedTimer.isRunning && savedTimer.lastTickTime) {
+            const elapsed = Math.floor((Date.now() - savedTimer.lastTickTime) / 1000);
+            if (elapsed > 0 && elapsed < 86400) {
+              currentSec += elapsed;
+            }
+          }
+          setActiveTimerSeconds(currentSec);
+          setIsTimerRunning(savedTimer.isRunning || false);
+        }
+      }
+    } catch {}
+
+    const unsub = subscribeStudentStudySessions(targetStudentId, (sessions, summary) => {
+      setDailyStudySummary(summary);
+      const todayIso = new Date().toISOString().split('T')[0];
+      const todayData = summary[todayIso];
+      if (todayData) {
+        setTodayStudyMinutes(todayData.totalMinutes || Math.round((todayData.totalSeconds || 0) / 60));
+      } else {
+        setTodayStudyMinutes(0);
+      }
+      const todayList = sessions.filter(s => s.date === todayIso);
+      setTodayStudySessions(todayList);
+    });
+
+    return () => unsub();
+  }, [studentId]);
+
+  // Interval timer tick for live stopwatch
+  useEffect(() => {
+    let interval: any = null;
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+
+    if (isTimerRunning) {
+      interval = setInterval(() => {
+        setActiveTimerSeconds(prev => {
+          const next = prev + 1;
+          // Persist progress periodically
+          if (next % 5 === 0) {
+            try {
+              const current = localStorage.getItem(`active_timer_${targetStudentId}`);
+              if (current) {
+                const parsed = JSON.parse(current);
+                parsed.seconds = next;
+                parsed.lastTickTime = Date.now();
+                localStorage.setItem(`active_timer_${targetStudentId}`, JSON.stringify(parsed));
+              }
+            } catch {}
+          }
+          return next;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimerRunning, studentId]);
+
+  const formatTimerDisplay = (totalSec: number) => {
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) {
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleStartTaskTimer = (task: Task) => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    if (isTimerRunning && activeTimerTaskId === task.id) {
+      setSyncToast(`"${task.title}" için sayaç zaten aktif çalışıyor.`);
+      setTimeout(() => setSyncToast(null), 2500);
+      return;
+    }
+
+    const startingSec = task.studySeconds || 0;
+    setActiveTimerTaskId(task.id);
+    setActiveTimerTaskTitle(task.title || task.topic || 'Ödev Çalışması');
+    setActiveTimerTaskSubject(task.subject || 'Ders');
+    setActiveTimerSeconds(startingSec);
+    setIsTimerRunning(true);
+    timerStartTimeRef.current = Date.now();
+
+    localStorage.setItem(`active_timer_${targetStudentId}`, JSON.stringify({
+      taskId: task.id,
+      taskTitle: task.title || task.topic || 'Ödev Çalışması',
+      subject: task.subject || 'Ders',
+      seconds: startingSec,
+      isRunning: true,
+      startedAt: new Date().toISOString(),
+      lastTickTime: Date.now()
+    }));
+
+    setSyncToast(`⏱️ "${task.title}" için çalışma sayacı başlatıldı! Başarılar! 🚀`);
+    setTimeout(() => setSyncToast(null), 3500);
+  };
+
+  const handlePauseTaskTimer = () => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    setIsTimerRunning(false);
+    try {
+      const current = localStorage.getItem(`active_timer_${targetStudentId}`);
+      if (current) {
+        const parsed = JSON.parse(current);
+        parsed.isRunning = false;
+        parsed.seconds = activeTimerSeconds;
+        parsed.lastTickTime = Date.now();
+        localStorage.setItem(`active_timer_${targetStudentId}`, JSON.stringify(parsed));
+      }
+    } catch {}
+    setSyncToast('⏱️ Çalışma sayacı duraklatıldı.');
+    setTimeout(() => setSyncToast(null), 2500);
+  };
+
+  const handleResumeTaskTimer = () => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    setIsTimerRunning(true);
+    try {
+      const current = localStorage.getItem(`active_timer_${targetStudentId}`);
+      if (current) {
+        const parsed = JSON.parse(current);
+        parsed.isRunning = true;
+        parsed.lastTickTime = Date.now();
+        localStorage.setItem(`active_timer_${targetStudentId}`, JSON.stringify(parsed));
+      }
+    } catch {}
+    setSyncToast('⏱️ Çalışma sayacı devam ediyor...');
+    setTimeout(() => setSyncToast(null), 2500);
+  };
+
+  const handleFinishTaskTimer = async (completedTask = true) => {
+    if (!activeTimerTaskId) return;
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    const durationSec = activeTimerSeconds;
+    const currentTaskId = activeTimerTaskId;
+    const currentTitle = activeTimerTaskTitle;
+    const currentSubject = activeTimerTaskSubject;
+
+    setIsTimerRunning(false);
+    setActiveTimerTaskId(null);
+    setActiveTimerSeconds(0);
+    localStorage.removeItem(`active_timer_${targetStudentId}`);
+
+    if (durationSec < 15) {
+      setSyncToast('Çalışma süresi 15 saniyeden kısa olduğu için kaydedilmedi.');
+      setTimeout(() => setSyncToast(null), 3000);
+      return;
+    }
+
+    const minutes = Math.max(1, Math.round(durationSec / 60));
+
+    // Save session to Firestore and update dailyStudySummary
+    await saveStudentStudySession(targetStudentId, {
+      taskId: currentTaskId,
+      taskTitle: currentTitle,
+      subject: currentSubject,
+      durationSeconds: durationSec,
+      startedAt: new Date(Date.now() - durationSec * 1000).toISOString(),
+      endedAt: new Date().toISOString()
+    });
+
+    // Update task studySeconds and durationMinutes
+    const updatedTasks = tasks.map(t => {
+      if (t.id === currentTaskId) {
+        const totalSec = (t.studySeconds || 0) + durationSec;
+        return {
+          ...t,
+          completed: completedTask ? true : t.completed,
+          studySeconds: totalSec,
+          durationMinutes: Math.round(totalSec / 60)
+        };
+      }
+      return t;
+    });
+
+    setTasks(updatedTasks);
+    await saveStudentTasks(targetStudentId, updatedTasks);
+
+    const dayIndex = new Date().getDay();
+    const todayName = DAYS_TR[dayIndex === 0 ? 6 : dayIndex - 1];
+    setTodayTasks(updatedTasks.filter(t => t.day === todayName));
+
+    setSyncToast(`⏱️ Harika! "${currentTitle}" için ${minutes} dakikalık çalışma kaydedildi ve öğretmenine iletildi! 🎉`);
+    setTimeout(() => setSyncToast(null), 4500);
+  };
+
+  const handleCancelTimer = () => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    setIsTimerRunning(false);
+    setActiveTimerTaskId(null);
+    setActiveTimerSeconds(0);
+    localStorage.removeItem(`active_timer_${targetStudentId}`);
+    setSyncToast('Çalışma sayacı sıfırlandı.');
+    setTimeout(() => setSyncToast(null), 2500);
+  };
 
   // Daily & Incomplete Tasks Reminder Logic (İlk girişte ve 1 saat aralıklarla hatırlatılır)
   const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -1043,18 +1274,50 @@ export function StudentPortal() {
           <div className="absolute top-[-20%] right-[-10%] w-96 h-96 bg-white/10 rounded-full blur-3xl" />
           <div className="absolute bottom-[-10%] right-10 w-64 h-64 bg-secondary/20 rounded-full blur-2xl" />
 
-          {/* Countdown Badge */}
-          {countdown && (
-            <div className="mt-6 md:mt-0 md:absolute md:top-8 md:right-8 bg-white/20 backdrop-blur-md border border-white/30 px-4 sm:px-6 py-2.5 sm:py-3 rounded-2xl flex items-center gap-3 shadow-xl w-fit">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                <Timer className="w-5 h-5 text-white" />
+          {/* Countdown & Daily Study Time Badges */}
+          <div className="mt-6 md:mt-0 md:absolute md:top-8 md:right-8 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            {/* Daily Study Time Badge */}
+            <div className="bg-white/20 backdrop-blur-md border border-white/30 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl flex items-center gap-3 shadow-xl w-fit">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-500/30 text-emerald-300 rounded-xl flex items-center justify-center">
+                <Clock className={cn("w-5 h-5", isTimerRunning && "animate-spin text-emerald-200")} style={{ animationDuration: '4s' }} />
               </div>
               <div>
-                <p className="text-[10px] font-black text-white/60 uppercase tracking-widest leading-none mb-1">{countdown.label} Sayacı</p>
-                <p className="text-lg sm:text-xl font-black text-white leading-none">{countdown.days} Gün Kaldı</p>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <p className="text-[10px] font-black text-white/70 uppercase tracking-widest leading-none">Bugünkü Çalışma</p>
+                  {isTimerRunning && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                  )}
+                </div>
+                <p className="text-base sm:text-xl font-black text-white leading-none">
+                  {todayStudyMinutes > 0 ? (
+                    <span>
+                      {Math.floor(todayStudyMinutes / 60) > 0 ? `${Math.floor(todayStudyMinutes / 60)} sa ` : ''}
+                      {todayStudyMinutes % 60} dk
+                    </span>
+                  ) : isTimerRunning ? (
+                    <span className="text-emerald-300 font-mono text-sm">
+                      {formatTimerDisplay(activeTimerSeconds)}
+                    </span>
+                  ) : (
+                    <span>0 dk</span>
+                  )}
+                </p>
               </div>
             </div>
-          )}
+
+            {/* Countdown Badge */}
+            {countdown && (
+              <div className="bg-white/20 backdrop-blur-md border border-white/30 px-4 sm:px-6 py-2.5 sm:py-3 rounded-2xl flex items-center gap-3 shadow-xl w-fit">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                  <Timer className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-white/60 uppercase tracking-widest leading-none mb-1">{countdown.label} Sayacı</p>
+                  <p className="text-lg sm:text-xl font-black text-white leading-none">{countdown.days} Gün Kaldı</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Progress Overview */}
@@ -1748,23 +2011,62 @@ export function StudentPortal() {
                                             <span />
                                           )}
 
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              toggleTask(task.id);
-                                            }}
-                                            className={cn(
-                                              "w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0 active:scale-95",
-                                              task.completed 
-                                                ? "bg-tertiary border-tertiary text-white shadow-2xs" 
-                                                : "border-outline-variant/60 hover:border-primary text-transparent"
+                                          <div className="flex items-center gap-1">
+                                            {/* Stopwatch Trigger */}
+                                            {activeTimerTaskId === task.id ? (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleFinishTaskTimer(true);
+                                                }}
+                                                className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-mono text-[9px] font-black flex items-center gap-0.5 animate-pulse cursor-pointer"
+                                                title="Sayacı Durdur ve Kaydet"
+                                              >
+                                                <Timer className="w-2.5 h-2.5" />
+                                                <span>{formatTimerDisplay(activeTimerSeconds)}</span>
+                                              </button>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleStartTaskTimer(task);
+                                                }}
+                                                className={cn(
+                                                  "p-1 rounded hover:bg-primary/10 transition-colors text-on-surface-variant hover:text-primary cursor-pointer",
+                                                  task.durationMinutes && "text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                                                )}
+                                                title={task.durationMinutes ? `${task.durationMinutes} dk çalışıldı. Sayacı tekrar başlat` : "Çalışma sayacını başlat"}
+                                              >
+                                                <Timer className="w-3 h-3" />
+                                              </button>
                                             )}
-                                            aria-label="Tamamla"
-                                          >
-                                            <Check className="w-3 h-3 text-white" />
-                                          </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleTask(task.id);
+                                              }}
+                                              className={cn(
+                                                "w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0 active:scale-95 cursor-pointer",
+                                                task.completed 
+                                                  ? "bg-tertiary border-tertiary text-white shadow-2xs" 
+                                                  : "border-outline-variant/60 hover:border-primary text-transparent"
+                                              )}
+                                              aria-label="Tamamla"
+                                            >
+                                              <Check className="w-3 h-3 text-white" />
+                                            </button>
+                                          </div>
                                         </div>
+                                        {task.durationMinutes && activeTimerTaskId !== task.id && (
+                                          <div className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                            <span>{task.durationMinutes} dk çalışıldı</span>
+                                          </div>
+                                        )}
                                       </div>
                                     ))
                                   )}
@@ -2249,6 +2551,72 @@ export function StudentPortal() {
                             </button>
                           </div>
                         ) : null}
+
+                        {/* ⏱️ Çalışma Sayacı & Süre Rozeti */}
+                        <div className="mt-2.5 pt-1.5 border-t border-outline-variant/10 flex items-center flex-wrap gap-2">
+                          {activeTimerTaskId === task.id ? (
+                            <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-600 text-white rounded-xl text-[11px] font-black shadow-sm shadow-emerald-600/30">
+                              <Timer className={cn("w-3.5 h-3.5", isTimerRunning && "animate-spin")} style={{ animationDuration: '2s' }} />
+                              <span className="font-mono tracking-wider">{formatTimerDisplay(activeTimerSeconds)}</span>
+                              {isTimerRunning ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePauseTaskTimer();
+                                  }}
+                                  className="ml-1 p-0.5 hover:bg-white/20 rounded cursor-pointer"
+                                  title="Duraklat"
+                                >
+                                  <Pause className="w-3 h-3" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleResumeTaskTimer();
+                                  }}
+                                  className="ml-1 p-0.5 hover:bg-white/20 rounded cursor-pointer"
+                                  title="Devam Et"
+                                >
+                                  <Play className="w-3 h-3 fill-current" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleFinishTaskTimer(true);
+                                }}
+                                className="ml-0.5 px-2 py-0.5 bg-white text-emerald-800 rounded-lg text-[10px] font-black hover:bg-white/90 shadow-2xs cursor-pointer"
+                                title="Çalışmayı Bitir ve Kaydet"
+                              >
+                                Bitir & Kaydet
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartTaskTimer(task);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-surface-container-high hover:bg-primary hover:text-white text-on-surface-variant text-[10px] font-extrabold transition-all border border-outline-variant/15 active:scale-95 cursor-pointer"
+                              title="Bu ödeve başlarken sayacı başlat"
+                            >
+                              <Timer className="w-3 h-3 text-primary group-hover:text-white" />
+                              <span>{task.durationMinutes ? `${task.durationMinutes} dk çalışıldı • Tekrar Başlat` : '⏱️ Sayacı Başlat'}</span>
+                            </button>
+                          )}
+
+                          {task.durationMinutes && activeTimerTaskId !== task.id && (
+                            <span className="text-[10px] font-black text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-lg border border-emerald-300/60 inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>{task.durationMinutes} dk çalışıldı</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Video Button */}
@@ -4128,6 +4496,84 @@ export function StudentPortal() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ⏱️ Floating Live Study Stopwatch Widget */}
+      {activeTimerTaskId && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-xl bg-slate-900/95 backdrop-blur-md text-white px-4 sm:px-6 py-3 sm:py-3.5 rounded-3xl shadow-2xl border border-white/20 flex items-center justify-between gap-3 sm:gap-4 animate-in fade-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={cn(
+              "w-10 h-10 rounded-2xl flex items-center justify-center shrink-0",
+              isTimerRunning ? "bg-emerald-500/20 text-emerald-400 ring-2 ring-emerald-500/40" : "bg-amber-500/20 text-amber-400 ring-2 ring-amber-500/30"
+            )}>
+              <Timer className={cn("w-5 h-5", isTimerRunning && "animate-spin")} style={{ animationDuration: '3s' }} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/10 text-white/90 truncate max-w-[100px]">
+                  {activeTimerTaskSubject}
+                </span>
+                <span className={cn(
+                  "text-[10px] font-bold",
+                  isTimerRunning ? "text-emerald-300" : "text-amber-300"
+                )}>
+                  {isTimerRunning ? 'Sayılıyor...' : 'Duraklatıldı'}
+                </span>
+              </div>
+              <p className="font-extrabold text-xs sm:text-sm text-white truncate max-w-[150px] sm:max-w-[260px]">
+                {activeTimerTaskTitle}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="text-right pr-1 sm:pr-2">
+              <span className="font-mono text-base sm:text-xl font-black text-emerald-400 tracking-wider">
+                {formatTimerDisplay(activeTimerSeconds)}
+              </span>
+            </div>
+
+            {isTimerRunning ? (
+              <button
+                type="button"
+                onClick={handlePauseTaskTimer}
+                className="p-2 sm:p-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white transition-all active:scale-95 cursor-pointer"
+                title="Duraklat"
+              >
+                <Pause className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResumeTaskTimer}
+                className="p-2 sm:p-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white transition-all active:scale-95 shadow-md shadow-emerald-500/30 cursor-pointer"
+                title="Devam Et"
+              >
+                <Play className="w-4 h-4 fill-current" />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => handleFinishTaskTimer(true)}
+              className="px-3 sm:px-4 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black transition-all active:scale-95 flex items-center gap-1.5 shadow-md shadow-emerald-500/30 cursor-pointer"
+              title="Ödevi Bitir ve Süreyi Kaydet"
+            >
+              <Check className="w-4 h-4" />
+              <span className="hidden sm:inline">Bitir & Kaydet</span>
+              <span className="sm:hidden">Bitir</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCancelTimer}
+              className="p-1.5 sm:p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+              title="Sayacı İptal Et"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

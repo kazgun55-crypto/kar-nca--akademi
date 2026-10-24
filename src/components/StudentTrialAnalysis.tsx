@@ -21,7 +21,8 @@ import {
   FileText, 
   ArrowRight,
   HelpCircle,
-  Filter
+  Filter,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -43,6 +44,7 @@ import {
 } from '../lib/curriculum';
 import { calculateNetScore } from '../lib/utils';
 import { getStudentTrials, saveStudentTrials } from '../lib/firestoreService';
+import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
 
 export interface DetailedTrialResult {
   id: string;
@@ -111,6 +113,69 @@ export function StudentTrialAnalysis({
       wrongTopics: string[];
     };
   }>({});
+
+  // 🤖 AI Trial Mistake Diagnosis State
+  const [mistakeAiAnalysis, setMistakeAiAnalysis] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem(`trial_mistake_ai_${student.id}`);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isAnalyzingMistakes, setIsAnalyzingMistakes] = useState(false);
+
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem(`trial_mistake_ai_${student.id}`);
+      setMistakeAiAnalysis(cached ? JSON.parse(cached) : null);
+    } catch {
+      setMistakeAiAnalysis(null);
+    }
+  }, [student.id]);
+
+  const handleRunMistakeAnalysis = async () => {
+    setIsAnalyzingMistakes(true);
+    try {
+      const savedTasks = JSON.parse(localStorage.getItem(`tasks_${student.id}`) || '[]');
+      const savedErrors = JSON.parse(localStorage.getItem(`topic_errors_${student.id}`) || '[]');
+      const savedArchives = JSON.parse(localStorage.getItem(`archived_programs_${student.id}`) || '[]');
+
+      const result = await fetchAiAnalysisSafely({
+        studentName: student.name,
+        grade: student.grade,
+        tasks: savedTasks,
+        trialResults: simpleTrials,
+        detailedTrials: detailedTrials,
+        topicErrors: savedErrors,
+        archivedPrograms: savedArchives
+      });
+
+      // Strict post-processing: purge any occurrence of "istikrarlı" or variants
+      const cleansedSummary = (result.trialAnalysis?.summary || '')
+        .replace(/istikrarlı bir seyir izlemektedir/gi, 'net kaybı yaşanmaktadır')
+        .replace(/istikrarlı bir şekilde/gi, 'sürekli olarak')
+        .replace(/istikrarlı/gi, 'düzenli')
+        .replace(/istikrar/gi, 'durum');
+
+      const cleansedData = {
+        ...result,
+        trialAnalysis: {
+          ...result.trialAnalysis,
+          summary: cleansedSummary
+        }
+      };
+
+      setMistakeAiAnalysis(cleansedData);
+      localStorage.setItem(`trial_mistake_ai_${student.id}`, JSON.stringify(cleansedData));
+      showToast('Yapay zeka deneme yanlış analizi tamamlandı! 🎯');
+    } catch (err: any) {
+      console.error(err);
+      showToast('Analiz yapılırken hata oluştu: ' + (err.message || ''));
+    } finally {
+      setIsAnalyzingMistakes(false);
+    }
+  };
 
   const gradeCategory = getGradeCategory(student.grade);
   const penalty = gradeCategory === '8' ? 3 : 4; // 3 wrong = 1 correct for LGS, 4 for YKS
@@ -747,6 +812,144 @@ export function StudentTrialAnalysis({
                 )}
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* 🤖 5.5 Yapay Zeka Deneme Yanlış & Hata Teşhis Analizi (Sadece Yanlışlar Üzerine) */}
+      <div className="bg-gradient-to-br from-surface-container-lowest via-surface-container-low/70 to-surface-container-lowest p-6 sm:p-8 rounded-[2.5rem] border border-rose-500/20 shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-outline-variant/10">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
+              <Sparkles className="w-6 h-6 text-rose-600" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-lg font-black text-on-surface">
+                  Yapay Zeka Deneme Yanlış & Hata Teşhis Analizi
+                </h4>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300/40">
+                  Sadece Yanlışlar ve Kayıplar
+                </span>
+              </div>
+              <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                Yapay zeka yalnızca yapılan hataları, net kaybettiren konuları ve telafi adımlarını teşhis eder; genel övgüler içermez.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRunMistakeAnalysis}
+            disabled={isAnalyzingMistakes}
+            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-md shadow-rose-600/20 active:scale-95 disabled:opacity-50 cursor-pointer self-start sm:self-auto shrink-0"
+          >
+            <RefreshCw className={`w-4 h-4 ${isAnalyzingMistakes ? 'animate-spin' : ''}`} />
+            <span>{isAnalyzingMistakes ? 'Yanlışlar Teşhis Ediliyor...' : 'Yapay Zeka Yanlış Analizi Yap'}</span>
+          </button>
+        </div>
+
+        {isAnalyzingMistakes ? (
+          <div className="py-12 text-center space-y-3">
+            <div className="w-10 h-10 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-xs font-bold text-rose-700">Denemelerdeki yanlış sorular ve kayıp netler inceleniyor...</p>
+          </div>
+        ) : mistakeAiAnalysis ? (
+          <div className="space-y-6">
+            {/* 1. Teşhis Özeti (Sadece Yanlışlar ve Kayıp Netler) */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-rose-50/60 border border-rose-200/80 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <h5 className="font-extrabold text-xs sm:text-sm text-rose-950 uppercase tracking-wide">
+                  Yanlış ve Hata Teşhis Raporu
+                </h5>
+              </div>
+              <p className="text-xs sm:text-sm text-rose-900 leading-relaxed font-medium">
+                {mistakeAiAnalysis.trialAnalysis?.summary || 'Öğrencinin deneme sınavlarında ağırlıklı olarak yanlış yaptığı branşlar ve eksik kazanımları incelendi.'}
+              </p>
+            </div>
+
+            {/* 2. Branş Bazlı Yanlış ve Net Kaybı Tablosu */}
+            {subjectStats.filter(s => s.avgIncorrect > 0 || s.latestIncorrect > 0).length > 0 && (
+              <div className="space-y-2.5">
+                <h5 className="text-xs font-black uppercase text-on-surface-variant tracking-wider flex items-center gap-1.5">
+                  <BarChart3 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Branş Bazında Yanlışlar ve Net Kaybı:</span>
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {subjectStats.filter(s => s.avgIncorrect > 0 || s.latestIncorrect > 0).map((sub, idx) => {
+                    const lostNet = penalty ? (sub.latestIncorrect / penalty).toFixed(2) : '0';
+                    return (
+                      <div key={idx} className="p-3.5 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-xs text-on-surface">{sub.subject}</span>
+                          <span className="text-[10px] font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md">
+                            -{lostNet} Net Kayıp
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-on-surface-variant font-medium">Son Deneme Yanlışı:</span>
+                          <span className="font-black text-rose-700">{sub.latestIncorrect} Yanlış</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-on-surface-variant font-medium">Genel Yanlış Ort.:</span>
+                          <span className="font-bold text-on-surface">{sub.avgIncorrect.toFixed(1)} Yanlış</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Acil Telafi Eylem Planı (Yapay Zeka Tarafından Üretilen Eylemler) */}
+            {mistakeAiAnalysis.weeklySuggestions && mistakeAiAnalysis.weeklySuggestions.length > 0 && (
+              <div className="space-y-2.5 pt-2 border-t border-outline-variant/10">
+                <h5 className="text-xs font-black uppercase text-on-surface-variant tracking-wider flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5 text-primary" />
+                  <span>Yanlış Yapılan Konular İçin Telafi Ödevleri:</span>
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {mistakeAiAnalysis.weeklySuggestions.map((sug: any, sIdx: number) => (
+                    <div key={sIdx} className="p-3.5 bg-surface-container-low rounded-2xl border border-outline-variant/10 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                          {sug.subject || 'Telafi'}
+                        </span>
+                        <p className="font-extrabold text-xs text-on-surface truncate mt-1">
+                          {sug.topic || sug.title}
+                        </p>
+                        <p className="text-[10px] font-bold text-rose-700 mt-0.5">
+                          {sug.suggestedAmount || sug.neededAction || '30 Soru Çözümü'}
+                        </p>
+                      </div>
+                      {onAssignTopicTask && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onAssignTopicTask(sug.subject || 'Genel', sug.topic || sug.title);
+                            showToast(`"${sug.topic || sug.title}" telafi ödevi olarak aktarıldı! 🚀`);
+                          }}
+                          className="px-2.5 py-1.5 bg-white hover:bg-primary hover:text-white text-primary border border-primary/20 rounded-xl text-[11px] font-bold transition-all shrink-0 shadow-2xs flex items-center gap-1 cursor-pointer"
+                          title="Bu konuyu haftalık plana ekle"
+                        >
+                          <span>Ödev Ata</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="py-8 text-center space-y-2 bg-surface-container-low/50 rounded-2xl border border-dashed border-outline-variant/20">
+            <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
+            <h5 className="text-sm font-bold text-on-surface">Öğrenci İçin Yanlış Analizi Henüz Çalıştırılmadı</h5>
+            <p className="text-xs text-on-surface-variant max-w-md mx-auto">
+              Yukarıdaki "Yapay Zeka Yanlış Analizi Yap" butonuna tıklayarak öğrencinin denemelerindeki net kayıplarını ve hata yaptığı konuları anında teşhis edebilirsiniz.
+            </p>
           </div>
         )}
       </div>

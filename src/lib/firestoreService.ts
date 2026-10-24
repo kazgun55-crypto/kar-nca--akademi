@@ -1467,4 +1467,267 @@ export function subscribeTeacherMeetings(teacherId: string, callback: (meetings:
   }
 }
 
+// --------------------------------------------------------------------------
+// Student Study Time & Timer (Çalışma Sayacı / Kronometre) Services
+// --------------------------------------------------------------------------
+
+export interface StudentStudySession {
+  id: string;
+  studentId: string;
+  taskId?: string;
+  taskTitle: string;
+  subject: string;
+  durationMinutes: number;
+  durationSeconds: number;
+  date: string; // YYYY-MM-DD
+  startedAt?: string;
+  endedAt?: string;
+  completedAt?: string;
+}
+
+export interface DailyStudySummary {
+  [date: string]: {
+    totalMinutes: number;
+    totalSeconds: number;
+    sessionCount: number;
+    sessions: StudentStudySession[];
+  };
+}
+
+export async function saveStudentStudySession(
+  studentId: string,
+  sessionData: {
+    taskId?: string;
+    taskTitle: string;
+    subject: string;
+    durationSeconds: number;
+    durationMinutes?: number;
+    date?: string;
+    startedAt?: string;
+    endedAt?: string;
+    completedAt?: string;
+  }
+): Promise<StudentStudySession> {
+  const cleanId = (studentId || (typeof localStorage !== 'undefined' ? localStorage.getItem('currentUserId') : '') || '1').trim();
+  const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  const now = new Date();
+  const todayDateStr = sessionData.date || now.toISOString().split('T')[0];
+
+  let canonicalId = cleanId;
+  try {
+    const student = await getStudentById(cleanId);
+    if (student && student.id) canonicalId = student.id;
+  } catch {}
+
+  const fullSession: StudentStudySession = {
+    ...cleanForFirestore(sessionData),
+    id: sessionId,
+    studentId: canonicalId,
+    date: todayDateStr,
+    durationMinutes: Number(sessionData.durationMinutes) || Math.round((Number(sessionData.durationSeconds) || 0) / 60) || 1,
+    durationSeconds: Number(sessionData.durationSeconds) || (Number(sessionData.durationMinutes) || 1) * 60,
+    startedAt: sessionData.startedAt || now.toISOString(),
+    endedAt: sessionData.endedAt || now.toISOString(),
+    completedAt: sessionData.completedAt || sessionData.endedAt || now.toISOString()
+  };
+
+  // 1. Update local storage sessions list
+  const sessionKey = `study_sessions_${canonicalId}`;
+  let existingSessions: StudentStudySession[] = [];
+  try {
+    const raw = localStorage.getItem(sessionKey);
+    if (raw) existingSessions = JSON.parse(raw);
+  } catch {}
+  const updatedSessions = [fullSession, ...existingSessions.filter(s => s.id !== sessionId)];
+
+  // 2. Build Daily Study Summary
+  const summaryKey = `daily_study_summary_${canonicalId}`;
+  let currentSummary: DailyStudySummary = {};
+  try {
+    const rawSum = localStorage.getItem(summaryKey);
+    if (rawSum) currentSummary = JSON.parse(rawSum);
+  } catch {}
+
+  if (!currentSummary[todayDateStr]) {
+    currentSummary[todayDateStr] = {
+      totalMinutes: 0,
+      totalSeconds: 0,
+      sessionCount: 0,
+      sessions: []
+    };
+  }
+
+  currentSummary[todayDateStr].totalMinutes += fullSession.durationMinutes;
+  currentSummary[todayDateStr].totalSeconds += fullSession.durationSeconds;
+  currentSummary[todayDateStr].sessionCount += 1;
+  currentSummary[todayDateStr].sessions = [
+    fullSession,
+    ...(currentSummary[todayDateStr].sessions || []).filter(s => s.id !== sessionId)
+  ];
+
+  // Also update today's task in student's tasks if taskId provided
+  if (fullSession.taskId) {
+    try {
+      const tasksKey = `tasks_${canonicalId}`;
+      const savedTasksRaw = localStorage.getItem(tasksKey);
+      if (savedTasksRaw) {
+        const studentTaskList = JSON.parse(savedTasksRaw);
+        const updatedTaskList = studentTaskList.map((t: any) => {
+          if (t.id === fullSession.taskId) {
+            const currentDur = Number(t.durationMinutes) || 0;
+            return {
+              ...t,
+              durationMinutes: currentDur + fullSession.durationMinutes,
+              studySeconds: (Number(t.studySeconds) || 0) + fullSession.durationSeconds
+            };
+          }
+          return t;
+        });
+        localStorage.setItem(tasksKey, JSON.stringify(updatedTaskList));
+        await saveStudentTasks(canonicalId, updatedTaskList);
+      }
+    } catch (err) {
+      console.warn('Error updating task duration:', err);
+    }
+  }
+
+  // Save to LocalStorage
+  localStorage.setItem(sessionKey, JSON.stringify(updatedSessions));
+  localStorage.setItem(`study_sessions_${cleanId}`, JSON.stringify(updatedSessions));
+  localStorage.setItem(summaryKey, JSON.stringify(currentSummary));
+  localStorage.setItem(`daily_study_summary_${cleanId}`, JSON.stringify(currentSummary));
+
+  // Update in global students list in localStorage
+  try {
+    const savedStudents = localStorage.getItem('students');
+    if (savedStudents) {
+      const list = JSON.parse(savedStudents);
+      const updatedList = list.map((s: any) => {
+        if (s.id === canonicalId || s.id === cleanId) {
+          return {
+            ...s,
+            dailyStudySummary: currentSummary,
+            totalStudyMinutesToday: currentSummary[todayDateStr]?.totalMinutes || 0
+          };
+        }
+        return s;
+      });
+      localStorage.setItem('students', JSON.stringify(updatedList));
+    }
+  } catch {}
+
+  // 3. Save to Firestore
+  try {
+    await setDoc(doc(db, 'study_sessions', sessionId), fullSession, { merge: true });
+    await setDoc(doc(db, 'students', canonicalId), {
+      dailyStudySummary: currentSummary,
+      lastStudySession: fullSession,
+      lastStudyUpdate: now.toISOString()
+    }, { merge: true });
+
+    if (cleanId !== canonicalId) {
+      await setDoc(doc(db, 'students', cleanId), {
+        dailyStudySummary: currentSummary,
+        lastStudySession: fullSession,
+        lastStudyUpdate: now.toISOString()
+      }, { merge: true });
+    }
+  } catch (err) {
+    console.warn('Firestore save study session error:', err);
+  } finally {
+    window.dispatchEvent(new CustomEvent('student_study_updated', {
+      detail: { studentId: canonicalId, session: fullSession, summary: currentSummary }
+    }));
+    window.dispatchEvent(new Event('storage'));
+  }
+
+  return fullSession;
+}
+
+export function getStudentDailyStudySummary(studentId: string): DailyStudySummary {
+  if (!studentId) return {};
+  const cleanId = studentId.trim();
+  try {
+    const raw = localStorage.getItem(`daily_study_summary_${cleanId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+
+  // Fallback to students list in localStorage
+  try {
+    const saved = localStorage.getItem('students');
+    if (saved) {
+      const list = JSON.parse(saved);
+      const student = list.find((s: any) => s.id === cleanId);
+      if (student?.dailyStudySummary) return student.dailyStudySummary;
+    }
+  } catch {}
+
+  return {};
+}
+
+export function subscribeStudentStudySessions(
+  studentId: string,
+  callback: (sessions: StudentStudySession[], summary: DailyStudySummary) => void
+): () => void {
+  if (!studentId) {
+    callback([], {});
+    return () => {};
+  }
+  const cleanId = studentId.trim();
+
+  // Snappy local delivery
+  let initialSessions: StudentStudySession[] = [];
+  try {
+    const raw = localStorage.getItem(`study_sessions_${cleanId}`);
+    if (raw) initialSessions = JSON.parse(raw);
+  } catch {}
+  const initialSummary = getStudentDailyStudySummary(cleanId);
+  callback(initialSessions, initialSummary);
+
+  let unsubs: (() => void)[] = [];
+  let isCleanedUp = false;
+
+  const setupListener = async () => {
+    let targetDocId = cleanId;
+    try {
+      const student = await getStudentById(cleanId);
+      if (student && student.id) targetDocId = student.id;
+    } catch {}
+
+    if (isCleanedUp) return;
+
+    try {
+      const u = onSnapshot(doc(db, 'students', targetDocId), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && data.dailyStudySummary) {
+            localStorage.setItem(`daily_study_summary_${cleanId}`, JSON.stringify(data.dailyStudySummary));
+            localStorage.setItem(`daily_study_summary_${targetDocId}`, JSON.stringify(data.dailyStudySummary));
+            callback(initialSessions, data.dailyStudySummary);
+          }
+        }
+      }, () => {});
+      unsubs.push(u);
+    } catch {}
+  };
+
+  setupListener();
+
+  const handleCustomEvent = (e: any) => {
+    if (e.detail && (e.detail.studentId === cleanId || e.detail.cleanId === cleanId)) {
+      const sessionsRaw = localStorage.getItem(`study_sessions_${cleanId}`);
+      const sList = sessionsRaw ? JSON.parse(sessionsRaw) : [];
+      callback(sList, e.detail.summary || {});
+    }
+  };
+  window.addEventListener('student_study_updated', handleCustomEvent);
+
+  return () => {
+    isCleanedUp = true;
+    unsubs.forEach(u => u());
+    window.removeEventListener('student_study_updated', handleCustomEvent);
+  };
+}
+
+
 

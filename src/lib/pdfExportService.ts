@@ -354,7 +354,7 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
             <span style="color: ${successRate >= 80 ? '#16a34a' : '#ea580c'}; font-weight: 800;">%${successRate}</span>
           </div>
           <p style="margin: 6px 0 0 0; font-size: 8pt; color: #64748b; line-height: 1.35;">
-            ${weekly.summary || 'Öğrencinin ödev tamamlama ve soru çözme istikrarı düzenli olarak değerlendirilmektedir.'}
+            ${weekly.summary || 'Öğrencinin ödev tamamlama ve soru çözme performansı düzenli olarak değerlendirilmektedir.'}
           </p>
         </div>
 

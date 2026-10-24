@@ -389,10 +389,14 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     averageTrialNet: Number(averageTrialNet.toFixed(2)),
     targetNet: targetTrialNet,
     trend: trialTrend,
-    trendLabel: trialTrend === 'rising' ? 'Yükseliş Trendinde ↗️' : trialTrend === 'declining' ? 'Dikkat Gerektiren Düşüş ↘️' : 'İstikrarlı Seyir ➡️',
+    trendLabel: trialTrend === 'rising' ? 'Yükseliş Trendinde ↗️' : trialTrend === 'declining' ? 'Dikkat Gerektiren Düşüş ↘️' : 'Net Takibi ➡️',
     summary: combinedTrials.length > 0
-      ? `Öğrencinin kayıtlı ${combinedTrials.length} deneme sınavı incelendiğinde; son deneme neti ${latestTrialNet.toFixed(1)}, en yüksek neti ${highestTrialNet.toFixed(1)}, genel ortalaması ${averageTrialNet.toFixed(1)} olarak gerçekleşmiştir. Net gidişatı ${trialTrend === 'rising' ? 'yükseliş eğilimindedir' : 'istikrarlıdır'}. Özellikle denemelerde süre baskısı ve optik işaretleme disiplini ön plana çıkmaktadır.`
-      : `Sistemde henüz detaylı deneme sınavı kaydı bulunmamaktadır. Deneme sınavı sonuçları girildikçe branş bazlı net eğrileri ve zaman yönetimi analizi burada ayrıntılandırılacaktır.`,
+      ? (() => {
+          const topMistakes = sortedErrors.slice(0, 4).map(e => `${e.subject} (${e.topic}: ${e.count} yanlış)`).join(', ');
+          const totalTrialIncorrect = Object.values(trialBranchStats).reduce((acc, b) => acc + (b.incorrect || 0), 0);
+          return `Deneme sınavlarında net ve puan kaybına sebep olan hatalar incelendiğinde; ${totalTrialIncorrect > 0 ? `toplam ${totalTrialIncorrect} soruda yanlış yapılmıştır.` : ''} En çok hata yapılan ve net kaybı yaşanan kritik eksik konular: ${topMistakes || 'Temel soru analizi ve konu kavramları'}. Bu yanlışların tekrarlanmaması için öğrencinin doğrudan bu kazanımlara yönelik soru çözmesi ve deneme hata defteriyle analiz yapması gerekmektedir.`;
+        })()
+      : `Sistemde henüz detaylı deneme sınavı kaydı bulunmamaktadır. Deneme sınavı girildikçe sadece yanlış yapılan konular ve soru kayıpları burada analiz edilecektir.`,
     branchAverages: Object.entries(trialBranchStats).map(([subj, s]) => ({
       subject: subj,
       averageNet: s.count > 0 ? Number((s.net / s.count).toFixed(2)) : 0,
@@ -605,7 +609,7 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
       ? `Önceki haftanın ${prevTasks.length} görevinden ${prevCompleted.length} tanesi tamamlandı (%${prevRate} tamamlama). ${prevStats.evaluatedQuestions > 0 ? `Çözülen sorularda ${prevStats.correct} Doğru, ${prevStats.incorrect} Yanlış kaydedildi. Net başarı oranı %${prevStats.accuracyRate}.` : ''}`
       : `Arşivlenmiş geçmiş hafta kaydı bulunmamaktadır. Güncel haftalık program üzerinden takip yapılmaktadır.`,
     strengths: [
-      prevRate >= 70 ? 'Ödev tamamlama sorumluluğu ve istikrarı yüksek' : 'Çalışma gayreti ve soru çözme azmi olumlu',
+      prevRate >= 70 ? 'Ödev tamamlama sorumluluğu ve devamlılığı yüksek' : 'Çalışma gayreti ve soru çözme azmi olumlu',
       weeklyOverallAccuracy >= 75 ? 'Sorulardaki net ve doğruluk oranı güçlü' : 'Temel soru tiplerinde işlem kabiliyeti mevcut'
     ],
     growthAreas: [
@@ -815,9 +819,11 @@ TEMEL VE TAVİZSİZ PEDAGOJİK KURALLAR:
 4. ASLA HARİCİ DERS VEYA KONU UYDURMA:
    - Yalnızca öğrencinin haftalık programında ve girdiği denemelerde olan gerçek ders ve konuları analiz et. Programa atanmamış dersleri asla ekleme.
 5. PROGRAMIN GÜNLÜK VE DERS DAĞILIMINI ANALİZ ET:
-   - Haftanın 7 günündeki ders yükü dengeli mi? Eksik bırakılan günler veya dersler var mı? Çalışma disiplini ve istikrarını değerlendir.
-6. DENEME VE HAFTALIK PROGRAM BÜTÜNLÜĞÜ:
-   - Denemelerde yanlış yapılan konular ile haftalık programda çalışılan konular arasında bağ kur.
+   - Haftanın 7 günündeki ders yükü dengeli mi? Eksik bırakılan günler veya dersler var mı? Çalışma disiplini ve ders dağılımını değerlendir.
+6. DENEME VE HATA ANALİZİ KATI KURALI (TAVİZSİZ):
+   - Deneme analizinde ve tüm metinlerde ASLA "istikrarlı", "istikrarlı seyir", "istikrar", "istikrarlıdır" gibi kalıpları veya yuvarlak övgüleri KULLANMA.
+   - Deneme sınavı analizi ("trialReview") SADECE VE SADECE öğrencinin yanlış yaptığı konular, yanlış işaretlediği sorular ve net kayıpları üzerine odaklanmalıdır.
+   - Hangi derste ve hangi konularda yanlışlar yoğunlaşmışsa doğrudan o yanlışları ve eksik kazanımları listele, neden yanlış yapıldığını teşhis et ve bu yanlışları telafi edecek özel stratejileri açıkla.
 
 Öğrenci Bilgileri:
 Adı: ${studentName || "Öğrenci"}
@@ -846,13 +852,14 @@ ${stats.videoTasksCount > 0 ? `- Video Görevleri: ${stats.videoTasksCount} adet
 ${formattedDaySchedule}
 
 =========================================
-2. DENEME SINAVLARI VERİLERİ:
+2. DENEME SINAVLARI VE HATA VERİLERİ:
 =========================================
 - Kayıtlı Deneme Sayısı: ${smartStats.trialAnalysis.trialCount}
 - Son Deneme Neti: ${smartStats.trialAnalysis.latestTrialNet}, En Yüksek: ${smartStats.trialAnalysis.highestTrialNet}, Ortalama: ${smartStats.trialAnalysis.averageTrialNet}
-- Trend: ${smartStats.trialAnalysis.trendLabel}
-Deneme Kayıtları:
+- Deneme Kayıtları:
 ${formattedTrials}
+- Branş Bazlı Yanlış Sayıları:
+${smartStats.trialAnalysis.branchAverages?.map((b: any) => `- ${b.subject}: ${b.totalIncorrect || 0} Yanlış, Ort. Net: ${b.averageNet}`).join('\n') || 'Veri yok'}
 
 =========================================
 3. %80 BAŞARI KURALI ANALİZİ:
@@ -863,7 +870,7 @@ ${smartStats.under80Topics && smartStats.under80Topics.length > 0
 
 TALİMATLAR:
 1. "weeklyProgramReview" alanında haftalık programı, gün dağılımını, tamamlanan soru ve video/kitap görevlerini, girilen doğru/yanlışları detaylıca analiz et.
-2. "trialReview" alanında deneme sınavı netlerini, branş durumunu ve deneme stratejilerini değerlendir.
+2. "trialReview" alanında ASLA "istikrarlı" gibi kelimeler kullanmadan, SADECE öğrencinin yanlış yaptığı konuları, kaybettiği netleri ve doğrudan bu yanlışları düzeltmeye yarayan taktikleri değerlendir.
 3. "summary" alanında öğrenciyi motive eden, haftalık programını ve başarılarını özetleyen pedagojik bir koçluk metni yaz.
 4. "errorAnalysis" alanında %80 altında kalan veya yanlış yapılan konuların somut telafi yollarını anlat.
 5. "teacherPedagogyNotes" alanında öğretmenin koçluk görüşmesinde odaklanması gereken en az 3 somut pedagojik madde yaz.

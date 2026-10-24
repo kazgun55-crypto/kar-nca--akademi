@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { logoutFirebase } from '@/src/lib/firestoreService';
 import { 
   LayoutDashboard, 
@@ -65,6 +65,21 @@ export function Sidebar({ isMobile = false, onClose }: SidebarProps) {
 
   const lgsDays = calculateCountdownDays('LGS');
   const yksDays = calculateCountdownDays('YKS');
+
+  const location = useLocation();
+
+  const isNavActive = (itemPath: string) => {
+    if (itemPath === '/my-students') {
+      return location.pathname === '/my-students' && !location.search.includes('view=trials') && !location.search.includes('tab=trials');
+    }
+    if (itemPath === '/my-students?view=trials') {
+      return location.pathname === '/my-students' && (location.search.includes('view=trials') || location.search.includes('tab=trials'));
+    }
+    if (itemPath === '/') {
+      return location.pathname === '/' && location.search === '';
+    }
+    return location.pathname === itemPath || (location.pathname.startsWith(itemPath + '/') && itemPath !== '/');
+  };
 
   const containerClasses = isMobile
     ? "h-full max-h-screen w-full bg-surface-container-low flex flex-col overflow-hidden"
@@ -136,12 +151,15 @@ export function Sidebar({ isMobile = false, onClose }: SidebarProps) {
             onClick={() => {
               if (isMobile && onClose) onClose();
             }}
-            className={({ isActive }) => cn(
-              "flex items-center gap-3 py-2.5 px-4 rounded-xl transition-all duration-200 text-sm font-medium",
-              isActive 
-                ? "bg-primary text-white font-bold shadow-md shadow-primary/20" 
-                : "text-on-surface opacity-70 hover:bg-surface-container-high hover:opacity-100"
-            )}
+            className={() => {
+              const active = isNavActive(item.path);
+              return cn(
+                "flex items-center gap-3 py-2.5 px-4 rounded-xl transition-all duration-200 text-sm font-medium",
+                active 
+                  ? "bg-primary text-white font-bold shadow-md shadow-primary/20" 
+                  : "text-on-surface opacity-70 hover:bg-surface-container-high hover:opacity-100"
+              );
+            }}
           >
             <item.icon className="w-5 h-5 flex-shrink-0" />
             <span className="truncate">{item.label}</span>

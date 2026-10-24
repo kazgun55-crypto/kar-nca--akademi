@@ -14,7 +14,11 @@ import {
   TeacherMeeting,
   saveTeacherMeeting,
   completeTeacherMeeting,
-  subscribeTeacherMeetings
+  subscribeTeacherMeetings,
+  getStudentDailyStudySummary,
+  subscribeStudentStudySessions,
+  DailyStudySummary,
+  StudentStudySession
 } from '../lib/firestoreService';
 import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats, calculateNetScore } from '../lib/utils';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
@@ -80,6 +84,7 @@ interface Student {
   weeklyQuestionTarget?: number;
   weeklyQuestionGoal?: number;
   archivedPrograms?: any[];
+  dailyStudySummary?: any;
 }
 
 interface Task {
@@ -96,6 +101,8 @@ interface Task {
   empty?: number;
   net?: number;
   topic?: string;
+  durationMinutes?: number;
+  studySeconds?: number;
 }
 
 const DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
@@ -126,6 +133,23 @@ export function MyStudents() {
       setView('list');
     }
   }, [location.search]);
+
+  // ⏱️ Öğrenci Çalışma Süreleri & Oturum Takibi (Canlı Senkronizasyon)
+  const [selectedStudentDailySummary, setSelectedStudentDailySummary] = useState<DailyStudySummary>({});
+  const [selectedStudentStudySessions, setSelectedStudentStudySessions] = useState<StudentStudySession[]>([]);
+
+  useEffect(() => {
+    if (!selectedStudent?.id) {
+      setSelectedStudentDailySummary({});
+      setSelectedStudentStudySessions([]);
+      return;
+    }
+    const unsub = subscribeStudentStudySessions(selectedStudent.id, (sessions, summary) => {
+      setSelectedStudentStudySessions(sessions);
+      setSelectedStudentDailySummary(summary);
+    });
+    return () => unsub();
+  }, [selectedStudent?.id]);
   
   const calculateCountdownDays = (examType: 'LGS' | 'YKS') => {
     const now = new Date();
@@ -1157,6 +1181,34 @@ export function MyStudents() {
                       </div>
                     </div>
 
+                    {/* ⏱️ Bugünkü Çalışma Süresi (Sayaç Takibi) */}
+                    {(() => {
+                      const todayIso = new Date().toISOString().split('T')[0];
+                      const summary = student.dailyStudySummary || getStudentDailyStudySummary(student.id) || {};
+                      const todayData = summary[todayIso];
+                      const totalMins = todayData?.totalMinutes || Math.round((todayData?.totalSeconds || 0) / 60) || 0;
+                      const hours = Math.floor(totalMins / 60);
+                      const mins = totalMins % 60;
+
+                      return (
+                        <div className="mt-2.5 px-3 py-2 bg-primary/[0.04] border border-primary/15 rounded-xl flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <span className="text-[11px] font-bold text-on-surface truncate">Bugünkü Çalışma:</span>
+                          </div>
+                          <span className={`text-xs font-black px-2 py-0.5 rounded-lg shrink-0 ${
+                            totalMins > 0 
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300/60' 
+                              : 'bg-surface-container-high text-on-surface-variant'
+                          }`}>
+                            {totalMins > 0 
+                              ? (hours > 0 ? `${hours} sa ${mins} dk` : `${mins} dk`) 
+                              : '0 dk'}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
                     {/* Paylaşım & Deneme Butonları */}
                     <div className="mt-4 pt-3 border-t border-outline-variant/10 flex items-center justify-between gap-1.5" onClick={(e) => e.stopPropagation()}>
                       <button
@@ -1513,6 +1565,108 @@ export function MyStudents() {
                   </div>
                 </div>
 
+                {/* ⏱️ Öğrenci Günlük Çalışma Süresi & Sayaç Takip Kartı */}
+                {selectedStudent && (() => {
+                  const todayIso = new Date().toISOString().split('T')[0];
+                  const summary = selectedStudentDailySummary || {};
+                  const todayData = summary[todayIso];
+                  const totalMins = todayData?.totalMinutes || Math.round((todayData?.totalSeconds || 0) / 60) || 0;
+                  const hours = Math.floor(totalMins / 60);
+                  const mins = totalMins % 60;
+                  const todaySessions = selectedStudentStudySessions.filter(s => s.date === todayIso);
+
+                  // Calculate last 7 days distribution
+                  const last7Days = Array.from({ length: 7 }).map((_, i) => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - (6 - i));
+                    const iso = d.toISOString().split('T')[0];
+                    const dayLabel = d.toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric', month: 'numeric' });
+                    const dayData = summary[iso];
+                    const m = dayData?.totalMinutes || Math.round((dayData?.totalSeconds || 0) / 60) || 0;
+                    return { date: iso, label: dayLabel, minutes: m };
+                  });
+
+                  return (
+                    <div className="bg-surface-container-lowest p-6 rounded-[2rem] border border-outline-variant/10 shadow-sm space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-outline-variant/10">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+                            <Clock className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-base font-black text-on-surface flex items-center gap-2">
+                              <span>Günlük Çalışma Süresi & Sayaç Takibi</span>
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300/50">
+                                Canlı Sayaç
+                              </span>
+                            </h4>
+                            <p className="text-xs text-on-surface-variant font-medium">
+                              Öğrencinin ödev yaparken sayacı başlatıp durdurmasıyla hesaplanan gerçek zamanlı çalışma saatleri.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-center">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-indigo-700">Bugünkü Toplam Çalışma</p>
+                            <p className="text-lg font-black text-indigo-950">
+                              {totalMins > 0 ? (hours > 0 ? `${hours} sa ${mins} dk` : `${mins} dk`) : '0 dk'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Son 7 Günlük Çalışma Dağılımı */}
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-bold text-on-surface-variant flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-primary" />
+                          <span>Son 7 Günlük Çalışma Saatleri Dağılımı:</span>
+                        </p>
+                        <div className="grid grid-cols-7 gap-2 pt-1">
+                          {last7Days.map((day) => {
+                            const isToday = day.date === todayIso;
+                            const h = Math.floor(day.minutes / 60);
+                            const m = day.minutes % 60;
+                            return (
+                              <div
+                                key={day.date}
+                                className={`p-2.5 rounded-xl border text-center space-y-1 transition-all ${
+                                  isToday 
+                                    ? "bg-primary/10 border-primary/30 ring-1 ring-primary/20 shadow-xs" 
+                                    : "bg-surface-container-low border-outline-variant/10"
+                                }`}
+                              >
+                                <p className="text-[9px] font-bold text-on-surface-variant uppercase truncate">{day.label}</p>
+                                <p className="text-xs sm:text-sm font-black text-on-surface">
+                                  {day.minutes > 0 ? (h > 0 ? `${h}s ${m}d` : `${m} dk`) : '-'}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Bugünkü Görev Bazlı Çalışma Süreleri */}
+                      {todaySessions.length > 0 && (
+                        <div className="pt-2 border-t border-outline-variant/10">
+                          <p className="text-[11px] font-bold text-on-surface mb-2">Bugünkü Ödev Oturumları:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {todaySessions.map((s, idx) => (
+                              <div key={idx} className="px-3 py-1.5 bg-surface-container-low rounded-xl border border-outline-variant/10 flex items-center gap-2 text-xs">
+                                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary">{s.subject}</span>
+                                <span className="font-bold text-on-surface truncate max-w-[180px]">{s.taskTitle}</span>
+                                <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                  ⏱️ {s.durationMinutes || Math.round((s.durationSeconds || 0) / 60)} dk
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
                 {DAYS.map((day) => (
                   <div key={day} className="space-y-4">
@@ -1606,6 +1760,19 @@ export function MyStudents() {
                                   </span>
                                 )}
                               </div>
+                            </div>
+                          )}
+
+                          {/* ⏱️ Öğrencinin Sayaç ile Çalıştığı Süre */}
+                          {(task.durationMinutes || task.studySeconds) && (
+                            <div className="mt-1.5 pt-1.5 border-t border-outline-variant/10 flex items-center justify-between text-[9px] font-black text-indigo-900 bg-indigo-50/80 px-2 py-1 rounded-xl">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-indigo-600" />
+                                <span>Çalışma:</span>
+                              </span>
+                              <span className="font-bold text-indigo-800">
+                                {task.durationMinutes || Math.round((task.studySeconds || 0) / 60)} dk
+                              </span>
                             </div>
                           )}
                         </div>
