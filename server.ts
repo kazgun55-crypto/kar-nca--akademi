@@ -153,42 +153,66 @@ app.post("/api/solve-question", async (req, res) => {
     const subject = subjectHint || "Ders";
     const studentQuery = studentQuestion ? `Öğrencinin ek sorusu/takıldığı yer: "${studentQuestion}"` : "";
 
-    // If Gemini client is not initialized, generate a structured pedagogical fallback
+    // If Gemini client is not initialized
     if (!ai) {
-      return res.json({
-        success: true,
-        source: "fallback",
-        solution: generateFallbackSolution(gradeLevel, subjectHint, studentQuestion)
+      return res.status(500).json({
+        success: false,
+        error: "Yapay zeka servisi başlatılamadı. Lütfen GEMINI_API_KEY yapılandırmasını kontrol edin."
       });
     }
 
-    // Extract base64 image data cleanly
+    // Extract and sanitize base64 image or SVG data cleanly
     let base64Data = "";
-    let mimeType = clientMimeType || "image/jpeg";
+    let mimeType = (clientMimeType || "image/jpeg").toLowerCase();
+    let svgTextExtracted = "";
 
     if (image && typeof image === "string") {
-      if (image.startsWith("data:")) {
-        const matches = image.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-        if (matches) {
-          mimeType = matches[1];
-          base64Data = matches[2];
-        } else {
-          base64Data = image.split(",")[1] || image;
+      const trimmed = image.trim();
+      if (trimmed.startsWith("data:")) {
+        const commaIdx = trimmed.indexOf(",");
+        if (commaIdx !== -1) {
+          const header = trimmed.substring(5, commaIdx);
+          const mimeMatch = header.match(/^([a-zA-Z0-9\/\-+.]+)/);
+          if (mimeMatch) {
+            mimeType = mimeMatch[1].toLowerCase();
+          }
+          const rawPayload = trimmed.substring(commaIdx + 1);
+          if (mimeType.includes("svg") || rawPayload.includes("<svg")) {
+            try {
+              svgTextExtracted = decodeURIComponent(rawPayload);
+            } catch {
+              try {
+                svgTextExtracted = Buffer.from(rawPayload, "base64").toString("utf-8");
+              } catch {
+                svgTextExtracted = rawPayload;
+              }
+            }
+          } else {
+            base64Data = rawPayload.replace(/[\r\n\s]/g, "");
+          }
         }
+      } else if (trimmed.includes("<svg")) {
+        svgTextExtracted = trimmed;
       } else {
-        base64Data = image;
+        base64Data = trimmed.replace(/[\r\n\s]/g, "");
       }
     }
 
-    const systemInstruction = `Sen Türkiye MEB (LGS, YKS/TYT/AYT, Ortaokul ve Lise) müfredatına tam hakim, soruyu en ufak detayına kadar kusursuz analiz eden ve TAM OLARAK İSTENENİ çözen uzman bir 'Yapay Zeka Soru Çözücü' öğretmenisin.
+    // Normalize MIME types for Gemini
+    if (mimeType === "image/jpg" || mimeType === "image/pjpeg") {
+      mimeType = "image/jpeg";
+    }
+
+    const systemInstruction = `Sen Türkiye MEB (LGS, YKS/TYT/AYT, Ortaokul ve Lise) müfredatına tam hakim, öğrencinin gönderdiği soruyu harfi harfine doğru okuyan ve TAM OLARAK İSTENENİ çözen uzman bir 'Yapay Zeka Soru Çözücü' öğretmenisin.
 
 KULLANICININ EN ÖNEMLİ VE TAVİZSİZ TALEBİ:
-"Yapay zeka ona yüklenen soruyu doğru şekilde analiz etsin ve ne isteniyorsa ona göre çözsün! Yaptığı her işlemi öğrencinin anlayacağı sadelikte açık açık anlatsın."
+"Yapay zeka ona yüklenen soruyu doğru şekilde analiz etsin ve ne isteniyorsa ona göre çözsün! Yollanan soru neyse o çözülsün, asla alakasız veya başka bir soru uydurulmasın!"
 
 BU HEDEFE ULAŞMAK İÇİN ŞU 3 ALTIN KURALA KESİNLİKLE UYACAKSIN:
 
-1. SORUYU VE GÖRSELİ EKSİKSİZ DOĞRU ANALİZ ET (questionAnalysis):
-   - Resimdeki sorunun tüm metnini, öncüllerini (I, II, III vb.), varsa şekil, geometri çizimi, grafik veya tablo verilerini harfi harfine doğru oku ve 'questionText' alanına aktar.
+1. GÖNDERİLEN SORUYU VE GÖRSELİ EKSİKSİZ DOĞRU ANALİZ ET (questionAnalysis):
+   - Resimdeki sorunun tüm metnini, öncüllerini (I, II, III vb.), formüllerini, varsa şekil, geometri çizimi, grafik veya tablo verilerini harfi harfine doğru oku ve 'questionText' alanına aktar.
+   - Soru hangi branştaysa (Matematik, Fen Bilimleri, Türkçe, Sosyal, Fizik, Kimya vb.) tam o dersin terimleriyle yaklaş.
    - 'givens' (Verilenler): Soruda öğrenciye sunulan tüm sayısal ve sözel verileri, birimleri ve kısıtları tek tek madde olarak listele.
    - 'target' (Soru Kökü ve İstenen): Sorunun KÖKÜNÜ tam olarak tespit et! Soru bizden tam olarak neyi istiyor? (Örn: "x'i mi, x+y'yi mi?", "En az kaç mı en çok kaç mı?", "Hangisi yanlıştır mı, hangisi kesinlikle doğrudur mu?", "Çevre mi alan mı?"). Burayı çok net ve eksiksiz yaz.
    - 'figureOrDataAnalysis': Eğer soruda şekil, çizim veya grafik varsa, şeklin üzerindeki açıları, uzunlukları, eksenleri veya taralı alanları detaylıca açıkla.
@@ -197,6 +221,7 @@ BU HEDEFE ULAŞMAK İÇİN ŞU 3 ALTIN KURALA KESİNLİKLE UYACAKSIN:
 2. NE İSTENİYORSA TAM VE YALNIZCA ONA GÖRE ÇÖZ (HEDEFTEN ASLA SAPMA):
    - Asla sorulmamış ara bir değişkende durma! (Örn: x=5 bulundu diye cevabı 5 yapma; eğer soru '2x - 3 kaçtır?' diyorsa '2(5) - 3 = 7' işlemini mutlaka tamamla).
    - Olumsuz soru köklerinde ('değildir', 'ulaşılamaz', 'söylenemez') her şıkkı tek tek test ederek neden elendiğini göster.
+   - Soru çoktan seçmeli ise doğru şıkkı (A, B, C, D, E) ve nedenini açıkla; açık uçlu ise nihai cevabı açıkça yaz.
    - 'targetCheck' alanında: "Bizden ne istenmişti? -> ... Yaptığımız işlemlerle ne bulduk? -> ... Hedef tam olarak sağlandı mı? -> Evet" doğrulamasını yap.
 
 3. İŞLEMLERİ TÜM DETAYLARIYLA, HESAPLAMA SATIRLARIYLA VE ÖĞRENCİ DİLİYLE GÖSTER:
@@ -214,7 +239,7 @@ BU HEDEFE ULAŞMAK İÇİN ŞU 3 ALTIN KURALA KESİNLİKLE UYACAKSIN:
 
 Yanıtını mutlaka geçerli JSON formatında ve verilen şemaya uygun olarak üret.`;
 
-    const userPrompt = followUpContext
+    let userPrompt = followUpContext
       ? `Önceki Soru Çözümü Bağlamı:
 ${JSON.stringify(followUpContext)}
 
@@ -222,9 +247,13 @@ ${JSON.stringify(followUpContext)}
 "${studentQuestion || 'Bu işlemi nasıl yaptığınızı biraz daha açık anlatabilir misiniz?'}"
 
 Lütfen öğrencinin aklındaki soru işaretini tamamen giderecek şekilde, soruda ne istendiğine odaklanarak işlemleri tane tane ve samimi bir dille açıkla.`
-      : `Lütfen ekteki soruyu ve görseli ${gradeLevel} seviyesindeki bir öğrenci için kusursuz analiz et. Soruda ne isteniyorsa TAM OLARAK ONA ODAKLANARAK ve tüm işlemleri satır satır göstererek çöz.
+      : `Lütfen ekteki soruyu ve görseli ${gradeLevel} seviyesindeki bir öğrenci için kusursuz analiz et. Görseldeki soru neyi soruyorsa TAM OLARAK O SORUYU ve tüm işlemleri satır satır göstererek çöz.
 ${studentQuery}
 ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
+
+    if (svgTextExtracted) {
+      userPrompt += `\n\n[Görsel Soru Çizimi ve Metni (SVG Şeması)]:\n${svgTextExtracted}`;
+    }
 
     const parts: any[] = [];
     if (base64Data) {
@@ -324,7 +353,9 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
     };
 
     let responseText: string | null = null;
-    const modelsToTry = ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
+    // Order models by availability: gemini-3.1-flash-lite has near 100% uptime without 503 errors
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+    let lastError: any = null;
 
     for (const modelName of modelsToTry) {
       try {
@@ -343,7 +374,10 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
           break;
         }
       } catch (modelErr: any) {
+        lastError = modelErr;
         console.warn(`Model ${modelName} call failed for solve-question:`, modelErr?.message || modelErr);
+        // Short backoff before next model
+        await new Promise(r => setTimeout(r, 350));
       }
     }
 
@@ -357,13 +391,16 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
       });
     }
 
-    throw new Error("Boş veya başarısız AI yanıtı alındı");
+    console.error("All AI models failed for question solving:", lastError?.message || lastError);
+    return res.status(503).json({
+      success: false,
+      error: "Yapay zeka analiz servisleri şu anda yoğun. Lütfen birkaç saniye sonra tekrar 'Soruyu Çöz' butonuna basınız."
+    });
   } catch (err: any) {
-    console.error("Question solver error, using pedagogical fallback:", err?.message || err);
-    return res.json({
-      success: true,
-      source: "fallback",
-      solution: generateFallbackSolution(req.body?.studentGrade, req.body?.subjectHint, req.body?.studentQuestion)
+    console.error("Question solver fatal error:", err?.message || err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Soru çözülürken bir sunucu hatası oluştu."
     });
   }
 });

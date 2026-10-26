@@ -267,6 +267,68 @@ export function QuestionSolver() {
     }
   };
 
+  // Optimize, compress & apply physical rotation to image before sending to AI
+  const optimizeImageForAi = async (
+    sourceUrlOrData: string,
+    rotationDegrees: number = 0
+  ): Promise<{ dataUrl: string; mimeType: string }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+
+      img.onload = () => {
+        try {
+          const isRotated90or270 = Math.abs(rotationDegrees % 180) === 90;
+          const origWidth = img.naturalWidth || img.width || 800;
+          const origHeight = img.naturalHeight || img.height || 600;
+
+          // Target max dimension 1600px for optimal speed & sharp OCR
+          const MAX_DIM = 1600;
+          let scale = 1;
+          if (Math.max(origWidth, origHeight) > MAX_DIM) {
+            scale = MAX_DIM / Math.max(origWidth, origHeight);
+          }
+
+          const scaledW = Math.round(origWidth * scale);
+          const scaledH = Math.round(origHeight * scale);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = isRotated90or270 ? scaledH : scaledW;
+          canvas.height = isRotated90or270 ? scaledW : scaledH;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve({ dataUrl: sourceUrlOrData, mimeType: 'image/jpeg' });
+            return;
+          }
+
+          // Pure white background for maximum contrast (handles PNG transparency)
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Apply physical rotation onto pixel data
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((rotationDegrees * Math.PI) / 180);
+          ctx.drawImage(img, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
+          ctx.restore();
+
+          const jpegUrl = canvas.toDataURL('image/jpeg', 0.88);
+          resolve({ dataUrl: jpegUrl, mimeType: 'image/jpeg' });
+        } catch (err) {
+          console.warn('Canvas optimization fallback:', err);
+          resolve({ dataUrl: sourceUrlOrData, mimeType: 'image/jpeg' });
+        }
+      };
+
+      img.onerror = () => {
+        resolve({ dataUrl: sourceUrlOrData, mimeType: 'image/jpeg' });
+      };
+
+      img.src = sourceUrlOrData;
+    });
+  };
+
   // Solve Question Handler
   const handleSolveQuestion = async (customImage?: string) => {
     const targetImage = customImage || selectedImage;
@@ -290,9 +352,21 @@ export function QuestionSolver() {
     const t3 = setTimeout(() => setSolvingStage('Altın püf noktaları ve sesli anlatım hazırlanıyor...'), 4000);
 
     try {
+      // Optimize & apply physical rotation before sending to AI
+      let preparedImage = targetImage;
+      let preparedMime = imageMimeType;
+
+      try {
+        const optimized = await optimizeImageForAi(targetImage, imageRotation);
+        preparedImage = optimized.dataUrl;
+        preparedMime = optimized.mimeType;
+      } catch {
+        // Fallback to original
+      }
+
       const result = await solveQuestionWithAi({
-        image: targetImage,
-        mimeType: imageMimeType,
+        image: preparedImage,
+        mimeType: preparedMime,
         studentGrade: selectedGrade,
         subjectHint: selectedSubject === 'Otomatik Tespit' ? undefined : selectedSubject,
         studentQuestion: studentNote.trim() || undefined
@@ -706,11 +780,21 @@ Köksal Akademi AI Soru Çözücü ile çözüldü.`;
           </div>
         </div>
 
-        {/* Error message */}
+        {/* Error message with Retry Button */}
         {errorMessage && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm font-bold flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-            <span>{errorMessage}</span>
+          <div className="p-4 sm:p-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs sm:text-sm font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSolveQuestion()}
+              className="px-4 py-2 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors flex items-center justify-center gap-2 text-xs shrink-0 cursor-pointer shadow-xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Tekrar Dene</span>
+            </button>
           </div>
         )}
 

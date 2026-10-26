@@ -136,42 +136,66 @@ export default async function handler(req: any, res: any) {
 
   const { image, mimeType: clientMimeType, studentGrade, subjectHint, studentQuestion, followUpContext } = body;
   const gradeLevel = studentGrade || "8. Sınıf (LGS)";
+  const studentQuery = studentQuestion ? `Öğrencinin ek sorusu/takıldığı yer: "${studentQuestion}"` : "";
 
   if (!ai) {
-    return res.status(200).json({
-      success: true,
-      source: "fallback",
-      solution: generateFallbackSolution(gradeLevel, subjectHint, studentQuestion)
+    return res.status(500).json({
+      success: false,
+      error: "Yapay zeka servisi başlatılamadı. GEMINI_API_KEY eksik."
     });
   }
 
   try {
     let base64Data = "";
-    let mimeType = clientMimeType || "image/jpeg";
+    let mimeType = (clientMimeType || "image/jpeg").toLowerCase();
+    let svgTextExtracted = "";
 
     if (image && typeof image === "string") {
-      if (image.startsWith("data:")) {
-        const matches = image.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-        if (matches) {
-          mimeType = matches[1];
-          base64Data = matches[2];
-        } else {
-          base64Data = image.split(",")[1] || image;
+      const trimmed = image.trim();
+      if (trimmed.startsWith("data:")) {
+        const commaIdx = trimmed.indexOf(",");
+        if (commaIdx !== -1) {
+          const header = trimmed.substring(5, commaIdx);
+          const mimeMatch = header.match(/^([a-zA-Z0-9\/\-+.]+)/);
+          if (mimeMatch) {
+            mimeType = mimeMatch[1].toLowerCase();
+          }
+          const rawPayload = trimmed.substring(commaIdx + 1);
+          if (mimeType.includes("svg") || rawPayload.includes("<svg")) {
+            try {
+              svgTextExtracted = decodeURIComponent(rawPayload);
+            } catch {
+              try {
+                svgTextExtracted = Buffer.from(rawPayload, "base64").toString("utf-8");
+              } catch {
+                svgTextExtracted = rawPayload;
+              }
+            }
+          } else {
+            base64Data = rawPayload.replace(/[\r\n\s]/g, "");
+          }
         }
+      } else if (trimmed.includes("<svg")) {
+        svgTextExtracted = trimmed;
       } else {
-        base64Data = image;
+        base64Data = trimmed.replace(/[\r\n\s]/g, "");
       }
     }
 
-    const systemInstruction = `Sen Türkiye MEB (LGS, YKS/TYT/AYT, Ortaokul ve Lise) müfredatına tam hakim, soruyu en ufak detayına kadar kusursuz analiz eden ve TAM OLARAK İSTENENİ çözen uzman bir 'Yapay Zeka Soru Çözücü' öğretmenisin.
+    if (mimeType === "image/jpg" || mimeType === "image/pjpeg") {
+      mimeType = "image/jpeg";
+    }
+
+    const systemInstruction = `Sen Türkiye MEB (LGS, YKS/TYT/AYT, Ortaokul ve Lise) müfredatına tam hakim, öğrencinin gönderdiği soruyu harfi harfine doğru okuyan ve TAM OLARAK İSTENENİ çözen uzman bir 'Yapay Zeka Soru Çözücü' öğretmenisin.
 
 KULLANICININ EN ÖNEMLİ VE TAVİZSİZ TALEBİ:
-"Yapay zeka ona yüklenen soruyu doğru şekilde analiz etsin ve ne isteniyorsa ona göre çözsün! Yaptığı her işlemi öğrencinin anlayacağı sadelikte açık açık anlatsın."
+"Yapay zeka ona yüklenen soruyu doğru şekilde analiz etsin ve ne isteniyorsa ona göre çözsün! Yollanan soru neyse o çözülsün, asla alakasız veya başka bir soru uydurulmasın!"
 
 BU HEDEFE ULAŞMAK İÇİN ŞU 3 ALTIN KURALA KESİNLİKLE UYACAKSIN:
 
-1. SORUYU VE GÖRSELİ EKSİKSİZ DOĞRU ANALİZ ET (questionAnalysis):
-   - Resimdeki sorunun tüm metnini, öncüllerini (I, II, III vb.), varsa şekil, geometri çizimi, grafik veya tablo verilerini harfi harfine doğru oku ve 'questionText' alanına aktar.
+1. GÖNDERİLEN SORUYU VE GÖRSELİ EKSİKSİZ DOĞRU ANALİZ ET (questionAnalysis):
+   - Resimdeki sorunun tüm metnini, öncüllerini (I, II, III vb.), formüllerini, varsa şekil, geometri çizimi, grafik veya tablo verilerini harfi harfine doğru oku ve 'questionText' alanına aktar.
+   - Soru hangi branştaysa (Matematik, Fen Bilimleri, Türkçe, Sosyal, Fizik, Kimya vb.) tam o dersin terimleriyle yaklaş.
    - 'givens' (Verilenler): Soruda öğrenciye sunulan tüm sayısal ve sözel verileri, birimleri ve kısıtları tek tek madde olarak listele.
    - 'target' (Soru KÖKÜ ve İstenen): Sorunun KÖKÜNÜ tam olarak tespit et! Soru bizden tam olarak neyi istiyor? (Örn: "x'i mi, x+y'yi mi?", "En az kaç mı en çok kaç mı?", "Hangisi yanlıştır mı, hangisi kesinlikle doğrudur mu?", "Çevre mi alan mı?"). Burayı çok net ve eksiksiz yaz.
    - 'figureOrDataAnalysis': Eğer soruda şekil, çizim veya grafik varsa, şeklin üzerindeki açıları, uzunlukları, eksenleri veya taralı alanları detaylıca açıkla.
@@ -180,22 +204,31 @@ BU HEDEFE ULAŞMAK İÇİN ŞU 3 ALTIN KURALA KESİNLİKLE UYACAKSIN:
 2. NE İSTENİYORSA TAM VE YALNIZCA ONA GÖRE ÇÖZ (HEDEFTEN ASLA SAPMA):
    - Asla sorulmamış ara bir değişkende durma! (Örn: x=5 bulundu diye cevabı 5 yapma; eğer soru '2x - 3 kaçtır?' diyorsa '2(5) - 3 = 7' işlemini mutlaka tamamla).
    - Olumsuz soru köklerinde ('değildir', 'ulaşılamaz', 'söylenemez') her şıkkı tek tek test ederek neden elendiğini göster.
+   - Soru çoktan seçmeli ise doğru şıkkı (A, B, C, D, E) ve nedenini açıkla; açık uçlu ise nihai cevabı açıkça yaz.
    - 'targetCheck' alanında: "Bizden ne istenmişti? -> ... Yaptığımız işlemlerle ne bulduk? -> ... Hedef tam olarak sağlandı mı? -> Evet" doğrulamasını yap.
 
 3. İŞLEMLERİ TÜM DETAYLARIYLA, HESAPLAMA SATIRLARIYLA VE ÖĞRENCİ DİLİYLE GÖSTER:
    - "İşlem yapıldı ve x bulundu" gibi yüzeysel anlatımlar KESİNLİKLE YASAKTIR.
    - Her adımda:
      a) "Bu Adımda Ne Buluyoruz?" (Adımın hedefi)
-     b) "İşlem Satırları" (Hesaplamanın matematiksel açık hali)
+     b) "İşlem Satırları" (Hesaplamanın matematiksel açık hali: örn. '2 x 60 = 120', '120 ÷ 20 = 6')
      c) "İşlem Nasıl Yapıldı?" (Öğrencinin anlayacağı dille)
      d) "Neden Böyle Yaptık? / İşlem Mantığı" (Kural ve gerekçe)
    - Formül kartını (coreFormula) mutlaka doldur.
 
+4. ÇOCUK/ÖĞRENCİ DİLİ VE SESLİ METİN (audioSpeechText):
+   - Öğrencinin sınıf seviyesine (${gradeLevel}) tam uygun, sevecen, cesaretlendirici bir üslup kullan.
+   - Sesli dinleme metninde işlemleri tane tane, samimi bir öğretmen gibi anlat.
+
 Yanıtını mutlaka geçerli JSON formatında ve verilen şemaya uygun olarak üret.`;
 
-    const userPrompt = followUpContext
+    let userPrompt = followUpContext
       ? `Önceki Soru Çözümü: ${JSON.stringify(followUpContext)}\nÖğrencinin Sorusu: "${studentQuestion || 'İşlemleri biraz daha açıklar mısınız?'}"`
-      : `Lütfen soruyu ${gradeLevel} seviyesine uygun olarak kusursuz analiz et. Ne isteniyorsa ona odaklanarak adım adım çöz. ${studentQuestion ? `Not: "${studentQuestion}"` : ''}`;
+      : `Lütfen ekteki soruyu ve görseli ${gradeLevel} seviyesindeki bir öğrenci için kusursuz analiz et. Görseldeki soru neyi soruyorsa TAM OLARAK O SORUYU ve tüm işlemleri satır satır göstererek çöz. ${studentQuery}`;
+
+    if (svgTextExtracted) {
+      userPrompt += `\n\n[Görsel Soru Çizimi ve Metni (SVG Şeması)]:\n${svgTextExtracted}`;
+    }
 
     const parts: any[] = [];
     if (base64Data) {
@@ -205,92 +238,112 @@ Yanıtını mutlaka geçerli JSON formatında ve verilen şemaya uygun olarak ü
     }
     parts.push({ text: userPrompt });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: { parts },
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: [
-            "subject", "topic", "questionText", "correctOption", "studentSummary",
-            "questionAnalysis", "targetCheck", "coreFormula", "steps",
-            "finalAnswer", "keyTip", "commonMistake", "audioSpeechText"
-          ],
-          properties: {
-            subject: { type: Type.STRING },
-            topic: { type: Type.STRING },
-            questionText: { type: Type.STRING },
-            correctOption: { type: Type.STRING },
-            studentSummary: { type: Type.STRING },
-            questionAnalysis: {
-              type: Type.OBJECT,
-              required: ["givens", "target", "solvingStrategy"],
-              properties: {
-                questionType: { type: Type.STRING },
-                givens: { type: Type.ARRAY, items: { type: Type.STRING } },
-                target: { type: Type.STRING },
-                figureOrDataAnalysis: { type: Type.STRING },
-                solvingStrategy: { type: Type.STRING }
-              }
-            },
-            targetCheck: { type: Type.STRING },
-            coreFormula: {
-              type: Type.OBJECT,
-              required: ["name", "formula", "explanation"],
-              properties: {
-                name: { type: Type.STRING },
-                formula: { type: Type.STRING },
-                explanation: { type: Type.STRING }
-              }
-            },
-            steps: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                required: ["stepNumber", "title", "goal", "operationDetails", "explanation", "whyThisWay"],
-                properties: {
-                  stepNumber: { type: Type.INTEGER },
-                  title: { type: Type.STRING },
-                  goal: { type: Type.STRING },
-                  operationDetails: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  explanation: { type: Type.STRING },
-                  whyThisWay: { type: Type.STRING },
-                  mathOrDetail: { type: Type.STRING }
-                }
-              }
-            },
-            finalAnswer: { type: Type.STRING },
-            keyTip: { type: Type.STRING },
-            commonMistake: { type: Type.STRING },
-            similarQuestion: {
-              type: Type.OBJECT,
-              properties: {
-                question: { type: Type.STRING },
-                hint: { type: Type.STRING },
-                answer: { type: Type.STRING }
-              }
-            },
-            audioSpeechText: { type: Type.STRING }
-          }
-        }
-      }
-    });
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+    let responseText: string | null = null;
+    let lastError: any = null;
 
-    if (response && response.text) {
-      const cleanText = response.text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts },
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              required: [
+                "subject", "topic", "questionText", "correctOption", "studentSummary",
+                "questionAnalysis", "targetCheck", "coreFormula", "steps",
+                "finalAnswer", "keyTip", "commonMistake", "audioSpeechText"
+              ],
+              properties: {
+                subject: { type: Type.STRING },
+                topic: { type: Type.STRING },
+                questionText: { type: Type.STRING },
+                correctOption: { type: Type.STRING },
+                studentSummary: { type: Type.STRING },
+                questionAnalysis: {
+                  type: Type.OBJECT,
+                  required: ["givens", "target", "solvingStrategy"],
+                  properties: {
+                    questionType: { type: Type.STRING },
+                    givens: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    target: { type: Type.STRING },
+                    figureOrDataAnalysis: { type: Type.STRING },
+                    solvingStrategy: { type: Type.STRING }
+                  }
+                },
+                targetCheck: { type: Type.STRING },
+                coreFormula: {
+                  type: Type.OBJECT,
+                  required: ["name", "formula", "explanation"],
+                  properties: {
+                    name: { type: Type.STRING },
+                    formula: { type: Type.STRING },
+                    explanation: { type: Type.STRING }
+                  }
+                },
+                steps: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    required: ["stepNumber", "title", "goal", "operationDetails", "explanation", "whyThisWay"],
+                    properties: {
+                      stepNumber: { type: Type.INTEGER },
+                      title: { type: Type.STRING },
+                      goal: { type: Type.STRING },
+                      operationDetails: { type: Type.ARRAY, items: { type: Type.STRING } },
+                      explanation: { type: Type.STRING },
+                      whyThisWay: { type: Type.STRING },
+                      mathOrDetail: { type: Type.STRING }
+                    }
+                  }
+                },
+                finalAnswer: { type: Type.STRING },
+                keyTip: { type: Type.STRING },
+                commonMistake: { type: Type.STRING },
+                similarQuestion: {
+                  type: Type.OBJECT,
+                  properties: {
+                    question: { type: Type.STRING },
+                    hint: { type: Type.STRING },
+                    answer: { type: Type.STRING }
+                  }
+                },
+                audioSpeechText: { type: Type.STRING }
+              }
+            }
+          }
+        });
+
+        if (response && response.text) {
+          responseText = response.text;
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Serverless Model ${modelName} failed:`, err?.message || err);
+        await new Promise(r => setTimeout(r, 350));
+      }
+    }
+
+    if (responseText) {
+      const cleanText = responseText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
       const parsed = JSON.parse(cleanText);
       return res.status(200).json({ success: true, source: "gemini", solution: parsed });
     }
 
-    throw new Error("Boş AI yanıtı");
+    console.error("Serverless all models failed:", lastError?.message || lastError);
+    return res.status(503).json({
+      success: false,
+      error: "Yapay zeka analiz servisleri şu anda yoğun. Lütfen birkaç saniye sonra tekrar 'Soruyu Çöz' butonuna basınız."
+    });
   } catch (err: any) {
-    console.error("Serverless solve-question error:", err?.message || err);
-    return res.status(200).json({
-      success: true,
-      source: "fallback",
-      solution: generateFallbackSolution(gradeLevel, subjectHint, studentQuestion)
+    console.error("Serverless solve-question fatal error:", err?.message || err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Soru çözülürken bir sunucu hatası oluştu."
     });
   }
 }

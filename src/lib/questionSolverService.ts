@@ -79,15 +79,16 @@ export async function solveQuestionWithAi(input: SolveQuestionInput): Promise<Qu
     body: JSON.stringify(input)
   });
 
+  const data = await response.json().catch(() => null);
+
   if (!response.ok) {
-    throw new Error(`Sunucu hatası: ${response.status}`);
+    throw new Error(data?.error || `Sunucu hatası: ${response.status}`);
   }
 
-  const data = await response.json();
-  if (data.solution) {
+  if (data && data.solution) {
     return data.solution;
   }
-  throw new Error('Geçersiz sunucu yanıtı.');
+  throw new Error(data?.error || 'Geçersiz sunucu yanıtı.');
 }
 
 // History Management
