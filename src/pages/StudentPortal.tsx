@@ -4333,30 +4333,30 @@ export function StudentPortal() {
                     </div>
                   </div>
 
-                  {/* %80 Başarı Eşiğinin Altındaki Kritik Konular Callout */}
-                  {studentAiAnalysis.under80Topics && studentAiAnalysis.under80Topics.length > 0 && (
+                  {/* %85 Başarı Eşiğinin Altındaki Kritik Konular Callout (Boşlar Dahil) */}
+                  {(studentAiAnalysis.under85Topics || studentAiAnalysis.under80Topics) && (studentAiAnalysis.under85Topics || studentAiAnalysis.under80Topics).length > 0 && (
                     <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                           <h4 className="font-black text-xs uppercase tracking-wider text-rose-950">
-                            %80 Başarı Eşiğinin Altındaki Kritik Konular (&lt;%80)
+                            %85 Başarı Eşiğinin Altındaki Kritik Konular (&lt;%85)
                           </h4>
                         </div>
                         <span className="text-[10px] font-black px-2 py-0.5 bg-rose-600 text-white rounded-full">
-                          {studentAiAnalysis.under80Topics.length} Konu
+                          {(studentAiAnalysis.under85Topics || studentAiAnalysis.under80Topics).length} Konu
                         </span>
                       </div>
 
                       <div className="space-y-2.5">
-                        {studentAiAnalysis.under80Topics.map((topicItem: any, idx: number) => (
+                        {(studentAiAnalysis.under85Topics || studentAiAnalysis.under80Topics).map((topicItem: any, idx: number) => (
                           <div key={idx} className="p-3 bg-white rounded-xl border border-rose-100 space-y-2">
                             <div className="flex items-center justify-between flex-wrap gap-1">
                               <span className="font-bold text-xs text-on-surface">
                                 {topicItem.subject} - {topicItem.topic}
                               </span>
                               <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
-                                %{topicItem.accuracy} Başarı ({topicItem.correct}D / {topicItem.incorrect}Y)
+                                %{topicItem.accuracy} Başarı ({topicItem.correct}D / {topicItem.incorrect}Y / {topicItem.empty || 0}B)
                               </span>
                             </div>
                             <p className="text-[11px] text-on-surface-variant leading-relaxed">
@@ -4384,7 +4384,7 @@ export function StudentPortal() {
                   )}
 
                   {/* Error Analysis Callout */}
-                  {studentAiAnalysis.errorAnalysis && !studentAiAnalysis.under80Topics?.length && (
+                  {studentAiAnalysis.errorAnalysis && !(studentAiAnalysis.under85Topics || studentAiAnalysis.under80Topics)?.length && (
                     <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200/60 space-y-1.5">
                       <div className="flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-rose-600" />

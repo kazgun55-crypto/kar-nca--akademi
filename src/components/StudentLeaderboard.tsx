@@ -296,9 +296,9 @@ export function StudentLeaderboard({ embedded = false, initialGroupFilter = 'all
       // If programScope is 'all_archived_avg', average the question counts by archive count
       const divisor = (programScope === 'all_archived_avg' && archives.length > 1) ? archives.length : 1;
 
-      const answeredEvaluated = baseStats.correct + baseStats.incorrect;
-      const accuracyRate = answeredEvaluated > 0
-        ? Math.round((baseStats.correct / answeredEvaluated) * 100)
+      const evaluatedTotal = baseStats.correct + baseStats.incorrect + baseStats.empty;
+      const accuracyRate = evaluatedTotal > 0
+        ? Math.round((baseStats.correct / evaluatedTotal) * 100)
         : (baseStats.accuracyRate || 0);
 
       return {
@@ -318,7 +318,7 @@ export function StudentLeaderboard({ embedded = false, initialGroupFilter = 'all
         empty: Math.round(baseStats.empty / divisor),
         net: Math.round((baseStats.net / divisor) * 10) / 10,
         accuracyRate: accuracyRate,
-        evaluatedAnswered: Math.round(answeredEvaluated / divisor),
+        evaluatedAnswered: Math.round(evaluatedTotal / divisor),
         taskCompletionRate: calculatedTaskCompletion,
         completedTasksCount: Math.round(completedCount / divisor),
         totalTasksCount: Math.round(totalCount / divisor),
@@ -1042,8 +1042,8 @@ export function StudentLeaderboard({ embedded = false, initialGroupFilter = 'all
                               <div className="w-18 bg-surface-container-high h-1.5 rounded-full overflow-hidden mt-1 md:ml-auto">
                                 <div 
                                   className={`h-full rounded-full transition-all ${
-                                    student.accuracyRate >= 80 ? 'bg-emerald-500' :
-                                    student.accuracyRate >= 65 ? 'bg-primary' :
+                                    student.accuracyRate >= 85 ? 'bg-emerald-500' :
+                                    student.accuracyRate >= 70 ? 'bg-primary' :
                                     student.accuracyRate >= 50 ? 'bg-amber-500' : 'bg-rose-500'
                                   }`}
                                   style={{ width: `${Math.min(100, student.accuracyRate)}%` }}

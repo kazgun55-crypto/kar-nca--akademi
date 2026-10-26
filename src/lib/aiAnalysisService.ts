@@ -133,10 +133,10 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
   // If student entered results, totalQuestions reflects evaluated questions so Doğru + Yanlış + Boş matches 100%!
   const totalQuestionsDisplay = totalEvaluatedQuestions > 0 ? totalEvaluatedQuestions : weeklySolvedQuestions;
 
-  const weeklyAnswered = weeklyCorrect + weeklyIncorrect;
-  const weeklyOverallAccuracy = weeklyAnswered > 0 
-    ? Math.round((weeklyCorrect / weeklyAnswered) * 100) 
-    : (canonicalStats.accuracyRate > 0 ? canonicalStats.accuracyRate : (completionRate > 0 ? completionRate : 80));
+  const weeklyEvaluated = weeklyCorrect + weeklyIncorrect + weeklyEmpty;
+  const weeklyOverallAccuracy = weeklyEvaluated > 0 
+    ? Math.round((weeklyCorrect / weeklyEvaluated) * 100) 
+    : (canonicalStats.accuracyRate > 0 ? canonicalStats.accuracyRate : (completionRate > 0 ? completionRate : 85));
 
   // 2. Build Topic Performance Map & Subject Task Stats from active question tasks
   const subjectTaskStats: Record<string, { correct: number; incorrect: number; empty: number; net: number; total: number; evaluatedTotal: number; topics: Record<string, number> }> = {};
@@ -230,7 +230,7 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
   let lowestTrialNet = 999;
   let totalTrialNetSum = 0;
   const allTrialScores: number[] = [];
-  const trialBranchStats: Record<string, { correct: number; incorrect: number; net: number; count: number }> = {};
+  const trialBranchStats: Record<string, { correct: number; incorrect: number; empty: number; net: number; count: number }> = {};
   const trialMistakesList: { subject: string; topic: string; count: number }[] = [];
 
   combinedTrials.forEach((tr: any) => {
@@ -246,13 +246,15 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     if (tr.results && typeof tr.results === 'object' && !Array.isArray(tr.results)) {
       Object.entries(tr.results).forEach(([subj, data]: [string, any]) => {
         if (!data) return;
-        if (!trialBranchStats[subj]) trialBranchStats[subj] = { correct: 0, incorrect: 0, net: 0, count: 0 };
+        if (!trialBranchStats[subj]) trialBranchStats[subj] = { correct: 0, incorrect: 0, empty: 0, net: 0, count: 0 };
         const c = Number(data.correct) || 0;
         const inc = Number(data.incorrect) || 0;
+        const emp = Number(data.empty) || 0;
         const branchNet = data.net !== undefined ? Number(data.net) : calculateNetScore(c, inc, grade);
         
         trialBranchStats[subj].correct += c;
         trialBranchStats[subj].incorrect += inc;
+        trialBranchStats[subj].empty += emp;
         trialBranchStats[subj].net += branchNet;
         trialBranchStats[subj].count += 1;
 
@@ -284,15 +286,15 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
 
   const targetTrialNet = Number((Math.max(latestTrialNet, highestTrialNet) + 3.5).toFixed(1));
 
-  // 4. Identify Topics with Success Rate UNDER 80% (< %80)
+  // 4. Identify Topics with Success Rate UNDER 85% (< %85) - Boş sorular da dahil (Doğru / [Doğru + Yanlış + Boş])
   const under80Topics: any[] = [];
   
   // From weekly tasks:
   Object.values(topicPerformanceMap).forEach(tp => {
-    const answered = tp.correct + tp.incorrect;
-    if (answered > 0) {
-      const accuracy = Math.round((tp.correct / answered) * 100);
-      if (accuracy < 80) {
+    const evaluatedTotal = tp.correct + tp.incorrect + tp.empty;
+    if (evaluatedTotal > 0) {
+      const accuracy = Math.round((tp.correct / evaluatedTotal) * 100);
+      if (accuracy < 85) {
         const isCritical = accuracy < 60 || tp.incorrect >= 4;
         const recVideo = getRecommendedVideo(tp.subject, tp.topic);
         under80Topics.push({
@@ -302,11 +304,11 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
           correct: tp.correct,
           incorrect: tp.incorrect,
           empty: tp.empty,
-          totalAnswered: answered,
+          totalAnswered: evaluatedTotal,
           severity: isCritical ? 'critical' : 'warning',
-          severityLabel: isCritical ? 'Kritik Eksik (< %60)' : 'Geliştirilmeli (%60 - %79)',
-          diagnosis: `${tp.subject} branşında '${tp.topic}' konusunda çözülen ${answered} soruda ${tp.incorrect} yanlış ve ${tp.empty} boş kaydedildi. Başarı oranı %${accuracy} ile %80 hedef eşiğinin altındadır.`,
-          recommendation: `1) '${tp.topic}' özet konu anlatımını inceleyin. 2) Günde 20-25 pekiştirme sorusu çözün. 3) Yapılan ${tp.incorrect} yanlışı video çözümleriyle analiz edin.`,
+          severityLabel: isCritical ? 'Kritik Eksik (< %60)' : 'Geliştirilmeli (%60 - %84)',
+          diagnosis: `${tp.subject} branşında '${tp.topic}' konusunda çözülen ${evaluatedTotal} soruda ${tp.correct} doğru, ${tp.incorrect} yanlış ve ${tp.empty} boş kaydedildi. Boş sorular dahil başarı oranı %${accuracy} ile %85 hedef eşiğinin altındadır.`,
+          recommendation: `1) '${tp.topic}' özet konu anlatımını inceleyin. 2) Günde 20-25 pekiştirme sorusu çözün. 3) Yapılan ${tp.incorrect} yanlış ve ${tp.empty} boş soruyu video çözümleriyle analiz edin.`,
           actionPlan: `Günde 20-25 soru telafi çalışması`,
           video: recVideo
         });
@@ -320,20 +322,21 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     if (!alreadyInList) {
       const branchStat = trialBranchStats[tm.subject];
       const branchCorrect = branchStat?.correct || 0;
-      const answered = branchCorrect + tm.count;
-      const acc = answered > 0 ? Math.round((branchCorrect / answered) * 100) : 50;
-      if (acc < 80) {
+      const branchEmpty = branchStat?.empty || 0;
+      const totalBranchEvaluated = branchCorrect + tm.count + branchEmpty;
+      const acc = totalBranchEvaluated > 0 ? Math.round((branchCorrect / totalBranchEvaluated) * 100) : 50;
+      if (acc < 85) {
         under80Topics.push({
           subject: tm.subject,
           topic: tm.topic,
           accuracy: acc,
           correct: branchCorrect,
           incorrect: tm.count,
-          empty: 0,
-          totalAnswered: answered,
+          empty: branchEmpty,
+          totalAnswered: totalBranchEvaluated,
           severity: acc < 60 ? 'critical' : 'warning',
           severityLabel: acc < 60 ? 'Kritik Deneme Eksiği' : 'Deneme Eksiği',
-          diagnosis: `Deneme sınavında ${tm.subject} branşında '${tm.topic}' konusunda ${tm.count} yanlış yapıldı. Başarı oranı %${acc} seviyesinde kaldı.`,
+          diagnosis: `Deneme sınavında ${tm.subject} branşında '${tm.topic}' konusunda ${tm.count} yanlış yapıldı. Boş sorular dahil başarı oranı %${acc} ile %85 hedef eşiğinin altında kaldı.`,
           recommendation: `Deneme sınavında hata yapılan '${tm.topic}' konusunun soru çözüm videosunu izleyip soru bankasından pekiştiriniz.`,
           actionPlan: `Deneme hata telafi çalışması`,
           video: getRecommendedVideo(tm.subject, tm.topic)
@@ -445,6 +448,8 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     summary: activeMetricsTasks.length > 0
       ? `Haftalık programda planlanan ${activeMetricsTasks.length} görevden ${completedTasks.length} tanesi (%${completionRate}) tamamlanmıştır. ${weeklySolvedQuestions > 0 ? `Toplam ${weeklySolvedQuestions} soru çözülmüştür.` : ''} ${evaluatedQuestionsText}`
       : `Haftalık programda henüz kayıtlı ödev bulunmamaktadır. Görevler tamamlandıkça doğruluk ve soru tamamlama analizleri güncellenecektir.`,
+    under85TopicsCount: under80Topics.length,
+    under85Topics: under80Topics,
     under80TopicsCount: under80Topics.length,
     under80Topics: under80Topics,
     recommendations: [
@@ -452,8 +457,8 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
         ? `Haftalık programda ${uncompletedTasks.length} tamamlanmamış görev bulunmaktadır. Yeni haftaya geçmeden bu görevler telafi edilmelidir.`
         : `Haftalık görevlerin tamamı eksiksiz tamamlanmıştır, çalışma disiplini mükemmel seviyededir.`,
       under80Topics.length > 0
-        ? `${under80Topics.length} konuda başarı oranı %80'in altında tespit edilmiştir. Bu konulara özel telafi planı uygulanmalıdır.`
-        : `Tüm çalışılan konularda %80 başarı eşiği aşılmıştır.`
+        ? `${under80Topics.length} konuda başarı oranı (boş sorular dahil) %85'in altında tespit edilmiştir. Bu konulara özel telafi planı uygulanmalıdır.`
+        : `Tüm çalışılan konularda boş sorular dahil %85 başarı eşiği aşılmıştır.`
     ]
   };
 
@@ -465,19 +470,21 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
 
   const subjectsAnalysis = actualSubjectNames.map(name => {
     const stats = Object.entries(subjectTaskStats).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
-    const relevantUnder80 = under80Topics.filter(u => u.subject.toLowerCase() === name.toLowerCase());
+    const relevantUnder85 = under80Topics.filter(u => u.subject.toLowerCase() === name.toLowerCase());
 
     const correctCount = stats?.correct || 0;
     const incorrectCount = stats?.incorrect || 0;
-    const answered = correctCount + incorrectCount;
+    const emptyCount = stats?.empty || 0;
+    const evaluatedTotal = correctCount + incorrectCount + emptyCount;
 
     let accuracy = 100;
-    if (answered > 0) {
-      accuracy = Math.round((correctCount / answered) * 100);
+    if (evaluatedTotal > 0) {
+      accuracy = Math.round((correctCount / evaluatedTotal) * 100);
     } else {
       const branchTrial = trialBranchStats[name];
-      if (branchTrial && (branchTrial.correct + branchTrial.incorrect) > 0) {
-        accuracy = Math.round((branchTrial.correct / (branchTrial.correct + branchTrial.incorrect)) * 100);
+      const branchEvaluated = (branchTrial?.correct || 0) + (branchTrial?.incorrect || 0) + (branchTrial?.empty || 0);
+      if (branchEvaluated > 0) {
+        accuracy = Math.round(((branchTrial?.correct || 0) / branchEvaluated) * 100);
       } else {
         accuracy = 100;
       }
@@ -485,13 +492,13 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
 
     let status: 'success' | 'warning' | 'danger' = 'success';
     if (accuracy < 60) status = 'danger';
-    else if (accuracy < 80) status = 'warning';
+    else if (accuracy < 85) status = 'warning';
 
-    const deficiencies = relevantUnder80.map(u => ({
+    const deficiencies = relevantUnder85.map(u => ({
       topic: u.topic,
       errorCount: u.incorrect,
       accuracy: u.accuracy,
-      description: `${name} dersinde '${u.topic}' konusunda ${u.incorrect} yanlış kaydedildi. Gerçek başarı oranı %${u.accuracy} olup %80 eşiğinin altındadır.`,
+      description: `${name} dersinde '${u.topic}' konusunda ${u.incorrect} yanlış ve ${u.empty || 0} boş kaydedildi. Boş sorular dahil başarı oranı %${u.accuracy} olup %85 eşiğinin altındadır.`,
       recommendations: [
         getRecommendedVideo(name, u.topic)
       ]
@@ -515,23 +522,23 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     : '';
 
   const taskText = totalEvaluatedQuestions > 0 
-    ? `Bu hafta sonuçları girilen ${totalEvaluatedQuestions} soruda ${weeklyCorrect} Doğru, ${weeklyIncorrect} Yanlış, ${weeklyEmpty} Boş kaydedildi (Net: ${weeklyNet.toFixed(2)}, Doğruluk: %${weeklyOverallAccuracy}).${weeklyUnevaluatedQuestions > 0 ? ` Tamamlanan ${weeklyUnevaluatedQuestions} soru için doğru/yanlış girişi beklenmektedir.` : ''}` 
+    ? `Bu hafta sonuçları girilen ${totalEvaluatedQuestions} soruda ${weeklyCorrect} Doğru, ${weeklyIncorrect} Yanlış, ${weeklyEmpty} Boş kaydedildi (Net: ${weeklyNet.toFixed(2)}, Boşlar Dahil Doğruluk: %${weeklyOverallAccuracy}).${weeklyUnevaluatedQuestions > 0 ? ` Tamamlanan ${weeklyUnevaluatedQuestions} soru için doğru/yanlış girişi beklenmektedir.` : ''}` 
     : (weeklySolvedQuestions > 0 
       ? `Bu hafta toplam ${weeklySolvedQuestions} soru çözüldü (Öğrenci doğru/yanlış girişini tamamladığında detaylı başarı oranı hesaplanacaktır).` 
       : `Haftalık ödev tamamlama oranı %${completionRate}.`);
 
-  const summary = `${studentName || 'Öğrenci'} (${grade || 'Güncel Seviye'}), haftalık programında ${activeMetricsTasks.length} görevden ${completedTasks.length}'ini tamamladı (%${completionRate} tamamlama). ${taskText} ${videoText} ${readingText} ${trialText} ${under80Topics.length > 0 ? `%80 başarı eşiğinin altında kalan ${under80Topics.length} kritik konuya odaklanılması önerilmektedir.` : 'Tüm sonucu girilen konularda başarı oranı %80 ve üzerindedir.'}`.replace(/\s+/g, ' ').trim();
+  const summary = `${studentName || 'Öğrenci'} (${grade || 'Güncel Seviye'}), haftalık programında ${activeMetricsTasks.length} görevden ${completedTasks.length}'ini tamamladı (%${completionRate} tamamlama). ${taskText} ${videoText} ${readingText} ${trialText} ${under80Topics.length > 0 ? `Boş sorular dahil %85 başarı eşiğinin altında kalan ${under80Topics.length} kritik konuya odaklanılması önerilmektedir.` : 'Tüm sonucu girilen konularda boş sorular dahil başarı oranı %85 ve üzerindedir.'}`.replace(/\s+/g, ' ').trim();
 
   const errorAnalysis = under80Topics.length > 0
-    ? `Haftalık programda doğru-yanlış girişlerine göre %80 başarı eşiğinin altında kalan kritik konular: ${under80Topics.map(u => `${u.subject} - ${u.topic} (%${u.accuracy} Başarı, ${u.incorrect} Yanlış)`).join(', ')}. Bu konularda hata telafisi yapılmalı ve video destekli soru çözümü sağlanmalıdır.`
+    ? `Haftalık programda doğru-yanlış-boş girişlerine göre %85 başarı eşiğinin altında kalan kritik konular: ${under80Topics.map(u => `${u.subject} - ${u.topic} (%${u.accuracy} Başarı, ${u.incorrect} Yanlış, ${u.empty || 0} Boş)`).join(', ')}. Bu konularda hata ve boş telafisi yapılmalı ve video destekli soru çözümü sağlanmalıdır.`
     : sortedErrors.length > 0
     ? `En çok yanlış yapılan ilk 3 kritik konu: ${sortedErrors.slice(0, 3).map((e, idx) => `${idx + 1}) ${e.subject} - ${e.topic} (${e.count} Yanlış)`).join(', ')}.`
-    : `Öğrencinin verilen çalışmalarında %80 başarı eşiğinin altında kalan bir konu bulunmamaktadır. Tüm konularda %80 başarı kuralı sağlanmıştır.`;
+    : `Öğrencinin verilen çalışmalarında boş sorular dahil %85 başarı eşiğinin altında kalan bir konu bulunmamaktadır. Tüm konularda %85 başarı kuralı sağlanmıştır.`;
 
   const teacherPedagogyNotes = [
     under80Topics.length > 0
-      ? `Öğrencinin ${under80Topics[0].subject} dersi '${under80Topics[0].topic}' konusundaki başarı oranı %${under80Topics[0].accuracy}'de kalmıştır. Birebir koçluk görüşmesinde bu konunun yanlış soruları incelenmelidir.`
-      : `Öğrencinin verilen tüm konulardaki doğruluk oranları hedeflenen %80 seviyesinin üzerindedir, tebrik edilerek motivasyonu desteklenmelidir.`,
+      ? `Öğrencinin ${under80Topics[0].subject} dersi '${under80Topics[0].topic}' konusundaki boşlar dahil başarı oranı %${under80Topics[0].accuracy}'de kalmıştır. Birebir koçluk görüşmesinde bu konunun yanlış ve boş soruları incelenmelidir.`
+      : `Öğrencinin verilen tüm konulardaki boşlar dahil doğruluk oranları hedeflenen %85 seviyesinin üzerindedir, tebrik edilerek motivasyonu desteklenmelidir.`,
     uncompletedTasks.length > 0 
       ? `Bu hafta öğrencinin yapmadığı ${uncompletedTasks.length} adet eksik ödev bulunmaktadır. Yeni plana geçmeden önce telafi edilmelidir.`
       : `Öğrenci haftalık programdaki tüm ödevleri eksiksiz tamamladı.`,
@@ -625,7 +632,7 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     topic: u.topic,
     errorCount: u.incorrect,
     urgency: u.severity === 'critical' ? 'urgent' : 'high',
-    urgencyLabel: u.severity === 'critical' ? 'Acil İhtiyaç (<%60)' : 'Öncelikli Gelişim (<%80)',
+    urgencyLabel: u.severity === 'critical' ? 'Acil İhtiyaç (<%60)' : 'Öncelikli Gelişim (<%85)',
     title: `${u.subject} - ${u.topic} Telafisi`,
     description: u.diagnosis,
     neededAction: u.recommendation,
@@ -642,6 +649,7 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     summary,
     trialAnalysis,
     weeklyProgramAnalysis,
+    under85Topics: under80Topics,
     under80Topics,
     weeklyPerformanceStats: {
       assignedQuestions: weeklyAssignedQuestions,
@@ -723,7 +731,8 @@ export async function fetchAiAnalysisSafely(input: AnalysisInput): Promise<any> 
           ...parsedData,
           trialAnalysis: parsedData.trialAnalysis || localFallback.trialAnalysis,
           weeklyProgramAnalysis: parsedData.weeklyProgramAnalysis || localFallback.weeklyProgramAnalysis,
-          under80Topics: parsedData.under80Topics || localFallback.under80Topics
+          under85Topics: parsedData.under85Topics || parsedData.under80Topics || localFallback.under85Topics,
+          under80Topics: parsedData.under85Topics || parsedData.under80Topics || localFallback.under80Topics
         };
       }
     } catch (parseErr) {
@@ -810,12 +819,12 @@ export function buildAiPromptData(smartStats: any, input: AnalysisInput) {
 TEMEL VE TAVİZSİZ PEDAGOJİK KURALLAR:
 1. GÖREV TÜRLERİNİ ASLA KARIŞTIRMA:
    - Video izleme (type: video) ve kitap/metin okuma (type: book/reading) görevleri soru testi DEĞİLDİR. Bunlar için ASLA "0 doğru yaptı", "soru çözemedi" veya "başarısız oldu" deme. Video izlendiyse "konu anlatım videosunu başarıyla izledi", kitap okunduysa "kitap okuma hedefini tamamladı" şeklinde takdir et.
-2. DOĞRU-YANLIŞ GİRİŞLERİNİ DÜZGÜN ANALİZ ET:
+2. DOĞRU-YANLIŞ VE BOŞ GİRİŞLERİNİ DÜZGÜN ANALİZ ET:
    - Bir soru ödevi tamamlanmış ancak öğrenci henüz doğru/yanlış girmemişse, bunu "sıfır doğru yaptı" şeklinde YORUMLAMA. "Soru çözümü tamamlanmış olup doğru/yanlış girişi beklenmektedir" şeklinde ifade et.
-   - Sadece öğrencinin bizzat doğru ve yanlış girdiği sorular üzerinden doğruluk yüzdesini (% Doğruluk) ve net skorunu değerlendir.
-3. YÜZDE SEKSEN (%80) BAŞARI KURALI:
-   - Doğruluk oranı %80'in altında kalan konular (<%80) eksik/telafi konusu olarak kabul edilir; bu konular için somut soru çözümü, hata analizi ve video tekrarı önerilir.
-   - Doğruluk oranı %80 ve üzerinde olan konular (%80+) başarılı kabul edilir; motivasyonu artırıcı tebrik ve pekiştirme önerilir.
+   - Başarı ve doğruluk oranı formülü: (Doğru / [Doğru + Yanlış + Boş]) * 100 olarak hesaplanır. Boş bırakılan sorular da başarı oranını düşürür ve hesaba mutlaka dahil edilmelidir.
+3. YÜZDE SEKSEN BEŞ (%85) BAŞARI KURALI (BOŞ SORULAR DAHİL):
+   - Boş sorular dahil başarı/doğruluk oranı %85'in altında kalan konular (<%85) eksik/telafi konusu olarak kabul edilir; bu konular için somut soru çözümü, hata ve boş soru analizi ile video tekrarı önerilir.
+   - Boş sorular dahil doğruluk oranı %85 ve üzerinde olan konular (%85+) başarılı kabul edilir; motivasyonu artırıcı tebrik ve pekiştirme önerilir.
 4. ASLA HARİCİ DERS VEYA KONU UYDURMA:
    - Yalnızca öğrencinin haftalık programında ve girdiği denemelerde olan gerçek ders ve konuları analiz et. Programa atanmamış dersleri asla ekleme.
 5. PROGRAMIN GÜNLÜK VE DERS DAĞILIMINI ANALİZ ET:
@@ -845,7 +854,7 @@ Yanıtını mutlaka geçerli JSON formatında döndür.`;
   * Atanan Hedef Soru: ${stats.assignedQuestions}
   * Çözülen Soru: ${stats.solvedQuestions} (%${stats.questionCompletionRate} İlerleme)
   * Sonucu Girilen Sorular: ${stats.totalCorrect + stats.totalIncorrect + stats.totalEmpty} soru (Doğru: ${stats.totalCorrect}, Yanlış: ${stats.totalIncorrect}, Boş: ${stats.totalEmpty}, Net: ${stats.totalNet})
-  * Sonuç Doğruluk Oranı: %${stats.successRate}
+  * Sonuç Doğruluk Oranı (Boşlar Dahil): %${stats.successRate}
 ${stats.unevaluatedQuestions > 0 ? `  * Not: Çözülen sorulardan ${stats.unevaluatedQuestions} tanesi için öğrenci henüz doğru/yanlış girişi yapmadı.\n` : ''}
 ${stats.videoTasksCount > 0 ? `- Video Görevleri: ${stats.videoTasksCount} adet (Tamamlanan: ${stats.completedVideoTasksCount})\n` : ''}${stats.readingTasksCount > 0 ? `- Kitap/Okuma Görevleri: ${stats.readingTasksCount} adet (Tamamlanan: ${stats.completedReadingTasksCount})\n` : ''}
 Öğrencinin Günlük Program Dağılımı ve Görev Durumları:
@@ -862,17 +871,19 @@ ${formattedTrials}
 ${smartStats.trialAnalysis.branchAverages?.map((b: any) => `- ${b.subject}: ${b.totalIncorrect || 0} Yanlış, Ort. Net: ${b.averageNet}`).join('\n') || 'Veri yok'}
 
 =========================================
-3. %80 BAŞARI KURALI ANALİZİ:
+3. %85 BAŞARI KURALI ANALİZİ (BOŞLAR DAHİL):
 =========================================
-${smartStats.under80Topics && smartStats.under80Topics.length > 0
-  ? `Başarı Oranı %80'in Altında Kalan Kritik Konular:\n` + smartStats.under80Topics.map((u: any) => `- ${u.subject} / ${u.topic}: Doğruluk %${u.accuracy} (${u.correct} Doğru, ${u.incorrect} Yanlış)`).join('\n')
-  : `Öğrencinin sonucu girilen tüm çalışmalarında %80 başarı eşiği aşılmıştır veya henüz %80 altı konu bulunmamaktadır.`}
+${smartStats.under85Topics && smartStats.under85Topics.length > 0
+  ? `Boş Sorular Dahil Başarı Oranı %85'in Altında Kalan Kritik Konular:\n` + smartStats.under85Topics.map((u: any) => `- ${u.subject} / ${u.topic}: Doğruluk %${u.accuracy} (${u.correct} Doğru, ${u.incorrect} Yanlış, ${u.empty || 0} Boş)`).join('\n')
+  : (smartStats.under80Topics && smartStats.under80Topics.length > 0
+    ? `Boş Sorular Dahil Başarı Oranı %85'in Altında Kalan Kritik Konular:\n` + smartStats.under80Topics.map((u: any) => `- ${u.subject} / ${u.topic}: Doğruluk %${u.accuracy} (${u.correct} Doğru, ${u.incorrect} Yanlış, ${u.empty || 0} Boş)`).join('\n')
+    : `Öğrencinin sonucu girilen tüm çalışmalarında %85 başarı eşiği (boşlar dahil) aşılmıştır veya henüz %85 altı konu bulunmamaktadır.`)}
 
 TALİMATLAR:
-1. "weeklyProgramReview" alanında haftalık programı, gün dağılımını, tamamlanan soru ve video/kitap görevlerini, girilen doğru/yanlışları detaylıca analiz et.
+1. "weeklyProgramReview" alanında haftalık programı, gün dağılımını, tamamlanan soru ve video/kitap görevlerini, girilen doğru/yanlış/boşları detaylıca analiz et.
 2. "trialReview" alanında ASLA "istikrarlı" gibi kelimeler kullanmadan, SADECE öğrencinin yanlış yaptığı konuları, kaybettiği netleri ve doğrudan bu yanlışları düzeltmeye yarayan taktikleri değerlendir.
 3. "summary" alanında öğrenciyi motive eden, haftalık programını ve başarılarını özetleyen pedagojik bir koçluk metni yaz.
-4. "errorAnalysis" alanında %80 altında kalan veya yanlış yapılan konuların somut telafi yollarını anlat.
+4. "errorAnalysis" alanında boşlar dahil %85 altında kalan veya yanlış yapılan konuların somut telafi yollarını anlat.
 5. "teacherPedagogyNotes" alanında öğretmenin koçluk görüşmesinde odaklanması gereken en az 3 somut pedagojik madde yaz.
 6. "weeklyPlanRecommendations" alanında yalnızca öğrencinin programında çalışılan derslerden somut telafi ödevleri öner.`;
 

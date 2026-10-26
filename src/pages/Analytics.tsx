@@ -413,10 +413,10 @@ export function Analytics() {
                 }`}
               >
                 <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                <span>%80 Altı Kritik Konular</span>
-                {aiAnalysis.under80Topics && aiAnalysis.under80Topics.length > 0 && (
+                <span>%85 Altı Kritik Konular</span>
+                {(aiAnalysis.under85Topics || aiAnalysis.under80Topics) && (aiAnalysis.under85Topics || aiAnalysis.under80Topics).length > 0 && (
                   <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-700">
-                    {aiAnalysis.under80Topics.length}
+                    {(aiAnalysis.under85Topics || aiAnalysis.under80Topics).length}
                   </span>
                 )}
               </button>
@@ -561,7 +561,7 @@ export function Analytics() {
               </div>
             )}
 
-            {/* TAB 3: %80 BAŞARI EŞİĞİNİN ALTINDAKİ KONULAR VE ÖZEL TAVSİYELER */}
+            {/* TAB 3: %85 BAŞARI EŞİĞİNİN ALTINDAKİ KONULAR VE ÖZEL TAVSİYELER */}
             {(analysisTab === 'all' || analysisTab === 'under80' || analysisTab === 'weekly') && (
               <div className="p-6 bg-gradient-to-br from-rose-50/80 via-white to-amber-50/60 rounded-3xl border border-rose-200/80 shadow-sm space-y-6">
                 <div className="flex items-center justify-between flex-wrap gap-3">
@@ -571,24 +571,24 @@ export function Analytics() {
                     </div>
                     <div>
                       <h4 className="font-black text-lg text-rose-950 flex items-center gap-2">
-                        %80 Başarı Eşiğinin Altındaki Kritik Konular
+                        %85 Başarı Eşiğinin Altındaki Kritik Konular (Boşlar Dahil)
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-600 text-white uppercase tracking-wider">
-                          Hedef: %80+
+                          Hedef: %85+
                         </span>
                       </h4>
                       <p className="text-xs text-rose-900/80 font-medium">
-                        Öğrencinin haftalık programda doğru-yanlış girdiği ve başarı oranı %80'in altında kalan konuların teşhisi ve video önerileri
+                        Öğrencinin haftalık programda doğru-yanlış-boş girdiği ve boş sorular dahil başarı oranı %85'in altında kalan konuların teşhisi ve video önerileri
                       </p>
                     </div>
                   </div>
                   <span className="text-xs font-extrabold px-3 py-1 bg-white rounded-full border border-rose-300 text-rose-700 shadow-2xs">
-                    {aiAnalysis.under80Topics?.length || 0} Kritik Konu Tespit Edildi
+                    {(aiAnalysis.under85Topics || aiAnalysis.under80Topics)?.length || 0} Kritik Konu Tespit Edildi
                   </span>
                 </div>
 
-                {aiAnalysis.under80Topics && aiAnalysis.under80Topics.length > 0 ? (
+                {(aiAnalysis.under85Topics || aiAnalysis.under80Topics) && (aiAnalysis.under85Topics || aiAnalysis.under80Topics).length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {aiAnalysis.under80Topics.map((topicItem: any, idx: number) => {
+                    {(aiAnalysis.under85Topics || aiAnalysis.under80Topics).map((topicItem: any, idx: number) => {
                       const isCritical = topicItem.accuracy < 60;
                       return (
                         <div 
@@ -610,7 +610,7 @@ export function Analytics() {
                                 %{topicItem.accuracy} Başarı
                               </span>
                               <span className="text-[10px] font-bold text-on-surface-variant block mt-0.5">
-                                {topicItem.correct}D / {topicItem.incorrect}Y
+                                {topicItem.correct}D / {topicItem.incorrect}Y / {topicItem.empty || 0}B
                               </span>
                             </div>
                           </div>
@@ -618,12 +618,12 @@ export function Analytics() {
                           {/* Progress Bar */}
                           <div className="space-y-1">
                             <div className="flex justify-between text-[10px] font-bold text-on-surface-variant">
-                              <span>Mevcut Başarı: %{topicItem.accuracy}</span>
-                              <span className="text-rose-600 font-black">Hedef: %80</span>
+                              <span>Mevcut Başarı (Boşlar Dahil): %{topicItem.accuracy}</span>
+                              <span className="text-rose-600 font-black">Hedef: %85</span>
                             </div>
                             <div className="h-2 bg-surface-container-high rounded-full overflow-hidden relative">
-                              {/* 80% mark */}
-                              <div className="absolute top-0 bottom-0 left-[80%] w-0.5 bg-rose-500 z-10" title="Hedef Eşik (%80)" />
+                              {/* 85% mark */}
+                              <div className="absolute top-0 bottom-0 left-[85%] w-0.5 bg-rose-500 z-10" title="Hedef Eşik (%85)" />
                               <div 
                                 className={`h-full rounded-full transition-all ${
                                   isCritical ? 'bg-rose-600' : 'bg-amber-500'
@@ -671,9 +671,9 @@ export function Analytics() {
                 ) : (
                   <div className="p-6 bg-white rounded-2xl border border-emerald-200 text-center space-y-2">
                     <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                    <p className="text-sm font-bold text-emerald-950">Tebrikler! %80 Eşiğinin Altında Konu Yok</p>
+                    <p className="text-sm font-bold text-emerald-950">Tebrikler! %85 Eşiğinin Altında Konu Yok</p>
                     <p className="text-xs text-emerald-800">
-                      Öğrencinin haftalık programdaki görevlerinde çözülen tüm konularda %80 başarı oranının üzerinde performans kaydedilmiştir.
+                      Öğrencinin haftalık programdaki görevlerinde çözülen tüm konularda boş sorular dahil %85 başarı oranının üzerinde performans kaydedilmiştir.
                     </p>
                   </div>
                 )}

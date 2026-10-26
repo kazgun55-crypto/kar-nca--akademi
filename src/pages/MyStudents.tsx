@@ -2411,8 +2411,8 @@ export function MyStudents() {
                         </div>
                       </div>
 
-                      {/* %80 Başarı Eşiğinin Altındaki Kritik Konular & Özel Tavsiyeler */}
-                      {aiAnalysis.under80Topics && aiAnalysis.under80Topics.length > 0 && (
+                      {/* %85 Başarı Eşiğinin Altındaki Kritik Konular & Özel Tavsiyeler (Boşlar Dahil) */}
+                      {(aiAnalysis.under85Topics || aiAnalysis.under80Topics) && (aiAnalysis.under85Topics || aiAnalysis.under80Topics).length > 0 && (
                         <div className="p-6 bg-gradient-to-br from-rose-50/70 via-white to-amber-50/50 rounded-3xl border border-rose-200 space-y-4">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center gap-2.5">
@@ -2421,20 +2421,20 @@ export function MyStudents() {
                               </div>
                               <div>
                                 <h4 className="font-black text-base text-rose-950 flex items-center gap-2">
-                                  %80 Başarı Eşiğinin Altındaki Kritik Konular (&lt;%80)
+                                  %85 Başarı Eşiğinin Altındaki Kritik Konular (&lt;%85)
                                 </h4>
                                 <p className="text-xs text-rose-900/80 font-medium">
-                                  Öğrencinin haftalık programda çözdüğü ve başarı oranı %80'in altında kalan konuların analizi
+                                  Öğrencinin haftalık programda çözdüğü ve boş sorular dahil başarı oranı %85'in altında kalan konuların analizi
                                 </p>
                               </div>
                             </div>
                             <span className="text-xs font-black px-3 py-1 bg-white rounded-full border border-rose-300 text-rose-700 shadow-2xs">
-                              {aiAnalysis.under80Topics.length} Konu Tespit Edildi
+                              {(aiAnalysis.under85Topics || aiAnalysis.under80Topics).length} Konu Tespit Edildi
                             </span>
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {aiAnalysis.under80Topics.map((topicItem: any, idx: number) => (
+                            {(aiAnalysis.under85Topics || aiAnalysis.under80Topics).map((topicItem: any, idx: number) => (
                               <div key={idx} className="p-4 bg-white rounded-2xl border border-rose-100 shadow-xs space-y-3">
                                 <div className="flex items-start justify-between gap-2">
                                   <div>
@@ -2448,7 +2448,7 @@ export function MyStudents() {
                                       %{topicItem.accuracy} Başarı
                                     </span>
                                     <span className="text-[10px] text-on-surface-variant block mt-0.5">
-                                      {topicItem.correct}D • {topicItem.incorrect}Y
+                                      {topicItem.correct}D • {topicItem.incorrect}Y • {topicItem.empty || 0}B
                                     </span>
                                   </div>
                                 </div>
@@ -2492,7 +2492,7 @@ export function MyStudents() {
                       )}
 
                       {/* Error Analysis Callout Card */}
-                      {aiAnalysis.errorAnalysis && !aiAnalysis.under80Topics?.length && (
+                      {aiAnalysis.errorAnalysis && !(aiAnalysis.under85Topics || aiAnalysis.under80Topics)?.length && (
                         <div className="p-6 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-transparent rounded-3xl border border-rose-200/60 shadow-xs space-y-2">
                           <div className="flex items-center gap-2">
                             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />

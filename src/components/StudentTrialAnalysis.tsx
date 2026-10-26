@@ -366,17 +366,19 @@ export function StudentTrialAnalysis({
       netTrend = Number((nets[0] - nets[1]).toFixed(2));
     }
 
-    // Overall accuracy from detailed trials
+    // Overall accuracy from detailed trials (Doğru / [Doğru + Yanlış + Boş])
     let totalC = 0;
     let totalInc = 0;
+    let totalEmp = 0;
     detailedTrials.forEach((t) => {
       Object.values(t.results || {}).forEach((subRes: any) => {
         totalC += (Number(subRes.correct) || 0);
         totalInc += (Number(subRes.incorrect) || 0);
+        totalEmp += (Number(subRes.empty) || 0);
       });
     });
-    const totalAnswered = totalC + totalInc;
-    const accuracyRate = totalAnswered > 0 ? Math.round((totalC / totalAnswered) * 100) : 0;
+    const totalEvaluated = totalC + totalInc + totalEmp;
+    const accuracyRate = totalEvaluated > 0 ? Math.round((totalC / totalEvaluated) * 100) : 0;
 
     return {
       count: Math.max(detailedTrials.length, simpleTrials.length),
@@ -447,8 +449,8 @@ export function StudentTrialAnalysis({
 
     return Object.entries(map).map(([subject, data]) => {
       const avgNet = data.trialsCount > 0 ? Number((data.totalNet / data.trialsCount).toFixed(2)) : 0;
-      const totalAnswered = data.totalCorrect + data.totalIncorrect;
-      const accuracy = totalAnswered > 0 ? Math.round((data.totalCorrect / totalAnswered) * 100) : 0;
+      const totalEvaluated = data.totalCorrect + data.totalIncorrect + data.totalEmpty;
+      const accuracy = totalEvaluated > 0 ? Math.round((data.totalCorrect / totalEvaluated) * 100) : 0;
       return {
         subject,
         avgNet,
@@ -591,7 +593,7 @@ export function StudentTrialAnalysis({
             %{kpis.accuracyRate}
           </p>
           <p className="text-[10px] text-on-surface-variant font-medium">
-            Doğru / Cevaplanan Soru
+            Doğru / Toplam (Boşlar Dahil)
           </p>
         </div>
       </div>
@@ -733,7 +735,7 @@ export function StudentTrialAnalysis({
                     <span className="font-extrabold text-on-surface">{sub.avgNet.toFixed(2)} Net</span>
                   </div>
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-on-surface-variant font-medium">Doğruluk Başarısı:</span>
+                    <span className="text-on-surface-variant font-medium">Doğruluk (Boşlar Dahil):</span>
                     <span className="font-extrabold text-emerald-700">%{sub.accuracy}</span>
                   </div>
                   <div className="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden mt-1">

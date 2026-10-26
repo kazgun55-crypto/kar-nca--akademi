@@ -239,8 +239,8 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
   const remaining = Math.max(0, assigned - solved);
   const progressPercent = assigned > 0 ? Math.min(100, Math.round((solved / assigned) * 100)) : 0;
   const unevaluatedQuestions = Math.max(0, solved - evaluatedQuestions);
-  const answeredEvaluated = correct + incorrect;
-  const accuracyRate = answeredEvaluated > 0 ? Math.round((correct / answeredEvaluated) * 100) : 0;
+  const evaluatedTotalWithEmpty = correct + incorrect + empty;
+  const accuracyRate = evaluatedTotalWithEmpty > 0 ? Math.round((correct / evaluatedTotalWithEmpty) * 100) : 0;
 
   return {
     assignedQuestions: assigned,

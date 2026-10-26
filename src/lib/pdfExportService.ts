@@ -16,7 +16,9 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
   const stats = analysis.weeklyPerformanceStats || {};
   const trial = analysis.trialAnalysis || {};
   const weekly = analysis.weeklyProgramAnalysis || {};
-  const under80 = Array.isArray(analysis.under80Topics) ? analysis.under80Topics : [];
+  const under80 = Array.isArray(analysis.under85Topics) 
+    ? analysis.under85Topics 
+    : (Array.isArray(analysis.under80Topics) ? analysis.under80Topics : []);
   const pedagogyNotes = Array.isArray(analysis.teacherPedagogyNotes) ? analysis.teacherPedagogyNotes : [];
   const subjects = Array.isArray(analysis.subjects) ? analysis.subjects : [];
 
@@ -308,15 +310,15 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
         <div class="summary-val val-primary">%${completionRate}</div>
       </div>
       <div class="summary-card">
-        <div class="summary-label">Soru Doğruluğu</div>
-        <div class="summary-val ${successRate >= 80 ? 'val-success' : 'val-warning'}">%${successRate}</div>
+        <div class="summary-label">Soru Doğruluğu (Boşlar Dahil)</div>
+        <div class="summary-val ${successRate >= 85 ? 'val-success' : 'val-warning'}">%${successRate}</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">Son Deneme Neti</div>
         <div class="summary-val">${latestTrialNet > 0 ? `${latestTrialNet} Net` : 'Kayıt Bekleniyor'}</div>
       </div>
       <div class="summary-card">
-        <div class="summary-label">%80 Eşik Durumu</div>
+        <div class="summary-label">%85 Eşik Durumu</div>
         <div class="summary-val ${under80.length === 0 ? 'val-success' : 'val-warning'}">
           ${under80.length === 0 ? 'Hedefe Uygun ✨' : `${under80.length} Odak Alanı`}
         </div>
@@ -350,8 +352,8 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
             <span>${correctQ} D / ${incorrectQ} Y / ${emptyQ} B</span>
           </div>
           <div class="stat-line">
-            <span>Genel Soru Başarısı:</span>
-            <span style="color: ${successRate >= 80 ? '#16a34a' : '#ea580c'}; font-weight: 800;">%${successRate}</span>
+            <span>Genel Soru Başarısı (Boşlar Dahil):</span>
+            <span style="color: ${successRate >= 85 ? '#16a34a' : '#ea580c'}; font-weight: 800;">%${successRate}</span>
           </div>
           <p style="margin: 6px 0 0 0; font-size: 8pt; color: #64748b; line-height: 1.35;">
             ${weekly.summary || 'Öğrencinin ödev tamamlama ve soru çözme performansı düzenli olarak değerlendirilmektedir.'}
@@ -384,23 +386,23 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
       </div>
     </div>
 
-    <!-- 3. %80 Başarı Kuralına Göre Odaklanılacak Konular -->
+    <!-- 3. %85 Başarı Kuralına Göre Odaklanılacak Konular -->
     <div class="section">
-      <h3 class="section-title">⚖️ %80 Başarı Kuralına Göre Konu Analizi</h3>
+      <h3 class="section-title">⚖️ %85 Başarı Kuralına Göre Konu Analizi (Boşlar Dahil)</h3>
       ${under80.length === 0 ? `
         <div class="rule80-box rule80-success">
-          ✨ <strong>Tebrikler:</strong> Öğrencinin çalıştığı tüm ders ve konularda başarı oranı hedeflenen %80 eşiğini aşmıştır. Şu an için acil telafi gerektiren bir konu bulunmamaktadır.
+          ✨ <strong>Tebrikler:</strong> Öğrencinin çalıştığı tüm ders ve konularda boş sorular dahil başarı oranı hedeflenen %85 eşiğini aşmıştır. Şu an için acil telafi gerektiren bir konu bulunmamaktadır.
         </div>
       ` : `
         <div class="rule80-box rule80-alert">
-          <p style="margin: 0 0 5px 0;"><strong>⚠️ Desteklenmesi Gereken Konular (%80 Altı):</strong> Aşağıdaki konularda başarı oranı %80 eşiğinin altında kalmıştır. Telafi soru çözümleri planlanmıştır:</p>
+          <p style="margin: 0 0 5px 0;"><strong>⚠️ Desteklenmesi Gereken Konular (%85 Altı):</strong> Aşağıdaki konularda boş sorular dahil başarı oranı %85 eşiğinin altında kalmıştır. Telafi soru çözümleri planlanmıştır:</p>
           <div>
             ${under80.map((u: any) => `
-              <span class="topic-badge">${u.subject} - ${u.topic} (%${u.accuracy ?? 0} Başarı, ${u.incorrect ?? 0} Yanlış)</span>
+              <span class="topic-badge">${u.subject} - ${u.topic} (%${u.accuracy ?? 0} Başarı, ${u.incorrect ?? 0} Yanlış, ${u.empty ?? 0} Boş)</span>
             `).join('')}
           </div>
           <p style="margin: 5px 0 0 0; font-size: 8pt; color: #7c2d12;">
-            ${analysis.errorAnalysis || 'Bu konuların yanlış soru videoları izlenmeli ve ek soru bankasından pekiştirme yapılmalıdır.'}
+            ${analysis.errorAnalysis || 'Bu konuların yanlış ve boş soru videoları izlenmeli ve ek soru bankasından pekiştirme yapılmalıdır.'}
           </p>
         </div>
       `}
@@ -409,12 +411,12 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
     <!-- 4. Çalışılan Ders Dağılımı (Sadece Verilen Dersler Varsa) -->
     ${subjects.length > 0 ? `
     <div class="section">
-      <h3 class="section-title">📚 Çalışılan Dersler Yetkinlik Özeti</h3>
+      <h3 class="section-title">📚 Çalışılan Dersler Yetkinlik Özeti (Boşlar Dahil)</h3>
       <div style="display: grid; grid-template-columns: repeat(${Math.min(subjects.length, 4)}, 1fr); gap: 6px;">
         ${subjects.map((s: any) => `
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px; text-align: center;">
             <div style="font-size: 7.5pt; font-weight: 700; color: #64748b;">${s.name}</div>
-            <div style="font-size: 10pt; font-weight: 900; color: ${s.accuracy >= 80 ? '#16a34a' : '#ea580c'};">%${s.accuracy}</div>
+            <div style="font-size: 10pt; font-weight: 900; color: ${s.accuracy >= 85 ? '#16a34a' : '#ea580c'};">%${s.accuracy}</div>
           </div>
         `).join('')}
       </div>
