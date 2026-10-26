@@ -1,20 +1,59 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import dotenv from 'dotenv';
+try {
+  dotenv.config();
+} catch {
+  // Ignore in environments where dotenv is unavailable
+}
 
-const apiKey = process.env.GEMINI_API_KEY;
-let ai: GoogleGenAI | null = null;
+export function resolveGeminiApiKey(): string | null {
+  const envCandidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.VITE_API_KEY,
+  ];
 
-if (apiKey) {
+  for (const candidate of envCandidates) {
+    if (candidate && typeof candidate === 'string') {
+      const clean = candidate.trim();
+      if (clean.length > 5 && !clean.startsWith('YOUR_') && !clean.includes('placeholder')) {
+        return clean;
+      }
+    }
+  }
+  return null;
+}
+
+export function getGeminiClient(): GoogleGenAI | null {
+  const resolvedKey = resolveGeminiApiKey();
+  if (resolvedKey) {
+    try {
+      return new GoogleGenAI({
+        apiKey: resolvedKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+    } catch (initErr) {
+      console.warn('Gemini client init with key failed in serverless:', initErr);
+    }
+  }
+
+  // Also try lazy default instantiation (in case internal SDK picks it from ambient environment)
   try {
-    ai = new GoogleGenAI({
-      apiKey: apiKey,
+    return new GoogleGenAI({
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
         },
       },
     });
-  } catch (initErr) {
-    console.warn('Gemini client init skipped or failed in serverless:', initErr);
+  } catch {
+    return null;
   }
 }
 
