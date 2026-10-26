@@ -4,7 +4,7 @@ export function TopBar() {
   return (
     <header className="w-full top-0 sticky bg-surface/80 backdrop-blur-md flex justify-between items-center px-8 h-20 max-w-full z-10">
       <div className="flex items-center gap-4">
-        <h2 className="font-manrope font-extrabold tracking-tight text-primary text-2xl md:hidden">Scholar Pulse</h2>
+        <h2 className="font-manrope font-extrabold tracking-tight text-primary text-2xl md:hidden">Köksal Akademi</h2>
         <div className="hidden md:flex gap-6 ml-8">
           <a href="#" className="text-on-surface opacity-70 hover:opacity-100 transition-opacity duration-200 text-sm font-bold">Panel</a>
           <a href="#" className="text-primary font-bold border-b-2 border-primary pb-1 text-sm">Öğrenciler</a>

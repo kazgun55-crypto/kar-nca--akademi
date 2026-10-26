@@ -62,7 +62,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Menu className="w-5 h-5 text-primary" />
             </button>
             <div>
-              <h2 className="font-manrope font-extrabold text-primary text-lg tracking-tight">Scholar Pulse</h2>
+              <h2 className="font-manrope font-extrabold text-primary text-lg tracking-tight">Köksal Akademi</h2>
               <p className="text-[10px] text-on-surface-variant font-medium">
                 {userRole === 'admin' ? 'Yönetici' : userRole === 'teacher' ? 'Öğretmen' : 'Öğrenci'}: {currentUserName}
               </p>

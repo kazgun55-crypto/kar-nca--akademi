@@ -37,9 +37,9 @@ export function StudentDirectory() {
 
   const handleSendMail = (student: any) => {
     const email = student.email || `${student.username}@okul.com`;
-    const subject = encodeURIComponent('Öğrenci Giriş Bilgileri - Scholar Pulse');
+    const subject = encodeURIComponent('Öğrenci Giriş Bilgileri - Köksal Akademi');
     const body = encodeURIComponent(
-      `Merhaba ${student.name},\n\nE-Okul / Scholar Pulse portalı giriş bilgileriniz aşağıdadır:\n\n` +
+      `Merhaba ${student.name},\n\nKöksal Akademi portalı giriş bilgileriniz aşağıdadır:\n\n` +
       `Kullanıcı Adı: ${student.username}\n` +
       `Şifre: ${student.password}\n\n` +
       `Giriş Yapmak İçin Portal Adresi: ${window.location.origin}\n\n` +

@@ -408,7 +408,7 @@ ${solution.steps.map(s => `${s.title}\n${s.explanation}${s.mathOrDetail ? `\n> $
 🔑 Altın Püf Noktası: ${solution.keyTip}
 ⚠️ Dikkat Edilecek Tuzak: ${solution.commonMistake}
 
-Scholar Pulse AI Soru Çözücü ile çözüldü.`;
+Köksal Akademi AI Soru Çözücü ile çözüldü.`;
 
     navigator.clipboard.writeText(text);
     setCopiedSuccess(true);

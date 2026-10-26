@@ -277,7 +277,7 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
 <body>
   <div class="no-print-bar">
     <div>
-      <strong>Scholar Pulse</strong> • Öğrenci Gelişim & Veli Bilgilendirme Raporu (${studentName})
+      <strong>Köksal Akademi</strong> • Öğrenci Gelişim & Veli Bilgilendirme Raporu (${studentName})
     </div>
     <div style="display: flex; gap: 8px;">
       <button class="btn" onclick="window.print()">
@@ -293,7 +293,7 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
     <!-- Header -->
     <div class="header">
       <div>
-        <h1 class="logo-title">Scholar Pulse Danışmanlık</h1>
+        <h1 class="logo-title">Köksal Akademi</h1>
         <p class="sub-title">Öğrenci Gelişim & Veli Bilgilendirme Raporu</p>
       </div>
       <div class="meta-box">
@@ -448,7 +448,7 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
     </div>
 
     <div class="footer-note">
-      Scholar Pulse Akademik Takip ve Koçluk Sistemi • Veli Bilgilendirme Raporu
+      Köksal Akademi Akademik Takip ve Koçluk Sistemi • Veli Bilgilendirme Raporu
     </div>
   </div>
 

@@ -165,7 +165,7 @@ export function TeacherDirectory() {
                   <td className="px-8 py-6 text-right">
                     <div className="flex justify-end gap-2">
                       <a 
-                        href={`mailto:${teacher.email}?subject=${encodeURIComponent('Giriş Bilgileri - Scholar Pulse')}&body=${encodeURIComponent(`Merhaba ${teacher.name},\n\nSistem giriş bilgileriniz:\n- Kullanıcı Adı: ${teacher.username}\n- Şifre: ${teacher.password}\n\nİyi çalışmalar.`)}`}
+                        href={`mailto:${teacher.email}?subject=${encodeURIComponent('Giriş Bilgileri - Köksal Akademi')}&body=${encodeURIComponent(`Merhaba ${teacher.name},\n\nSistem giriş bilgileriniz:\n- Kullanıcı Adı: ${teacher.username}\n- Şifre: ${teacher.password}\n\nİyi çalışmalar.`)}`}
                         title="E-posta Gönder"
                         className="p-2 rounded-xl hover:bg-white transition-colors text-outline hover:text-primary"
                       >

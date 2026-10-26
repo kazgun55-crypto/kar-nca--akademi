@@ -97,7 +97,7 @@ export function Sidebar({ isMobile = false, onClose }: SidebarProps) {
       {/* Sidebar Header (Fixed at top) */}
       <div className="shrink-0 px-6 py-4 md:pt-6 md:pb-3 flex items-center justify-between border-b border-outline-variant/10">
         <div className="min-w-0 pr-2">
-          <h1 className="font-manrope font-bold text-primary text-xl md:text-2xl tracking-tight truncate">Scholar Pulse</h1>
+          <h1 className="font-manrope font-bold text-primary text-xl md:text-2xl tracking-tight truncate">Köksal Akademi</h1>
           <p className="text-on-surface opacity-70 text-xs font-medium truncate">
             {userRole === 'admin' ? 'Yönetici Paneli' : userRole === 'teacher' ? 'Öğretmen Portalı' : 'Öğrenci Portalı'}
           </p>

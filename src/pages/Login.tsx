@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogIn, User, Lock, ArrowRight, ShieldCheck, Sparkles, Mail, CheckCircle2, AlertTriangle, X, KeyRound, Loader2, Eye, EyeOff } from 'lucide-react';
+import { LogIn, User, Lock, ArrowRight, ShieldCheck, Sparkles, Mail, CheckCircle2, AlertTriangle, X, KeyRound, Loader2, Eye, EyeOff, GraduationCap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { authenticateUser, seedFirestoreIfEmpty, syncFirestoreToLocalStorage, saveStudentToFirestore, saveTeacherToFirestore } from '../lib/firestoreService';
@@ -154,12 +154,23 @@ export function Login() {
         {/* Left Side - Branding/Info */}
         <div className="w-full md:w-2/5 p-6 sm:p-8 md:p-12 bg-gradient-to-br from-primary to-primary-container text-white flex flex-col justify-between relative overflow-hidden">
           <div className="relative z-10">
-            <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mb-8">
-              <LogIn className="w-8 h-8" />
+            {/* Brand Logo & Name */}
+            <div className="flex items-center gap-3.5 mb-8">
+              <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 shadow-inner">
+                <GraduationCap className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h1 className="font-manrope font-extrabold text-2xl sm:text-3xl tracking-tight text-white leading-tight">
+                  Köksal Akademi
+                </h1>
+                <span className="text-[11px] font-semibold text-white/70 uppercase tracking-widest">
+                  Akademik Takip Portalı
+                </span>
+              </div>
             </div>
-            <h2 className="text-4xl font-manrope font-extrabold leading-tight mb-6">Akademik Yolculuğuna Devam Et</h2>
-            <p className="text-white/80 font-medium leading-relaxed">
-              Scholar Pulse'a hoş geldiniz. Eğitim ekosistemimize erişmek için lütfen kimlik bilgilerinizle giriş yapın.
+            <h2 className="text-3xl sm:text-4xl font-manrope font-extrabold leading-tight mb-4">Akademik Yolculuğuna Devam Et</h2>
+            <p className="text-white/90 font-medium leading-relaxed text-sm sm:text-base">
+              Köksal Akademi'ye hoş geldiniz. Eğitim ekosistemimize erişmek için lütfen kimlik bilgilerinizle giriş yapın.
             </p>
           </div>
 
