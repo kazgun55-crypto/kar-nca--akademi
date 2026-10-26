@@ -15,7 +15,8 @@ import {
   ClipboardCheck,
   Timer,
   Calendar,
-  Trophy
+  Trophy,
+  Sparkles
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 
@@ -28,6 +29,7 @@ const navItems = [
   { icon: Calendar, label: 'Takvim & Görüşmeler', path: '/calendar', roles: ['teacher', 'admin'] },
   { icon: Users, label: 'Öğrenci Dizini', path: '/students', roles: ['admin'] },
   { icon: UserCircle, label: 'Öğrenci Portalı', path: '/portal', roles: ['student'] },
+  { icon: Sparkles, label: 'Soru Çözücü AI', path: '/solver', roles: ['student', 'teacher', 'admin'], isSpecial: true },
   { icon: BookOpen, label: 'Kütüphanem', path: '/library', roles: ['student', 'teacher', 'admin'] },
   { icon: ClipboardCheck, label: 'Deneme Gir', path: '/enter-trial', roles: ['student'] },
   { icon: GraduationCap, label: 'Sınıf Yönetimi', path: '/classes', roles: ['admin'] },
@@ -161,8 +163,13 @@ export function Sidebar({ isMobile = false, onClose }: SidebarProps) {
               );
             }}
           >
-            <item.icon className="w-5 h-5 flex-shrink-0" />
-            <span className="truncate">{item.label}</span>
+            <item.icon className={cn("w-5 h-5 flex-shrink-0", (item as any).isSpecial && "text-amber-400")} />
+            <span className="truncate flex-1">{item.label}</span>
+            {(item as any).isSpecial && (
+              <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md bg-amber-400 text-indigo-950 shrink-0 shadow-2xs">
+                Yeni
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

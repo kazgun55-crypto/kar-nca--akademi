@@ -1510,6 +1510,31 @@ export function StudentPortal() {
               </div>
             )}
 
+            {/* 📸 AI Soru Çözücü Hızlı Erişim Bannerı */}
+            <div className="mb-5 p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-indigo-900 via-primary to-secondary text-white shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-amber-300 shrink-0">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-black uppercase tracking-wider bg-amber-400 text-indigo-950 px-2 py-0.5 rounded-md">Yeni</span>
+                    <h4 className="font-extrabold text-sm sm:text-base text-white">Yapamadığın Soru mu Var?</h4>
+                  </div>
+                  <p className="text-xs text-white/80 font-medium mt-0.5">
+                    Sorunun resmini yükle; yapay zeka senin diline uygun şekilde, adım adım ve sesli anlatsın!
+                  </p>
+                </div>
+              </div>
+              <a
+                href="/solver"
+                className="px-4 py-2.5 bg-white text-primary hover:bg-white/90 active:scale-95 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shrink-0 shadow-sm"
+              >
+                <span>Sorunu Çözdür</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </a>
+            </div>
+
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
               <div className="flex flex-col">

@@ -16,6 +16,7 @@ import { MyStudents } from './pages/MyStudents';
 import { Library } from './pages/Library';
 import { TeacherCalendar } from './pages/TeacherCalendar';
 import { Leaderboard } from './pages/Leaderboard';
+import { QuestionSolver } from './pages/QuestionSolver';
 import { initGlobalCloudSync } from './lib/firestoreService';
 
 function DirectStudentRedirect() {
@@ -78,6 +79,8 @@ export default function App() {
                 <Route path="/calendar" element={<TeacherCalendar />} />
                 <Route path="/portal" element={<StudentPortal />} />
                 <Route path="/library" element={<Library />} />
+                <Route path="/solver" element={<QuestionSolver />} />
+                <Route path="/soru-cozucu" element={<QuestionSolver />} />
                 <Route path="/assignments" element={<AssignmentFlow />} />
                 <Route path="/enter-trial" element={<EnterTrial />} />
                 <Route path="/analytics" element={<Analytics />} />
