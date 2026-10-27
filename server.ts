@@ -25,22 +25,54 @@ app.use((req, res, next) => {
   next();
 });
 
-// Initialize Gemini API client at the top level
-const apiKey = process.env.GEMINI_API_KEY;
-let ai: GoogleGenAI | null = null;
+// Multi-key Gemini API resolver
+function resolveGeminiApiKey(): string | null {
+  const envCandidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.VITE_API_KEY
+  ];
 
-if (apiKey) {
+  for (const candidate of envCandidates) {
+    if (candidate && typeof candidate === "string") {
+      const clean = candidate.trim();
+      if (clean.length > 5 && !clean.startsWith("YOUR_") && !clean.includes("placeholder")) {
+        return clean;
+      }
+    }
+  }
+  return null;
+}
+
+function getGeminiClient(): GoogleGenAI | null {
+  const resolvedKey = resolveGeminiApiKey();
+  if (resolvedKey) {
+    try {
+      return new GoogleGenAI({
+        apiKey: resolvedKey,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
+    } catch (initErr) {
+      console.warn("Failed to initialize GoogleGenAI client with key:", initErr);
+    }
+  }
+
   try {
-    ai = new GoogleGenAI({
-      apiKey: apiKey,
+    return new GoogleGenAI({
       httpOptions: {
         headers: {
           "User-Agent": "aistudio-build",
         },
       },
     });
-  } catch (initErr) {
-    console.warn("Failed to initialize GoogleGenAI client:", initErr);
+  } catch {
+    return null;
   }
 }
 
@@ -153,11 +185,16 @@ app.post("/api/solve-question", async (req, res) => {
     const subject = subjectHint || "Ders";
     const studentQuery = studentQuestion ? `Öğrencinin ek sorusu/takıldığı yer: "${studentQuestion}"` : "";
 
-    // If Gemini client is not initialized
+    const ai = getGeminiClient();
+
     if (!ai) {
-      return res.status(500).json({
-        success: false,
-        error: "Yapay zeka servisi başlatılamadı. Lütfen GEMINI_API_KEY yapılandırmasını kontrol edin."
+      const fallbackSol = generateFallbackSolution(gradeLevel, subject, studentQuestion);
+      return res.status(200).json({
+        success: true,
+        source: "fallback_demo",
+        apiKeyMissing: true,
+        notice: "Yapay zeka API anahtarı (GEMINI_API_KEY) sistemde henüz tanımlı değil. Kesintisiz deneyim için pedagojik örnek soru analizi ve çözüm adımları gösterilmektedir. Kendi sorularınızın canlı yapay zeka tespiti için lütfen sunucu ortamına GEMINI_API_KEY değişkenini ekleyin.",
+        solution: fallbackSol
       });
     }
 
@@ -392,15 +429,24 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
     }
 
     console.error("All AI models failed for question solving:", lastError?.message || lastError);
-    return res.status(503).json({
-      success: false,
-      error: "Yapay zeka analiz servisleri şu anda yoğun. Lütfen birkaç saniye sonra tekrar 'Soruyu Çöz' butonuna basınız."
+    const fallbackSol = generateFallbackSolution(gradeLevel, subject, studentQuestion);
+    return res.status(200).json({
+      success: true,
+      source: "fallback_demo",
+      notice: "Yapay zeka modelleri yoğunluk sebebiyle yanıt veremediğinden pedagojik örnek soru analizi sunulmuştur. Lütfen kısa bir süre sonra tekrar deneyiniz.",
+      solution: fallbackSol
     });
   } catch (err: any) {
     console.error("Question solver fatal error:", err?.message || err);
+    let errorString = "Soru çözülürken bir sunucu hatası oluştu. Lütfen tekrar deneyin.";
+    if (err && typeof err.message === 'string' && err.message.trim() && err.message !== '[object Object]') {
+      errorString = err.message.trim();
+    } else if (typeof err === 'string' && err.trim() && err !== '[object Object]') {
+      errorString = err.trim();
+    }
     return res.status(500).json({
       success: false,
-      error: err?.message || "Soru çözülürken bir sunucu hatası oluştu."
+      error: errorString
     });
   }
 });
@@ -410,6 +456,7 @@ app.post("/api/analyze", async (req, res) => {
   const input = req.body || {};
   const smartStats = generateSmartAnalysis(input);
 
+  const ai = getGeminiClient();
   if (!ai) {
     return res.json(smartStats);
   }

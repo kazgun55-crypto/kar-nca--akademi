@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { fetchAiAnalysisSafely } from '../lib/aiAnalysisService';
 import { exportAiAnalysisToPdf } from '../lib/pdfExportService';
 import { getStudentTrials, saveStudentTrials } from '../lib/firestoreService';
+import { extractErrorMessage } from '../lib/utils';
 
 interface TrialResult {
   id: string;
@@ -110,8 +111,9 @@ export function Analytics() {
       setAiAnalysis(data);
       localStorage.setItem(`ai_analysis_${studentId}`, JSON.stringify(data));
     } catch (err: any) {
-      console.error(err);
-      setAnalysisError(err.message || 'Analiz sırasında beklenmedik bir hata oluştu.');
+      console.error('AI Analysis error:', err);
+      const safeError = extractErrorMessage(err, 'Analiz sırasında bir hata oluştu. Lütfen tekrar deneyin.');
+      setAnalysisError(safeError);
     } finally {
       setLoadingAnalysis(false);
     }

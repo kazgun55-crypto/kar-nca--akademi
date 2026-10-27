@@ -3,6 +3,7 @@ import { LogIn, User, Lock, ArrowRight, ShieldCheck, Sparkles, Mail, CheckCircle
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { authenticateUser, seedFirestoreIfEmpty, syncFirestoreToLocalStorage, saveStudentToFirestore, saveTeacherToFirestore } from '../lib/firestoreService';
+import { extractErrorMessage } from '../lib/utils';
 
 export function Login() {
   const [role, setRole] = useState<'teacher' | 'student' | 'admin'>('student');
@@ -142,7 +143,8 @@ export function Login() {
       }, 400);
     } catch (err: any) {
       console.error('Giriş hatası:', err);
-      setError(err.message || 'Geçersiz kullanıcı adı/e-posta veya şifre.');
+      const safeError = extractErrorMessage(err, 'Geçersiz kullanıcı adı/e-posta veya şifre.');
+      setError(safeError);
     } finally {
       setLoading(false);
     }

@@ -263,3 +263,65 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
   };
 }
 
+/**
+ * Safely extracts a user-readable error message from any error value.
+ * Guarantees that neither '[object Object]' nor raw objects are ever displayed to the user.
+ */
+export function extractErrorMessage(
+  error: any,
+  fallbackMessage: string = 'Bir hata oluştu, lütfen tekrar deneyin.'
+): string {
+  if (!error) return fallbackMessage;
+
+  // 1. If error is a string
+  if (typeof error === 'string') {
+    const trimmed = error.trim();
+    if (!trimmed || trimmed === '[object Object]' || trimmed === '{}' || trimmed === 'null' || trimmed === 'undefined') {
+      return fallbackMessage;
+    }
+    return trimmed;
+  }
+
+  // 2. If error is an Object or Error instance
+  if (typeof error === 'object') {
+    // Check standard Error.message
+    if (typeof error.message === 'string' && error.message.trim()) {
+      const msg = error.message.trim();
+      if (msg !== '[object Object]' && msg !== '{}') {
+        return msg;
+      }
+    }
+
+    // Check nested error properties (common in Gemini API & Google Cloud responses)
+    if (error.error) {
+      if (typeof error.error === 'string' && error.error.trim()) {
+        const msg = error.error.trim();
+        if (msg !== '[object Object]') return msg;
+      }
+      if (typeof error.error === 'object') {
+        if (typeof error.error.message === 'string' && error.error.message.trim()) {
+          const msg = error.error.message.trim();
+          if (msg !== '[object Object]') return msg;
+        }
+      }
+    }
+
+    // Check Axios/Fetch response data
+    if (error.response?.data) {
+      const d = error.response.data;
+      if (typeof d === 'string' && d.trim() && d !== '[object Object]') return d.trim();
+      if (typeof d.error === 'string' && d.error.trim()) return d.error.trim();
+      if (typeof d.error?.message === 'string' && d.error.message.trim()) return d.error.message.trim();
+      if (typeof d.message === 'string' && d.message.trim()) return d.message.trim();
+    }
+
+    // Check other common properties
+    if (typeof error.statusText === 'string' && error.statusText.trim()) return error.statusText.trim();
+    if (typeof error.reason === 'string' && error.reason.trim()) return error.reason.trim();
+    if (typeof error.details === 'string' && error.details.trim()) return error.details.trim();
+  }
+
+  return fallbackMessage;
+}
+
+

@@ -177,10 +177,16 @@ export default async function handler(req: any, res: any) {
   const gradeLevel = studentGrade || "8. Sınıf (LGS)";
   const studentQuery = studentQuestion ? `Öğrencinin ek sorusu/takıldığı yer: "${studentQuestion}"` : "";
 
+  const ai = getGeminiClient();
+
   if (!ai) {
-    return res.status(500).json({
-      success: false,
-      error: "Yapay zeka servisi başlatılamadı. GEMINI_API_KEY eksik."
+    const fallback = generateFallbackSolution(gradeLevel, subjectHint, studentQuestion);
+    return res.status(200).json({
+      success: true,
+      source: "fallback_demo",
+      apiKeyMissing: true,
+      notice: "Yapay zeka API anahtarı (GEMINI_API_KEY) sisteme henüz tanımlanmamış. Kesintisiz deneyim için pedagojik örnek soru analizi ve çözüm adımları gösterilmektedir. Canlı yapay zeka tespiti için lütfen sunucu ortamına GEMINI_API_KEY değişkenini ekleyin.",
+      solution: fallback
     });
   }
 
@@ -374,15 +380,24 @@ Yanıtını mutlaka geçerli JSON formatında ve verilen şemaya uygun olarak ü
     }
 
     console.error("Serverless all models failed:", lastError?.message || lastError);
-    return res.status(503).json({
-      success: false,
-      error: "Yapay zeka analiz servisleri şu anda yoğun. Lütfen birkaç saniye sonra tekrar 'Soruyu Çöz' butonuna basınız."
+    const fallback = generateFallbackSolution(gradeLevel, subjectHint, studentQuestion);
+    return res.status(200).json({
+      success: true,
+      source: "fallback_demo",
+      notice: "Yapay zeka modelleri yoğunluk nedeniyle yanıt veremediğinden pedagojik örnek soru çözümü gösterilmektedir. Lütfen kısa süre sonra tekrar deneyiniz.",
+      solution: fallback
     });
   } catch (err: any) {
     console.error("Serverless solve-question fatal error:", err?.message || err);
+    let errorString = "Soru çözülürken bir sunucu hatası oluştu. Lütfen tekrar deneyin.";
+    if (err && typeof err.message === 'string' && err.message.trim() && err.message !== '[object Object]') {
+      errorString = err.message.trim();
+    } else if (typeof err === 'string' && err.trim() && err !== '[object Object]') {
+      errorString = err.trim();
+    }
     return res.status(500).json({
       success: false,
-      error: err?.message || "Soru çözülürken bir sunucu hatası oluştu."
+      error: errorString
     });
   }
 }

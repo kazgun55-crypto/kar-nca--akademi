@@ -1,4 +1,5 @@
 // AI Question Solver Client Service
+import { extractErrorMessage } from './utils';
 export interface SolvedStep {
   stepNumber: number;
   title: string;
@@ -44,6 +45,9 @@ export interface QuestionSolution {
   commonMistake: string;
   similarQuestion?: SimilarQuestion;
   audioSpeechText: string;
+  isDemoFallback?: boolean;
+  apiKeyMissing?: boolean;
+  noticeMessage?: string;
 }
 
 export interface HistoryItem {
@@ -70,25 +74,49 @@ export interface SolveQuestionInput {
 const STORAGE_KEY = 'scholar_pulse_solved_questions_v1';
 
 export async function solveQuestionWithAi(input: SolveQuestionInput): Promise<QuestionSolution> {
-  const response = await fetch('/api/solve-question', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify(input)
-  });
+  let response: Response;
+  try {
+    response = await fetch('/api/solve-question', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(input)
+    });
+  } catch (netErr: any) {
+    const errorMsg = extractErrorMessage(netErr, 'Sunucuya bağlanılamadı. İnternet bağlantınızı kontrol edin.');
+    throw new Error(errorMsg);
+  }
 
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(data?.error || `Sunucu hatası: ${response.status}`);
+    // If the server provided a demo fallback solution alongside apiKeyMissing warning
+    if (data?.apiKeyMissing && data?.solution) {
+      return {
+        ...data.solution,
+        isDemoFallback: true,
+        apiKeyMissing: true,
+        noticeMessage: extractErrorMessage(data.notice || data.helpMessage || data.error, 'Yapay zeka API anahtarı sisteme henüz eklenmedi.')
+      };
+    }
+    const cleanError = extractErrorMessage(data?.error, `Sunucu hatası: ${response.status}`);
+    throw new Error(cleanError);
   }
 
   if (data && data.solution) {
-    return data.solution;
+    const sol = data.solution;
+    if (data.apiKeyMissing || data.source === 'fallback_demo') {
+      sol.isDemoFallback = true;
+      sol.apiKeyMissing = !!data.apiKeyMissing;
+      sol.noticeMessage = extractErrorMessage(data.notice, 'Yapay zeka API anahtarı eklenene kadar pedagojik örnek soru çözümü gösterilmektedir.');
+    }
+    return sol;
   }
-  throw new Error(data?.error || 'Geçersiz sunucu yanıtı.');
+
+  const defaultMsg = extractErrorMessage(data?.error, 'Geçersiz sunucu yanıtı. Lütfen tekrar deneyin.');
+  throw new Error(defaultMsg);
 }
 
 // History Management

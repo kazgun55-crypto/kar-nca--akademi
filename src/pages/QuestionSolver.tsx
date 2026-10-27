@@ -48,6 +48,7 @@ import {
   isAudioSpeechPlaying,
   SAMPLE_QUESTIONS 
 } from '../lib/questionSolverService';
+import { extractErrorMessage } from '../lib/utils';
 
 const GRADE_OPTIONS = [
   '5. Sınıf',
@@ -398,7 +399,8 @@ export function QuestionSolver() {
       }, 200);
     } catch (err: any) {
       console.error('Solve error', err);
-      setErrorMessage(err?.message || 'Soru çözülürken bir hata oluştu. Lütfen tekrar deneyin.');
+      const safeMessage = extractErrorMessage(err, 'Soru çözülürken bir hata oluştu. Lütfen tekrar deneyin.');
+      setErrorMessage(safeMessage);
     } finally {
       setIsSolving(false);
     }
@@ -429,8 +431,16 @@ Lütfen ${selectedGrade} seviyesindeki bir çocuğun en kolay anlayacağı, son 
         }
       ]);
       setFollowUpQuestion('');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Follow-up error', err);
+      const safeMessage = extractErrorMessage(err, 'Sorunuz yanıtlanırken bir hata oluştu. Lütfen tekrar deneyin.');
+      setFollowUpHistory(prev => [
+        ...prev,
+        {
+          question: followUpQuestion,
+          answer: safeMessage
+        }
+      ]);
     } finally {
       setIsAskingFollowUp(false);
     }
@@ -780,21 +790,40 @@ Köksal Akademi AI Soru Çözücü ile çözüldü.`;
           </div>
         </div>
 
-        {/* Error message with Retry Button */}
+        {/* Error message with Retry & Demo Fallback Buttons */}
         {errorMessage && (
-          <div className="p-4 sm:p-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs sm:text-sm font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-              <span>{errorMessage}</span>
+          <div className="p-4 sm:p-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 text-xs sm:text-sm font-semibold flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-start sm:items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
+              <div className="space-y-0.5">
+                <span className="font-bold text-rose-900 block sm:inline">
+                  {extractErrorMessage(errorMessage, 'Soru çözülürken bir hata oluştu. Lütfen tekrar deneyin.')}
+                </span>
+                {(errorMessage.includes('GEMINI_API_KEY') || errorMessage.includes('API') || errorMessage.includes('anahtar')) && (
+                  <p className="text-[11px] text-rose-700 font-medium">
+                    İpucu: Sistemin nasıl çalıştığını görmek için aşağıdaki örnek çözümü doğrudan açabilirsiniz.
+                  </p>
+                )}
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => handleSolveQuestion()}
-              className="px-4 py-2 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors flex items-center justify-center gap-2 text-xs shrink-0 cursor-pointer shadow-xs"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Tekrar Dene</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+              <button
+                type="button"
+                onClick={() => handleLoadSample(SAMPLE_QUESTIONS[0])}
+                className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-100/60 border border-rose-200 text-rose-800 font-bold transition-colors flex items-center justify-center gap-1.5 text-xs cursor-pointer shadow-2xs"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Örnek Çözümü Aç</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSolveQuestion()}
+                className="px-4 py-2 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors flex items-center justify-center gap-2 text-xs cursor-pointer shadow-xs"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Tekrar Dene</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -829,6 +858,28 @@ Köksal Akademi AI Soru Çözücü ile çözüldü.`;
       {solution && (
         <div id="solution-view-card" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
           
+          {/* Demo / API Key Notice Banner if applicable */}
+          {(solution.isDemoFallback || solution.apiKeyMissing) && (
+            <div className="p-4 sm:p-5 rounded-3xl bg-amber-500/10 border border-amber-500/25 text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="p-2 bg-amber-500/20 rounded-xl text-amber-700 shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5">
+                  <h4 className="text-xs sm:text-sm font-black text-amber-900">
+                    Örnek Pedagojik Çözüm Modu
+                  </h4>
+                  <p className="text-xs text-amber-800/90 font-medium">
+                    {solution.noticeMessage || 'Yapay Zeka API anahtarı sisteme tanımlanana kadar pedagojik örnek soru analizi ve çözüm adımları gösterilmektedir.'}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-black px-3 py-1 bg-amber-200/80 rounded-full text-amber-900 shrink-0 border border-amber-300/50">
+                Demo Modu
+              </span>
+            </div>
+          )}
+
           {/* Solution Top Action Bar */}
           <div className="bg-surface-container-lowest rounded-3xl p-5 border border-outline-variant/10 shadow-xs flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2">

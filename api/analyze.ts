@@ -1,22 +1,58 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import dotenv from 'dotenv';
 import { generateSmartAnalysis, buildAiPromptData } from '../src/lib/aiAnalysisService';
 
-// Initialize Gemini API client if API key is provided
-const apiKey = process.env.GEMINI_API_KEY;
-let ai: GoogleGenAI | null = null;
+try {
+  dotenv.config();
+} catch {}
 
-if (apiKey) {
+function resolveGeminiApiKey(): string | null {
+  const envCandidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.VITE_API_KEY,
+  ];
+
+  for (const candidate of envCandidates) {
+    if (candidate && typeof candidate === 'string') {
+      const clean = candidate.trim();
+      if (clean.length > 5 && !clean.startsWith('YOUR_') && !clean.includes('placeholder')) {
+        return clean;
+      }
+    }
+  }
+  return null;
+}
+
+function getGeminiClient(): GoogleGenAI | null {
+  const resolvedKey = resolveGeminiApiKey();
+  if (resolvedKey) {
+    try {
+      return new GoogleGenAI({
+        apiKey: resolvedKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+    } catch (initErr) {
+      console.warn('Gemini client init skipped or failed:', initErr);
+    }
+  }
+
   try {
-    ai = new GoogleGenAI({
-      apiKey: apiKey,
+    return new GoogleGenAI({
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
         },
       },
     });
-  } catch (initErr) {
-    console.warn('Gemini client init skipped or failed:', initErr);
+  } catch {
+    return null;
   }
 }
 
@@ -50,6 +86,8 @@ export default async function handler(req: any, res: any) {
 
   // Compute baseline analysis with 100% reliability
   const smartStats = generateSmartAnalysis(body);
+
+  const ai = getGeminiClient();
 
   // If Gemini client is not initialized, return the calculation engine results directly
   if (!ai) {
