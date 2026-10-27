@@ -76,99 +76,6 @@ function getGeminiClient(): GoogleGenAI | null {
   }
 }
 
-// Fallback solution generator with deep question analysis and explicit operation explanations
-function generateFallbackSolution(gradeLevel?: string, subjectHint?: string, studentQuestion?: string) {
-  const subj = subjectHint || "Matematik";
-  return {
-    subject: subj,
-    topic: "Üslü İfadeler ve Problem Çözümü",
-    questionText: "Bir laboratuvardaki bakteri sayısı her 20 dakikada bir 2 katına çıkmaktadır. Başlangıçta 2^4 adet bakteri olduğuna göre 2 saat sonra toplam bakteri sayısı kaçtır?",
-    correctOption: "C",
-    studentSummary: "Bu soruda bakterilerin her 20 dakikada bir iki katına çıkışını hesaplayıp, 2 saatin sonunda ortamdaki toplam bakteri sayısını üslü sayılar kuralıyla buluyoruz.",
-    questionAnalysis: {
-      questionType: "Yeni Nesil Katlanarak Artış (Üslü Sayı Problemi)",
-      givens: [
-        "Bakteri sayısı her 20 dakikada bir 2 katına (2^1 kat) çıkmaktadır.",
-        "Kaptaki başlangıç bakteri sayısı: 2^4 adettir.",
-        "Gözlemlenen toplam süre: 2 saat."
-      ],
-      target: "2 saat sonra kapta toplam kaç bakteri bulunur? (Nihai bakteri miktarının üslü biçimi)",
-      figureOrDataAnalysis: "Soruda süreler farklı birimlerle verilmiştir (biri dakika, diğeri saat). İşlem yapabilmek için öncelikle 2 saatin dakikaya çevrilmesi zorunludur.",
-      solvingStrategy: "1) 2 saati dakikaya dönüştür ➔ 2) 20 dakikalık periyot sayısını bul ➔ 3) Katlanma katsayısını 2 tabanında üs olarak yaz ➔ 4) Başlangıçtaki 2^4 ile çarp ve üsleri toplayarak hedefe ulaş."
-    },
-    targetCheck: "Bizden 2 saat sonraki toplam bakteri miktarı istenmişti. 6 kez katlanma sonucu 2^4 x 2^6 = 2^10 olarak hesaplandı ve doğrudan C şıkkı ile hedefe tam olarak ulaşıldı.",
-    coreFormula: {
-      name: "Üslü Sayılarda Çarpma ve Katlanma Kuralı",
-      formula: "a^m · a^n = a^(m+n) ve 2 katına çıkma = 2^1 ile çarpma",
-      explanation: "Tabanları aynı olan üslü ifadeler çarpılırken taban aynen yazılır, üsler toplanır. Her ikiye katlanma işlemi mevcut sayıyı 2 ile çarpmak demektir."
-    },
-    steps: [
-      {
-        stepNumber: 1,
-        title: "1. Adım: Süreyi Dakikaya Çevirip Periyot Sayısını Bulma",
-        goal: "2 saat içinde bakterinin kaç kez 2 katına çıkacağını (periyot sayısını) bulmak",
-        operationDetails: [
-          "1 saat = 60 dakikadır.",
-          "2 saat = 2 x 60 = 120 dakika eder.",
-          "Bakteriler her 20 dakikada bir katlandığı için: 120 ÷ 20 = 6 kez katlanma gerçekleşir."
-        ],
-        explanation: "Soruda artış süresi dakika olarak (20 dakika), toplam süre ise saat olarak (2 saat) verilmiş. Farklı birimleri işlem yapamayacağımız için önce 2 saati dakikaya çevirdik (120 dk). Ardından 120'yi 20'ye bölerek bakterilerin toplam 6 kez 2 katına çıkacağını bulduk.",
-        whyThisWay: "Neden bölme yaptık? Çünkü 120 dakikanın içinde kaç tane 20 dakika olduğunu öğrenmek istiyoruz. Çıkan 6 sayısı, bakterilerin tam 6 kere ikiye katlanacağını gösterir.",
-        mathOrDetail: "120 dk ÷ 20 dk = 6 periyot (katlanma sayısı)"
-      },
-      {
-        stepNumber: 2,
-        title: "2. Adım: Katlanma Miktarını Üslü Sayı Olarak Yazma",
-        goal: "6 kez 2 katına çıkmanın matematiksel ifadesini belirlemek",
-        operationDetails: [
-          "1. kez katlanınca: x 2",
-          "2. kez katlanınca: x 2 x 2",
-          "... 6. kez katlanınca: 2 x 2 x 2 x 2 x 2 x 2 = 2^6 katına çıkar."
-        ],
-        explanation: "Bir sayı her seferinde 2 katına çıkıyorsa ve bu olay 6 defa tekrarlanıyorsa, başlangıçtaki sayıyı 6 tane 2 ile çarpmış oluruz. Yan yana 6 tane 2'nin çarpımı ise üslü sayılar kuralına göre 2^6 demektir.",
-        whyThisWay: "Neden 2 ile 6'yı çarpmadık da üs yaptık? Çünkü her adımda var olan miktar tekrar ikiye katlanıyor. Bu katlanarak büyümedir (geometrik artış), yani üslü ifadedir.",
-        mathOrDetail: "6 defa katlanma = 2^6 katı"
-      },
-      {
-        stepNumber: 3,
-        title: "3. Adım: Başlangıç Sayısıyla Çarpıp Sonucu Bulma",
-        goal: "Başlangıçtaki 2^4 bakteri ile 2^6 katlanmayı çarpıp nihai sonucu bulmak",
-        operationDetails: [
-          "Başlangıçtaki bakteri: 2^4",
-          "Artış katsayısı: 2^6",
-          "Toplam Bakteri = 2^4 x 2^6 = 2^(4 + 6) = 2^10"
-        ],
-        explanation: "Başlangıçta elimizde 2^4 adet bakteri vardı. Bu sayı 2^6 katına çıktı. Tabanlarımız aynı (ikisi de 2) olduğu için tabanı aynen koruduk, üsleri topladık: 4 + 6 = 10. Sonuç 2^10 olarak bulundu!",
-        whyThisWay: "Neden üsleri topladık? Üslü sayılarda çarpma kuralı şudur: Tabanlar aynıysa üsler toplanır. 4 tane 2'nin yanına 6 tane daha 2 çarpanı gelince toplam 10 tane 2 çarpılmış olur.",
-        mathOrDetail: "2^4 · 2^6 = 2^(4+6) = 2^10"
-      },
-      {
-        stepNumber: 4,
-        title: "4. Adım: Şıkları İnceleyip Doğru Cevabı İşaretleme",
-        goal: "Bulduğumuz 2^10 sonucunu şıklarda teyit etmek",
-        operationDetails: [
-          "A) 2^8 (Yanlış - 4+4 yapılmış)",
-          "B) 2^9 (Yanlış)",
-          "C) 2^10 (DOĞRU CEVAP - Bizim bulduğumuz sonuçla birebir aynı)",
-          "D) 2^12 (Yanlış - üsler çarpılmış: 4x6=24 veya 6x2=12 tuzağı)"
-        ],
-        explanation: "Bulduğumuz sonuç olan 2^10 doğrudan C seçeneğinde yer almaktadır. D şıkkındaki 2^12 ise üsleri toplamak yerine çarpan öğrencileri yanıltmak için konulmuş bir tuzaktır.",
-        whyThisWay: "Şık eleme kontrolü yaparak işlemimizin doğruluğundan %100 emin olduk.",
-        mathOrDetail: "Cevap: C Şıkkı (2^10)"
-      }
-    ],
-    finalAnswer: "Sorunun doğru cevabı C seçeneğidir (2^10). İşlemleri birim çevirme, periyot hesabı ve üslü sayılarda çarpma adımlarıyla eksiksiz tamamladık.",
-    keyTip: "Soruda birimlere çok dikkat et! Biri 'saat', diğeri 'dakika' ise sakın direkt işlem yapma, önce ikisini de aynı birime çevir. Ayrıca üslü sayılarda çarpma yaparken üsleri asla çarpma, sadece topla!",
-    commonMistake: "Öğrencilerin en çok düştüğü tuzak: 4 ile 6'yı toplayıp 2^10 bulmak yerine, üsleri birbiriyle çarpıp 2^24 veya 2^12 şıkkına atlamaktır. Tabanlar aynıyken üsler toplanır!",
-    similarQuestion: {
-      question: "Bir kaptaki amip sayısı her 15 dakikada bir 2 katına çıkıyor. Başlangıçta 2^3 amip varken 1 saat sonra kapta kaç amip olur?",
-      hint: "1 saat = 60 dakikadır. 60'ı 15'e bölerek kaç kez katlanacağını bul!",
-      answer: "60 ÷ 15 = 4 kez katlanır (2^4 kat). Başlangıç 2^3 x 2^4 = 2^(3+4) = 2^7 amip olur."
-    },
-    audioSpeechText: "Merhaba sevgili öğrencim! Bu harika soruyu senin için adım adım ve tüm işlemleri açık açık çözüyorum. İlk olarak soruda bize verilenleri analiz ettik: Bakteriler 20 dakikada bir ikiye katlanıyor, başlangıçta 2 üzeri 4 bakteri var ve bizden 2 saat sonraki miktar isteniyor. 2 saatin 120 dakika olduğunu bulup 20'ye böldük ve 6 kez ikiye katlanacağını hesapladık. Bu da 2 üzeri 6 kat artış demektir. Başlangıçtaki 2 üzeri 4 ile 2 üzeri 6'yı çarptığımızda üsleri topladık ve 2 üzeri 10 sonucuna ulaştık. Doğru seçenek C şıkkıdır!"
-  };
-}
-
 // AI Question Solver Endpoint (Multimodal Image + Student-friendly explanation + Strict Target Solving)
 app.post("/api/solve-question", async (req, res) => {
   try {
@@ -188,13 +95,10 @@ app.post("/api/solve-question", async (req, res) => {
     const ai = getGeminiClient();
 
     if (!ai) {
-      const fallbackSol = generateFallbackSolution(gradeLevel, subject, studentQuestion);
-      return res.status(200).json({
-        success: true,
-        source: "fallback_demo",
+      return res.status(503).json({
+        success: false,
         apiKeyMissing: true,
-        notice: "Yapay zeka API anahtarı (GEMINI_API_KEY) sistemde henüz tanımlı değil. Kesintisiz deneyim için pedagojik örnek soru analizi ve çözüm adımları gösterilmektedir. Kendi sorularınızın canlı yapay zeka tespiti için lütfen sunucu ortamına GEMINI_API_KEY değişkenini ekleyin.",
-        solution: fallbackSol
+        error: "Yapay zeka servisi başlatılamadı. Sunucu ortam değişkenlerinde GEMINI_API_KEY (veya GOOGLE_API_KEY) tanımlı değil. Lütfen ortam değişkenlerini kontrol ediniz."
       });
     }
 
@@ -410,8 +314,8 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
     };
 
     let responseText: string | null = null;
-    // Order models by vision quality: gemini-3.8-flash has premier multimodal OCR capabilities
-    const modelsToTry = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    // Try fast and robust Gemini flash models with high multimodal capabilities
+    const modelsToTry = ["gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
     let lastError: any = null;
 
     for (const modelName of modelsToTry) {
@@ -449,12 +353,10 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
     }
 
     console.error("All AI models failed for question solving:", lastError?.message || lastError);
-    const fallbackSol = generateFallbackSolution(gradeLevel, subject, studentQuestion);
-    return res.status(200).json({
-      success: true,
-      source: "fallback_demo",
-      notice: "Yapay zeka modelleri yoğunluk sebebiyle yanıt veremediğinden pedagojik örnek soru analizi sunulmuştur. Lütfen kısa bir süre sonra tekrar deneyiniz.",
-      solution: fallbackSol
+    const detailMsg = lastError?.message || "Modeller yanıt veremedi";
+    return res.status(503).json({
+      success: false,
+      error: `Yapay zeka modelleri görseldeki soruyu okurken geçici bir yoğunlukla karşılaştı (${detailMsg}). Lütfen 'Tekrar Dene' butonuna tıklayınız. Asla varsayılan veya başka bir soru çözülmez.`
     });
   } catch (err: any) {
     console.error("Question solver fatal error:", err?.message || err);

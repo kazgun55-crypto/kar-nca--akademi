@@ -838,14 +838,6 @@ Köksal Akademi AI Soru Çözücü ile çözüldü.`;
             <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
               <button
                 type="button"
-                onClick={() => handleLoadSample(SAMPLE_QUESTIONS[0])}
-                className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-100/60 border border-rose-200 text-rose-800 font-bold transition-colors flex items-center justify-center gap-1.5 text-xs cursor-pointer shadow-2xs"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Örnek Çözümü Aç</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => handleSolveQuestion()}
                 className="px-4 py-2 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors flex items-center justify-center gap-2 text-xs cursor-pointer shadow-xs"
               >

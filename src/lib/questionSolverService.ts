@@ -92,30 +92,15 @@ export async function solveQuestionWithAi(input: SolveQuestionInput): Promise<Qu
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    // If the server provided a demo fallback solution alongside apiKeyMissing warning
-    if (data?.apiKeyMissing && data?.solution) {
-      return {
-        ...data.solution,
-        isDemoFallback: true,
-        apiKeyMissing: true,
-        noticeMessage: extractErrorMessage(data.notice || data.helpMessage || data.error, 'Yapay zeka API anahtarı sisteme henüz eklenmedi.')
-      };
-    }
-    const cleanError = extractErrorMessage(data?.error, `Sunucu hatası: ${response.status}`);
+    const cleanError = extractErrorMessage(data?.error, `Sunucu hatası (${response.status}): Soru çözülemedi. Lütfen tekrar deneyiniz.`);
     throw new Error(cleanError);
   }
 
-  if (data && data.solution) {
-    const sol = data.solution;
-    if (data.apiKeyMissing || data.source === 'fallback_demo') {
-      sol.isDemoFallback = true;
-      sol.apiKeyMissing = !!data.apiKeyMissing;
-      sol.noticeMessage = extractErrorMessage(data.notice, 'Yapay zeka API anahtarı eklenene kadar pedagojik örnek soru çözümü gösterilmektedir.');
-    }
-    return sol;
+  if (data && data.success && data.solution) {
+    return data.solution;
   }
 
-  const defaultMsg = extractErrorMessage(data?.error, 'Geçersiz sunucu yanıtı. Lütfen tekrar deneyin.');
+  const defaultMsg = extractErrorMessage(data?.error, 'Yapay zeka soru çözüm yanıtı oluşturamadı. Lütfen görseli netleştirip tekrar deneyiniz.');
   throw new Error(defaultMsg);
 }
 
@@ -248,12 +233,12 @@ export function isAudioSpeechPlaying(): boolean {
 // Sample Preset Questions so students can test with 1 click
 export const SAMPLE_QUESTIONS = [
   {
-    title: '8. Sınıf LGS Matematik (Üslü İfadeler)',
+    title: '8. Sınıf LGS Matematik (Kareköklü İfadeler)',
     subject: 'Matematik',
     grade: '8. Sınıf (LGS)',
-    note: 'Hocam üsleri çarpacak mıyım toplayacak mıyım karıştırdım.',
-    // Clean SVG Data URI representation of a question card
-    image: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" fill="%23f8fafc"><rect width="600" height="400" rx="16" fill="%23ffffff" stroke="%23cbd5e1" stroke-width="2"/><text x="40" y="50" font-family="Arial,sans-serif" font-size="20" font-weight="bold" fill="%230f172a">MATEMATİK - ÜSLÜ İFADELER</text><text x="40" y="100" font-family="Arial,sans-serif" font-size="16" fill="%23334155">Bir laboratuvardaki bakteri sayısı her 20 dakikada bir 2 katına çıkmaktadır.</text><text x="40" y="130" font-family="Arial,sans-serif" font-size="16" fill="%23334155">Başlangıçta kapta 2^4 adet bakteri olduğuna göre,</text><text x="40" y="160" font-family="Arial,sans-serif" font-size="16" font-weight="bold" fill="%230284c7">2 saat sonra kapta toplam kaç bakteri bulunur?</text><text x="60" y="220" font-family="Arial,sans-serif" font-size="15" fill="%231e293b">A) 2^8</text><text x="180" y="220" font-family="Arial,sans-serif" font-size="15" fill="%231e293b">B) 2^9</text><text x="300" y="220" font-family="Arial,sans-serif" font-size="15" font-weight="bold" fill="%2316a34a">C) 2^10</text><text x="420" y="220" font-family="Arial,sans-serif" font-size="15" fill="%231e293b">D) 2^12</text><rect x="40" y="280" width="520" height="80" rx="12" fill="%23f1f5f9"/><text x="60" y="315" font-family="Arial,sans-serif" font-size="13" font-style="italic" fill="%2364748b">İpucu: 2 saat içinde kaç tane 20 dakika olduğunu bularak başla!</text><text x="60" y="340" font-family="Arial,sans-serif" font-size="13" font-style="italic" fill="%2364748b">Her 2 katına çıkma işlemi üsse +1 eklemek demektir.</text></svg>`
+    note: 'Karekök dışına çıkarma ve katsayıyı kök içine alma kuralını karıştırıyorum.',
+    // Clean SVG Data URI representation of a Square Roots question card
+    image: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" fill="%23f8fafc"><rect width="600" height="400" rx="16" fill="%23ffffff" stroke="%23cbd5e1" stroke-width="2"/><text x="40" y="50" font-family="Arial,sans-serif" font-size="20" font-weight="bold" fill="%230f172a">MATEMATİK - KAREKÖKLÜ İFADELER</text><text x="40" y="100" font-family="Arial,sans-serif" font-size="16" fill="%23334155">Alanı 108 cm² olan kare şeklindeki bir kartonun</text><text x="40" y="130" font-family="Arial,sans-serif" font-size="16" fill="%23334155">bir kenar uzunluğu a√b (a ve b pozitif tam sayı) olarak yazılıyor.</text><text x="40" y="165" font-family="Arial,sans-serif" font-size="16" font-weight="bold" fill="%230284c7">Buna göre b en küçük değerini aldığında a + b toplamı kaçtır?</text><text x="60" y="225" font-family="Arial,sans-serif" font-size="15" fill="%231e293b">A) 7</text><text x="180" y="225" font-family="Arial,sans-serif" font-size="15" font-weight="bold" fill="%2316a34a">B) 9</text><text x="300" y="225" font-family="Arial,sans-serif" font-size="15" fill="%231e293b">C) 11</text><text x="420" y="225" font-family="Arial,sans-serif" font-size="15" fill="%231e293b">D) 15</text><rect x="40" y="280" width="520" height="80" rx="12" fill="%23f1f5f9"/><text x="60" y="315" font-family="Arial,sans-serif" font-size="13" font-style="italic" fill="%2364748b">İpucu: Kenar uzunluğu √108'dir. 108 sayısını tam kare çarpanına ayır!</text><text x="60" y="340" font-family="Arial,sans-serif" font-size="13" font-style="italic" fill="%2364748b">108 = 36 x 3 ➔ √108 = 6√3 (a=6, b=3)</text></svg>`
   },
   {
     title: 'Fen Bilimleri (Mevsimler ve İklim / Gölge Boyu)',
