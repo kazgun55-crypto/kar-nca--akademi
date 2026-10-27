@@ -230,9 +230,27 @@ app.post("/api/solve-question", async (req, res) => {
         }
       } else if (trimmed.includes("<svg")) {
         svgTextExtracted = trimmed;
+      } else if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        try {
+          const fetched = await fetch(trimmed);
+          const arrayBuffer = await fetched.arrayBuffer();
+          base64Data = Buffer.from(arrayBuffer).toString("base64");
+          const contentType = fetched.headers.get("content-type");
+          if (contentType) mimeType = contentType.split(";")[0].toLowerCase();
+        } catch (fetchErr) {
+          console.warn("Could not fetch remote question image:", fetchErr);
+        }
       } else {
         base64Data = trimmed.replace(/[\r\n\s]/g, "");
       }
+    }
+
+    // Guard: In question-solving mode, an image or SVG is strictly required
+    if (!followUpContext && !base64Data && !svgTextExtracted) {
+      return res.status(400).json({
+        success: false,
+        error: "Yüklenen soru görseli sunucuya ulaştırılamadı veya boş geldi. Lütfen sorunun fotoğrafını tekrar yükleyiniz."
+      });
     }
 
     // Normalize MIME types for Gemini
@@ -284,7 +302,9 @@ ${JSON.stringify(followUpContext)}
 "${studentQuestion || 'Bu işlemi nasıl yaptığınızı biraz daha açık anlatabilir misiniz?'}"
 
 Lütfen öğrencinin aklındaki soru işaretini tamamen giderecek şekilde, soruda ne istendiğine odaklanarak işlemleri tane tane ve samimi bir dille açıkla.`
-      : `Lütfen ekteki soruyu ve görseli ${gradeLevel} seviyesindeki bir öğrenci için kusursuz analiz et. Görseldeki soru neyi soruyorsa TAM OLARAK O SORUYU ve tüm işlemleri satır satır göstererek çöz.
+      : `DİKKAT: Eklediğim soru görselini (${mimeType}) çok dikkatli ve harfi harfine incele.
+Görseldeki soruda yazan metni, sayısal değerleri, öncülleri, şekli, grafiği ve soru kökünü eksiksiz tespit et.
+TAM OLARAK BU GÖRSELDEKİ SORUYU ÇÖZ. Asla varsayılan veya başka bir soru uydurma. Görseldeki soru neyi soruyorsa (örn: doğru cevap, x değeri, işlem sonucu) hedefi ona göre belirle ve tüm işlemleri ${gradeLevel} seviyesindeki bir öğrenci için adım adım göstererek çöz.
 ${studentQuery}
 ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
 
@@ -390,8 +410,8 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
     };
 
     let responseText: string | null = null;
-    // Order models by availability: gemini-3.1-flash-lite has near 100% uptime without 503 errors
-    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+    // Order models by vision quality: gemini-3.8-flash has premier multimodal OCR capabilities
+    const modelsToTry = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
     let lastError: any = null;
 
     for (const modelName of modelsToTry) {

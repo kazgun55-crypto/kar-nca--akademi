@@ -158,10 +158,12 @@ export function QuestionSolver() {
             if (blob) {
               const reader = new FileReader();
               reader.onload = (event) => {
-                if (event.target?.result) {
-                  setSelectedImage(event.target.result as string);
-                  setImageMimeType(blob.type);
+                if (event.target?.result && typeof event.target.result === 'string') {
+                  setSelectedImage(event.target.result);
+                  setImageMimeType(blob.type || 'image/png');
                   setImageRotation(0);
+                  setSolution(null);
+                  setErrorMessage(null);
                 }
               };
               reader.readAsDataURL(blob);
@@ -201,16 +203,17 @@ export function QuestionSolver() {
   };
 
   const handleFileSelected = (file: File) => {
-    if (!file.type.startsWith('image/')) {
+    if (!file.type.startsWith('image/') && !file.name.match(/\.(png|jpe?g|webp|svg|bmp|heic)$/i)) {
       setErrorMessage('Lütfen geçerli bir resim dosyası seçin (PNG, JPG, WEBP).');
       return;
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-      if (e.target?.result) {
-        setSelectedImage(e.target.result as string);
-        setImageMimeType(file.type);
+      if (e.target?.result && typeof e.target.result === 'string') {
+        setSelectedImage(e.target.result);
+        setImageMimeType(file.type || 'image/jpeg');
         setImageRotation(0);
+        setSolution(null);
         setErrorMessage(null);
       }
     };
@@ -264,6 +267,8 @@ export function QuestionSolver() {
       setSelectedImage(dataUrl);
       setImageMimeType('image/jpeg');
       setImageRotation(0);
+      setSolution(null);
+      setErrorMessage(null);
       stopCamera();
     }
   };
@@ -273,11 +278,25 @@ export function QuestionSolver() {
     sourceUrlOrData: string,
     rotationDegrees: number = 0
   ): Promise<{ dataUrl: string; mimeType: string }> => {
+    // If it's SVG, send directly without canvas rasterization
+    if (sourceUrlOrData.startsWith('data:image/svg') || sourceUrlOrData.includes('<svg')) {
+      return { dataUrl: sourceUrlOrData, mimeType: 'image/svg+xml' };
+    }
+
     return new Promise((resolve) => {
+      // 2.5-second safety timer so OCR never hangs or drops image
+      const timer = setTimeout(() => {
+        resolve({ dataUrl: sourceUrlOrData, mimeType: 'image/jpeg' });
+      }, 2500);
+
       const img = new Image();
-      img.crossOrigin = 'anonymous';
+      // DO NOT set crossOrigin on data: URIs - it taints canvas in WebKit / Safari
+      if (sourceUrlOrData.startsWith('http://') || sourceUrlOrData.startsWith('https://')) {
+        img.crossOrigin = 'anonymous';
+      }
 
       img.onload = () => {
+        clearTimeout(timer);
         try {
           const isRotated90or270 = Math.abs(rotationDegrees % 180) === 90;
           const origWidth = img.naturalWidth || img.width || 800;
@@ -315,7 +334,11 @@ export function QuestionSolver() {
           ctx.restore();
 
           const jpegUrl = canvas.toDataURL('image/jpeg', 0.88);
-          resolve({ dataUrl: jpegUrl, mimeType: 'image/jpeg' });
+          if (jpegUrl && jpegUrl.length > 200 && jpegUrl.startsWith('data:image/jpeg')) {
+            resolve({ dataUrl: jpegUrl, mimeType: 'image/jpeg' });
+          } else {
+            resolve({ dataUrl: sourceUrlOrData, mimeType: 'image/jpeg' });
+          }
         } catch (err) {
           console.warn('Canvas optimization fallback:', err);
           resolve({ dataUrl: sourceUrlOrData, mimeType: 'image/jpeg' });
@@ -323,6 +346,7 @@ export function QuestionSolver() {
       };
 
       img.onerror = () => {
+        clearTimeout(timer);
         resolve({ dataUrl: sourceUrlOrData, mimeType: 'image/jpeg' });
       };
 
@@ -333,7 +357,7 @@ export function QuestionSolver() {
   // Solve Question Handler
   const handleSolveQuestion = async (customImage?: string) => {
     const targetImage = customImage || selectedImage;
-    if (!targetImage) {
+    if (!targetImage || !targetImage.trim()) {
       setErrorMessage('Lütfen önce çözülmesini istediğin sorunun fotoğrafını yükle veya çek.');
       return;
     }
@@ -355,15 +379,19 @@ export function QuestionSolver() {
     try {
       // Optimize & apply physical rotation before sending to AI
       let preparedImage = targetImage;
-      let preparedMime = imageMimeType;
+      let preparedMime = imageMimeType || 'image/jpeg';
 
       try {
         const optimized = await optimizeImageForAi(targetImage, imageRotation);
-        preparedImage = optimized.dataUrl;
-        preparedMime = optimized.mimeType;
-      } catch {
-        // Fallback to original
+        if (optimized.dataUrl && optimized.dataUrl.length > 50) {
+          preparedImage = optimized.dataUrl;
+          preparedMime = optimized.mimeType;
+        }
+      } catch (optErr) {
+        console.warn('Optimization bypassed, sending direct image payload:', optErr);
       }
+
+      console.log('Sending question image to AI API. Length:', preparedImage.length, 'MIME:', preparedMime);
 
       const result = await solveQuestionWithAi({
         image: preparedImage,
@@ -623,6 +651,7 @@ Köksal Akademi AI Soru Çözücü ile çözüldü.`;
               if (e.target.files && e.target.files[0]) {
                 handleFileSelected(e.target.files[0]);
               }
+              e.target.value = '';
             }}
           />
 

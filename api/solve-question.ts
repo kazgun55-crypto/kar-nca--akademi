@@ -222,9 +222,27 @@ export default async function handler(req: any, res: any) {
         }
       } else if (trimmed.includes("<svg")) {
         svgTextExtracted = trimmed;
+      } else if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        try {
+          const fetched = await fetch(trimmed);
+          const arrayBuffer = await fetched.arrayBuffer();
+          base64Data = Buffer.from(arrayBuffer).toString("base64");
+          const contentType = fetched.headers.get("content-type");
+          if (contentType) mimeType = contentType.split(";")[0].toLowerCase();
+        } catch (fetchErr) {
+          console.warn("Could not fetch remote question image in serverless:", fetchErr);
+        }
       } else {
         base64Data = trimmed.replace(/[\r\n\s]/g, "");
       }
+    }
+
+    // Guard: In question-solving mode, an image or SVG is strictly required
+    if (!followUpContext && !base64Data && !svgTextExtracted) {
+      return res.status(400).json({
+        success: false,
+        error: "Yüklenen soru görseli sunucuya ulaştırılamadı veya boş geldi. Lütfen sorunun fotoğrafını tekrar yükleyiniz."
+      });
     }
 
     if (mimeType === "image/jpg" || mimeType === "image/pjpeg") {
@@ -269,7 +287,11 @@ Yanıtını mutlaka geçerli JSON formatında ve verilen şemaya uygun olarak ü
 
     let userPrompt = followUpContext
       ? `Önceki Soru Çözümü: ${JSON.stringify(followUpContext)}\nÖğrencinin Sorusu: "${studentQuestion || 'İşlemleri biraz daha açıklar mısınız?'}"`
-      : `Lütfen ekteki soruyu ve görseli ${gradeLevel} seviyesindeki bir öğrenci için kusursuz analiz et. Görseldeki soru neyi soruyorsa TAM OLARAK O SORUYU ve tüm işlemleri satır satır göstererek çöz. ${studentQuery}`;
+      : `DİKKAT: Eklediğim soru görselini (${mimeType}) çok dikkatli ve harfi harfine incele.
+Görseldeki soruda yazan metni, sayısal değerleri, öncülleri, şekli, grafiği ve soru kökünü eksiksiz tespit et.
+TAM OLARAK BU GÖRSELDEKİ SORUYU ÇÖZ. Asla varsayılan veya başka bir soru uydurma. Görseldeki soru neyi soruyorsa (örn: doğru cevap, x değeri, işlem sonucu) hedefi ona göre belirle ve tüm işlemleri ${gradeLevel} seviyesindeki bir öğrenci için adım adım göstererek çöz.
+${studentQuery}
+${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
 
     if (svgTextExtracted) {
       userPrompt += `\n\n[Görsel Soru Çizimi ve Metni (SVG Şeması)]:\n${svgTextExtracted}`;
@@ -283,7 +305,8 @@ Yanıtını mutlaka geçerli JSON formatında ve verilen şemaya uygun olarak ü
     }
     parts.push({ text: userPrompt });
 
-    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+    // Order models by vision quality: gemini-3.8-flash has premier multimodal OCR capabilities
+    const modelsToTry = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
     let responseText: string | null = null;
     let lastError: any = null;
 
