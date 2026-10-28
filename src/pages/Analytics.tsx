@@ -93,17 +93,20 @@ export function Analytics() {
       const studentName = localStorage.getItem('currentUserName') || 'Öğrenci';
       const grade = localStorage.getItem('currentUserGrade') || 'Belirtilmemiş';
       const savedTasks = JSON.parse(localStorage.getItem(`tasks_${studentId}`) || '[]');
-      const detailedTrials = JSON.parse(localStorage.getItem(`trial_results_detailed_${studentId}`) || '[]');
+      let detailedTrials = JSON.parse(localStorage.getItem(`trial_results_detailed_${studentId}`) || '[]');
       const savedErrors = JSON.parse(localStorage.getItem(`topic_errors_${studentId}`) || '[]');
-
       const savedArchives = JSON.parse(localStorage.getItem(`archived_programs_${studentId}`) || '[]');
+
+      const trialsToPass = (detailedTrials && detailedTrials.length > 0)
+        ? detailedTrials
+        : (trialResults && trialResults.length > 0 ? trialResults : []);
 
       const data = await fetchAiAnalysisSafely({
         studentName,
         grade,
         tasks: savedTasks,
         trialResults,
-        detailedTrials,
+        detailedTrials: trialsToPass,
         topicErrors: savedErrors.length > 0 ? savedErrors : topicErrors,
         archivedPrograms: savedArchives
       });

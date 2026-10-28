@@ -6,13 +6,21 @@ try {
   dotenv.config();
 } catch {}
 
-function resolveGeminiApiKey(): string | null {
+function resolveGeminiApiKey(customKey?: string | null): string | null {
+  if (customKey && typeof customKey === 'string') {
+    const cleanCustom = customKey.trim();
+    if (cleanCustom.length > 5 && !cleanCustom.startsWith('YOUR_') && !cleanCustom.includes('placeholder')) {
+      return cleanCustom;
+    }
+  }
+
   const envCandidates = [
     process.env.GEMINI_API_KEY,
     process.env.API_KEY,
     process.env.GOOGLE_API_KEY,
     process.env.VITE_GEMINI_API_KEY,
     process.env.VITE_API_KEY,
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY,
   ];
 
   for (const candidate of envCandidates) {
@@ -26,32 +34,25 @@ function resolveGeminiApiKey(): string | null {
   return null;
 }
 
-function getGeminiClient(): GoogleGenAI | null {
-  const resolvedKey = resolveGeminiApiKey();
-  if (resolvedKey) {
-    try {
-      return new GoogleGenAI({
-        apiKey: resolvedKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
-    } catch (initErr) {
-      console.warn('Gemini client init skipped or failed:', initErr);
-    }
+function getGeminiClient(customKey?: string | null): GoogleGenAI | null {
+  const resolvedKey = resolveGeminiApiKey(customKey);
+  if (!resolvedKey) {
+    // CRITICAL: Never instantiate unkeyed GoogleGenAI client in serverless/production.
+    // Doing so triggers "Could not load the default credentials" error because Google ADC is not configured.
+    return null;
   }
 
   try {
     return new GoogleGenAI({
+      apiKey: resolvedKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
         },
       },
     });
-  } catch {
+  } catch (initErr) {
+    console.warn('Gemini client init with key failed in serverless:', initErr);
     return null;
   }
 }
@@ -87,7 +88,12 @@ export default async function handler(req: any, res: any) {
   // Compute baseline analysis with 100% reliability
   const smartStats = generateSmartAnalysis(body);
 
-  const ai = getGeminiClient();
+  const requestApiKey = 
+    (req.headers && (req.headers['x-gemini-api-key'] || req.headers['x-api-key'])) || 
+    body?.apiKey || 
+    null;
+
+  const ai = getGeminiClient(typeof requestApiKey === 'string' ? requestApiKey : null);
 
   // If Gemini client is not initialized, return the calculation engine results directly
   if (!ai) {

@@ -26,13 +26,21 @@ app.use((req, res, next) => {
 });
 
 // Multi-key Gemini API resolver
-function resolveGeminiApiKey(): string | null {
+function resolveGeminiApiKey(customKey?: string | null): string | null {
+  if (customKey && typeof customKey === "string") {
+    const cleanCustom = customKey.trim();
+    if (cleanCustom.length > 5 && !cleanCustom.startsWith("YOUR_") && !cleanCustom.includes("placeholder")) {
+      return cleanCustom;
+    }
+  }
+
   const envCandidates = [
     process.env.GEMINI_API_KEY,
     process.env.API_KEY,
     process.env.GOOGLE_API_KEY,
     process.env.VITE_GEMINI_API_KEY,
-    process.env.VITE_API_KEY
+    process.env.VITE_API_KEY,
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY
   ];
 
   for (const candidate of envCandidates) {
@@ -46,32 +54,25 @@ function resolveGeminiApiKey(): string | null {
   return null;
 }
 
-function getGeminiClient(): GoogleGenAI | null {
-  const resolvedKey = resolveGeminiApiKey();
-  if (resolvedKey) {
-    try {
-      return new GoogleGenAI({
-        apiKey: resolvedKey,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build",
-          },
-        },
-      });
-    } catch (initErr) {
-      console.warn("Failed to initialize GoogleGenAI client with key:", initErr);
-    }
+function getGeminiClient(customKey?: string | null): GoogleGenAI | null {
+  const resolvedKey = resolveGeminiApiKey(customKey);
+  if (!resolvedKey) {
+    // CRITICAL: Never instantiate unkeyed GoogleGenAI client when no credentials file is present.
+    // Doing so triggers "Could not load the default credentials" error because Google ADC is not available.
+    return null;
   }
 
   try {
     return new GoogleGenAI({
+      apiKey: resolvedKey,
       httpOptions: {
         headers: {
           "User-Agent": "aistudio-build",
         },
       },
     });
-  } catch {
+  } catch (initErr) {
+    console.warn("Failed to initialize GoogleGenAI client with key:", initErr);
     return null;
   }
 }
@@ -85,14 +86,20 @@ app.post("/api/solve-question", async (req, res) => {
       studentGrade, 
       subjectHint, 
       studentQuestion, 
-      followUpContext 
+      followUpContext,
+      apiKey: bodyApiKey
     } = req.body || {};
 
     const gradeLevel = studentGrade || "8. Sınıf (LGS)";
     const subject = subjectHint || "Ders";
     const studentQuery = studentQuestion ? `Öğrencinin ek sorusu/takıldığı yer: "${studentQuestion}"` : "";
 
-    const ai = getGeminiClient();
+    const requestApiKey = 
+      (req.headers && (req.headers["x-gemini-api-key"] || req.headers["x-api-key"])) || 
+      bodyApiKey || 
+      null;
+
+    const ai = getGeminiClient(typeof requestApiKey === "string" ? requestApiKey : null);
 
     if (!ai) {
       return res.status(503).json({
@@ -315,7 +322,7 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
 
     let responseText: string | null = null;
     // Try fast and robust Gemini flash models with high multimodal capabilities
-    const modelsToTry = ["gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"];
     let lastError: any = null;
 
     for (const modelName of modelsToTry) {
@@ -353,10 +360,13 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
     }
 
     console.error("All AI models failed for question solving:", lastError?.message || lastError);
-    const detailMsg = lastError?.message || "Modeller yanıt veremedi";
+    let detailMsg = lastError?.message || "Modeller yanıt veremedi";
+    if (detailMsg.includes("Could not load the default credentials") || detailMsg.includes("API key not valid") || detailMsg.includes("credentials")) {
+      detailMsg = "GEMINI_API_KEY anahtarı tanımlanmalı veya güncellenmelidir";
+    }
     return res.status(503).json({
       success: false,
-      error: `Yapay zeka modelleri görseldeki soruyu okurken geçici bir yoğunlukla karşılaştı (${detailMsg}). Lütfen 'Tekrar Dene' butonuna tıklayınız. Asla varsayılan veya başka bir soru çözülmez.`
+      error: `Yapay zeka modelleri görseldeki soruyu okurken geçici bir sorunla karşılaştı (${detailMsg}). Lütfen 'Tekrar Dene' butonuna tıklayınız. Asla varsayılan veya başka bir soru çözülmez.`
     });
   } catch (err: any) {
     console.error("Question solver fatal error:", err?.message || err);

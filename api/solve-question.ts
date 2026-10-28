@@ -6,13 +6,21 @@ try {
   // Ignore in environments where dotenv is unavailable
 }
 
-export function resolveGeminiApiKey(): string | null {
+export function resolveGeminiApiKey(customKey?: string | null): string | null {
+  if (customKey && typeof customKey === 'string') {
+    const cleanCustom = customKey.trim();
+    if (cleanCustom.length > 5 && !cleanCustom.startsWith('YOUR_') && !cleanCustom.includes('placeholder')) {
+      return cleanCustom;
+    }
+  }
+
   const envCandidates = [
     process.env.GEMINI_API_KEY,
     process.env.API_KEY,
     process.env.GOOGLE_API_KEY,
     process.env.VITE_GEMINI_API_KEY,
     process.env.VITE_API_KEY,
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY,
   ];
 
   for (const candidate of envCandidates) {
@@ -26,33 +34,25 @@ export function resolveGeminiApiKey(): string | null {
   return null;
 }
 
-export function getGeminiClient(): GoogleGenAI | null {
-  const resolvedKey = resolveGeminiApiKey();
-  if (resolvedKey) {
-    try {
-      return new GoogleGenAI({
-        apiKey: resolvedKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
-    } catch (initErr) {
-      console.warn('Gemini client init with key failed in serverless:', initErr);
-    }
+export function getGeminiClient(customKey?: string | null): GoogleGenAI | null {
+  const resolvedKey = resolveGeminiApiKey(customKey);
+  if (!resolvedKey) {
+    // CRITICAL: Never instantiate unkeyed GoogleGenAI client in serverless/production.
+    // Doing so triggers "Could not load the default credentials" error because Google ADC is not configured.
+    return null;
   }
 
-  // Also try lazy default instantiation (in case internal SDK picks it from ambient environment)
   try {
     return new GoogleGenAI({
+      apiKey: resolvedKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
         },
       },
     });
-  } catch {
+  } catch (initErr) {
+    console.warn('Gemini client init with key failed in serverless:', initErr);
     return null;
   }
 }
@@ -71,7 +71,7 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-gemini-api-key, x-api-key'
   );
 
   if (req.method === 'OPTIONS') {
@@ -89,17 +89,22 @@ export default async function handler(req: any, res: any) {
     body = {};
   }
 
-  const { image, mimeType: clientMimeType, studentGrade, subjectHint, studentQuestion, followUpContext } = body;
+  const { image, mimeType: clientMimeType, studentGrade, subjectHint, studentQuestion, followUpContext, apiKey: bodyApiKey } = body;
   const gradeLevel = studentGrade || "8. Sınıf (LGS)";
   const studentQuery = studentQuestion ? `Öğrencinin ek sorusu/takıldığı yer: "${studentQuestion}"` : "";
 
-  const ai = getGeminiClient();
+  const requestApiKey = 
+    (req.headers && (req.headers['x-gemini-api-key'] || req.headers['x-api-key'])) || 
+    bodyApiKey || 
+    null;
+
+  const ai = getGeminiClient(typeof requestApiKey === 'string' ? requestApiKey : null);
 
   if (!ai) {
     return res.status(503).json({
       success: false,
       apiKeyMissing: true,
-      error: "Yapay zeka servisi başlatılamadı. Sunucu ortam değişkenlerinde GEMINI_API_KEY (veya GOOGLE_API_KEY) tanımlı değil. Lütfen sunucu ortamını kontrol ediniz."
+      error: "Yapay zeka servisi başlatılamadı. Sunucu ortam değişkenlerinde GEMINI_API_KEY (veya GOOGLE_API_KEY) tanımlı değil. Lütfen ortam değişkenlerini kontrol ediniz."
     });
   }
 
@@ -218,8 +223,8 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
     }
     parts.push({ text: userPrompt });
 
-    // Order models by vision quality: gemini-3.8-flash has premier multimodal OCR capabilities
-    const modelsToTry = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    // Order models: gemini-3.1-flash-lite has optimal throughput, followed by flash-latest and 3.8-flash
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"];
     let responseText: string | null = null;
     let lastError: any = null;
 
@@ -316,10 +321,13 @@ ${subjectHint ? `Ders İpucu: ${subjectHint}` : ""}`;
     }
 
     console.error("Serverless all models failed:", lastError?.message || lastError);
-    const detailMsg = lastError?.message || "Modeller yanıt veremedi";
+    let detailMsg = lastError?.message || "Modeller yanıt veremedi";
+    if (detailMsg.includes("Could not load the default credentials") || detailMsg.includes("API key not valid") || detailMsg.includes("credentials")) {
+      detailMsg = "GEMINI_API_KEY anahtarı tanımlanmalı veya güncellenmelidir";
+    }
     return res.status(503).json({
       success: false,
-      error: `Yapay zeka modelleri görseldeki soruyu okurken geçici bir yoğunlukla karşılaştı (${detailMsg}). Lütfen 'Tekrar Dene' butonuna tıklayınız. Asla varsayılan veya başka bir soru çözülmez.`
+      error: `Yapay zeka modelleri görseldeki soruyu okurken geçici bir sorunla karşılaştı (${detailMsg}). Lütfen 'Tekrar Dene' butonuna tıklayınız. Asla varsayılan veya başka bir soru çözülmez.`
     });
   } catch (err: any) {
     console.error("Serverless solve-question fatal error:", err?.message || err);

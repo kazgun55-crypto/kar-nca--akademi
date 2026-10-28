@@ -204,20 +204,84 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     }
   });
 
+  // Helper to parse dates and timestamps from any trial format
+  function parseTrialTimestamp(tr: any): number {
+    if (!tr) return 0;
+    if (tr.timestamp) {
+      const t = new Date(tr.timestamp).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (tr.createdAt) {
+      const t = new Date(tr.createdAt).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (tr.id && typeof tr.id === 'string' && tr.id.startsWith('trial_')) {
+      const num = Number(tr.id.replace('trial_', ''));
+      if (!isNaN(num) && num > 1000000000) return num;
+    }
+    if (tr.date && typeof tr.date === 'string') {
+      const dStr = tr.date.trim();
+      const ddmmyyyy = dStr.match(/^(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})$/);
+      if (ddmmyyyy) {
+        const d = new Date(Number(ddmmyyyy[3]), Number(ddmmyyyy[2]) - 1, Number(ddmmyyyy[1])).getTime();
+        if (!isNaN(d)) return d;
+      }
+      const ddmm = dStr.match(/^(\d{1,2})[./\-](\d{1,2})$/);
+      if (ddmm) {
+        const year = new Date().getFullYear();
+        const d = new Date(year, Number(ddmm[2]) - 1, Number(ddmm[1])).getTime();
+        if (!isNaN(d)) return d;
+      }
+      const standard = new Date(dStr).getTime();
+      if (!isNaN(standard) && standard > 0) return standard;
+    }
+    return 0;
+  }
+
+  // Helper to accurately extract net score from trial object (including from branch sums)
+  function extractTrialScore(tr: any, gradeLabel?: string): number {
+    if (!tr) return 0;
+    if (tr.totalNet !== undefined && tr.totalNet !== null && !isNaN(Number(tr.totalNet))) {
+      return Number(Number(tr.totalNet).toFixed(2));
+    }
+    if (tr.score !== undefined && tr.score !== null && !isNaN(Number(tr.score))) {
+      return Number(Number(tr.score).toFixed(2));
+    }
+    if (tr.net !== undefined && tr.net !== null && !isNaN(Number(tr.net))) {
+      return Number(Number(tr.net).toFixed(2));
+    }
+    if (tr.results && typeof tr.results === 'object' && !Array.isArray(tr.results)) {
+      let sum = 0;
+      let counted = false;
+      Object.values(tr.results).forEach((b: any) => {
+        if (!b) return;
+        if (b.net !== undefined && !isNaN(Number(b.net))) {
+          sum += Number(b.net);
+          counted = true;
+        } else if (b.correct !== undefined || b.incorrect !== undefined) {
+          sum += calculateNetScore(Number(b.correct) || 0, Number(b.incorrect) || 0, gradeLabel);
+          counted = true;
+        }
+      });
+      if (counted) return Number(sum.toFixed(2));
+    }
+    return 0;
+  }
+
   // 3. Deduplicate Trials (Prevent double-counting between detailedTrials and trialResults)
   const uniqueTrialsMap = new Map<string, any>();
 
   // Add detailed trials first (contains full branch breakdown and wrong topics)
   detailedTrialList.forEach((tr: any) => {
     if (!tr) return;
-    const key = tr.id ? String(tr.id) : `${tr.date || ''}_${tr.totalNet || tr.score || ''}`;
+    const key = tr.id ? String(tr.id) : `${tr.date || ''}_${tr.totalNet ?? tr.score ?? ''}`;
     uniqueTrialsMap.set(key, tr);
   });
 
   // Add simple trials only if not already represented
   trialList.forEach((tr: any) => {
     if (!tr) return;
-    const key = tr.id ? String(tr.id) : `${tr.date || ''}_${tr.totalNet || tr.score || ''}`;
+    const key = tr.id ? String(tr.id) : `${tr.date || ''}_${tr.totalNet ?? tr.score ?? ''}`;
     if (!uniqueTrialsMap.has(key)) {
       uniqueTrialsMap.set(key, tr);
     }
@@ -233,15 +297,19 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
   const trialBranchStats: Record<string, { correct: number; incorrect: number; empty: number; net: number; count: number }> = {};
   const trialMistakesList: { subject: string; topic: string; count: number }[] = [];
 
+  // Sort combinedTrials chronologically (oldest to newest) when timestamps are available
+  const hasValidTimestamps = combinedTrials.some(t => parseTrialTimestamp(t) > 0);
+  if (hasValidTimestamps) {
+    combinedTrials.sort((a, b) => parseTrialTimestamp(a) - parseTrialTimestamp(b));
+  }
+
   combinedTrials.forEach((tr: any) => {
     if (!tr) return;
-    const score = Number(tr.totalNet) || Number(tr.score) || Number(tr.net) || 0;
-    if (score > 0) {
-      allTrialScores.push(score);
-      totalTrialNetSum += score;
-      if (score > highestTrialNet) highestTrialNet = score;
-      if (score < lowestTrialNet) lowestTrialNet = score;
-    }
+    const score = extractTrialScore(tr, grade);
+    allTrialScores.push(score);
+    totalTrialNetSum += score;
+    if (score > highestTrialNet) highestTrialNet = score;
+    if (score < lowestTrialNet) lowestTrialNet = score;
 
     if (tr.results && typeof tr.results === 'object' && !Array.isArray(tr.results)) {
       Object.entries(tr.results).forEach(([subj, data]: [string, any]) => {
@@ -270,9 +338,31 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     }
   });
 
-  if (allTrialScores.length > 0) {
-    latestTrialNet = allTrialScores[allTrialScores.length - 1] || allTrialScores[0] || 0;
+  // Accurately determine latestTrialNet
+  if (combinedTrials.length > 0) {
+    const lastCombined = combinedTrials[combinedTrials.length - 1];
+    latestTrialNet = extractTrialScore(lastCombined, grade);
+
+    // If detailedTrialList was stored in reverse order (newest first at index 0)
+    if (detailedTrialList.length > 0) {
+      const ts0 = parseTrialTimestamp(detailedTrialList[0]);
+      const tsLast = parseTrialTimestamp(lastCombined);
+      if (ts0 >= tsLast || tsLast === 0) {
+        const score0 = extractTrialScore(detailedTrialList[0], grade);
+        if (score0 > 0 || (score0 === 0 && latestTrialNet === 0)) {
+          latestTrialNet = score0;
+        }
+      }
+    }
   }
+
+  // Explicit input override if provided by caller
+  if ((input as any).latestTrialNet !== undefined && !isNaN(Number((input as any).latestTrialNet)) && Number((input as any).latestTrialNet) > 0) {
+    latestTrialNet = Number(Number((input as any).latestTrialNet).toFixed(2));
+  }
+
+  const effectiveTrialCount = Math.max(combinedTrials.length, detailedTrialList.length, trialList.length, (latestTrialNet > 0 ? 1 : 0));
+  if (highestTrialNet === 0 && latestTrialNet > 0) highestTrialNet = latestTrialNet;
   if (lowestTrialNet === 999) lowestTrialNet = latestTrialNet;
   const averageTrialNet = allTrialScores.length > 0 ? Number((totalTrialNetSum / allTrialScores.length).toFixed(2)) : latestTrialNet;
 
@@ -386,14 +476,14 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
 
   // 6. Trial Analysis Object
   const trialAnalysis = {
-    trialCount: combinedTrials.length,
+    trialCount: effectiveTrialCount,
     latestTrialNet: Number(latestTrialNet.toFixed(2)),
     highestTrialNet: Number(highestTrialNet.toFixed(2)),
     averageTrialNet: Number(averageTrialNet.toFixed(2)),
     targetNet: targetTrialNet,
     trend: trialTrend,
     trendLabel: trialTrend === 'rising' ? 'Yükseliş Trendinde ↗️' : trialTrend === 'declining' ? 'Dikkat Gerektiren Düşüş ↘️' : 'Net Takibi ➡️',
-    summary: combinedTrials.length > 0
+    summary: effectiveTrialCount > 0
       ? (() => {
           const topMistakes = sortedErrors.slice(0, 4).map(e => `${e.subject} (${e.topic}: ${e.count} yanlış)`).join(', ');
           const totalTrialIncorrect = Object.values(trialBranchStats).reduce((acc, b) => acc + (b.incorrect || 0), 0);
@@ -512,7 +602,9 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     };
   });
 
-  const trialText = latestTrialNet > 0 ? `Son deneme neti ${latestTrialNet.toFixed(1)} olarak kaydedildi (En yüksek: ${highestTrialNet.toFixed(1)} net).` : `Kayıtlı deneme sınavlarında süreklilik sağlanmalı.`;
+  const trialText = effectiveTrialCount > 0 
+    ? `Son deneme sınavı neti ${latestTrialNet.toFixed(1)} olarak gerçekleşti (Kayıtlı: ${effectiveTrialCount} Deneme, En yüksek: ${highestTrialNet.toFixed(1)} net, Ortalama: ${averageTrialNet.toFixed(1)} net).` 
+    : `Kayıtlı deneme sınavı bulunmamaktadır; öğrenciye seviyesine uygun deneme sınavı tanımlanmalıdır.`;
   
   const videoText = canonicalStats.videoTasksCount > 0 
     ? `Programdaki ${canonicalStats.videoTasksCount} video görevinden ${canonicalStats.completedVideoTasksCount} tanesi izlendi.` 
@@ -545,7 +637,7 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     weeklyUnevaluatedQuestions > 0
       ? `Öğrenci ${weeklyUnevaluatedQuestions} soru tamamlamış ancak henüz doğru/yanlış girişi yapmamıştır. Sonuçları girmesi hatırlatılmalıdır.`
       : `Öğrenci çözdüğü soruların doğru/yanlış analizini düzenli girmiştir.`,
-    latestTrialNet > 0
+    effectiveTrialCount > 0
       ? `Son deneme neti ${latestTrialNet.toFixed(1)} olup bir sonraki deneme için hedef net ${targetTrialNet.toFixed(1)} olarak belirlenmelidir.`
       : `Öğrenciye seviyesine uygun bir branş denemesi tanımlanmalı ve süre yönetimi değerlendirilmelidir.`,
     `Öğrenciyle haftalık koçluk görüşmesinde haftanın özet doğruları (${weeklyCorrect}) ve telafi edilecek eksikleri ana gündem yapılmalıdır.`
@@ -674,7 +766,8 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
       completionRate: completionRate,
       latestTrialNet: Number(latestTrialNet.toFixed(2)),
       highestTrialNet: Number(highestTrialNet.toFixed(2)),
-      trialCount: combinedTrials.length,
+      averageTrialNet: Number(averageTrialNet.toFixed(2)),
+      trialCount: effectiveTrialCount,
       topErrorTopic,
       topErrorSubject
     },
@@ -881,8 +974,8 @@ ${smartStats.under85Topics && smartStats.under85Topics.length > 0
 
 TALİMATLAR:
 1. "weeklyProgramReview" alanında haftalık programı, gün dağılımını, tamamlanan soru ve video/kitap görevlerini, girilen doğru/yanlış/boşları detaylıca analiz et.
-2. "trialReview" alanında ASLA "istikrarlı" gibi kelimeler kullanmadan, SADECE öğrencinin yanlış yaptığı konuları, kaybettiği netleri ve doğrudan bu yanlışları düzeltmeye yarayan taktikleri değerlendir.
-3. "summary" alanında öğrenciyi motive eden, haftalık programını ve başarılarını özetleyen pedagojik bir koçluk metni yaz.
+2. "trialReview" alanında kayıtlı deneme sınavı varsa öğrencinin EN SON DENEME NETİNİ (${smartStats.trialAnalysis.latestTrialNet} Net, kayıtlı toplam: ${smartStats.trialAnalysis.trialCount} deneme) mutlaka açıkça belirt. ASLA "istikrarlı" gibi yuvarlak kelimeler kullanma; SADECE öğrencinin yanlış yaptığı konuları, kaybettiği netleri ve doğrudan bu yanlışları telafi edecek taktikleri değerlendir.
+3. "summary" alanında velinin ve öğrencinin anlayacağı dille; öğrencinin haftalık programdaki görevlerini, soru tamamlama başarısını ve en son deneme sınavı netini (${smartStats.trialAnalysis.trialCount > 0 ? smartStats.trialAnalysis.latestTrialNet + ' Net' : 'deneme takip durumunu'}) tam olarak verilen verilere sadık kalarak özetle.
 4. "errorAnalysis" alanında boşlar dahil %85 altında kalan veya yanlış yapılan konuların somut telafi yollarını anlat.
 5. "teacherPedagogyNotes" alanında öğretmenin koçluk görüşmesinde odaklanması gereken en az 3 somut pedagojik madde yaz.
 6. "weeklyPlanRecommendations" alanında yalnızca öğrencinin programında çalışılan derslerden somut telafi ödevleri öner.`;

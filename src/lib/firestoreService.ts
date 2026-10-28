@@ -1207,6 +1207,12 @@ export function initGlobalCloudSync() {
         if (s.archivedPrograms && Array.isArray(s.archivedPrograms)) {
           localStorage.setItem(`archived_programs_${s.id}`, JSON.stringify(s.archivedPrograms));
         }
+        if (Array.isArray(s.trialResultsDetailed) && s.trialResultsDetailed.length > 0) {
+          localStorage.setItem(`trial_results_detailed_${s.id}`, JSON.stringify(s.trialResultsDetailed));
+        }
+        if (Array.isArray(s.trialResults) && s.trialResults.length > 0) {
+          localStorage.setItem(`trial_results_${s.id}`, JSON.stringify(s.trialResults));
+        }
       });
       window.dispatchEvent(new Event('storage'));
     }

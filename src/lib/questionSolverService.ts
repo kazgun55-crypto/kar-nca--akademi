@@ -75,13 +75,19 @@ const STORAGE_KEY = 'scholar_pulse_solved_questions_v1';
 
 export async function solveQuestionWithAi(input: SolveQuestionInput): Promise<QuestionSolution> {
   let response: Response;
+  const clientKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  };
+  if (clientKey && typeof clientKey === 'string' && clientKey.trim().length > 5 && !clientKey.startsWith('YOUR_')) {
+    headers['x-gemini-api-key'] = clientKey.trim();
+  }
+
   try {
     response = await fetch('/api/solve-question', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
+      headers,
       body: JSON.stringify(input)
     });
   } catch (netErr: any) {

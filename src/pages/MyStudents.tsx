@@ -17,6 +17,7 @@ import {
   subscribeTeacherMeetings,
   getStudentDailyStudySummary,
   subscribeStudentStudySessions,
+  getStudentTrials,
   DailyStudySummary,
   StudentStudySession
 } from '../lib/firestoreService';
@@ -435,11 +436,34 @@ export function MyStudents() {
       setStudentTasks([]);
     }
 
-    // Trigger instant cloud fetch for student tasks to ensure fresh sync from Firestore
+    // Trigger instant cloud fetch for student tasks and trials to ensure fresh sync from Firestore
     getStudentTasks(student.id).then(tasks => {
       if (Array.isArray(tasks)) {
         setStudentTasks(tasks);
         localStorage.setItem(`tasks_${student.id}`, JSON.stringify(tasks));
+      }
+    });
+
+    getStudentTrials(student.id).then(trialData => {
+      if (trialData) {
+        let hasNew = false;
+        if (Array.isArray(trialData.detailedTrials) && trialData.detailedTrials.length > 0) {
+          localStorage.setItem(`trial_results_detailed_${student.id}`, JSON.stringify(trialData.detailedTrials));
+          const mapped = trialData.detailedTrials.map((t: any) => ({
+            id: t.id,
+            date: t.date,
+            score: t.totalNet !== undefined ? t.totalNet : (t.score !== undefined ? t.score : 0),
+            avg: 70
+          }));
+          setStudentTrials(mapped);
+          hasNew = true;
+        }
+        if (Array.isArray(trialData.simpleTrials) && trialData.simpleTrials.length > 0) {
+          localStorage.setItem(`trial_results_${student.id}`, JSON.stringify(trialData.simpleTrials));
+          if (!hasNew) {
+            setStudentTrials(trialData.simpleTrials);
+          }
+        }
       }
     });
 
@@ -518,18 +542,37 @@ export function MyStudents() {
     setAnalysisError(null);
 
     try {
-      const savedTasks = JSON.parse(localStorage.getItem(`tasks_${targetStudent.id}`) || '[]');
-      const savedTrials = JSON.parse(localStorage.getItem(`trial_results_${targetStudent.id}`) || '[]');
-      const detailedTrials = JSON.parse(localStorage.getItem(`trial_results_detailed_${targetStudent.id}`) || '[]');
+      let savedTasks = JSON.parse(localStorage.getItem(`tasks_${targetStudent.id}`) || '[]');
+      let savedTrials = JSON.parse(localStorage.getItem(`trial_results_${targetStudent.id}`) || '[]');
+      let detailedTrials = JSON.parse(localStorage.getItem(`trial_results_detailed_${targetStudent.id}`) || '[]');
       const savedErrors = JSON.parse(localStorage.getItem(`topic_errors_${targetStudent.id}`) || '[]');
       const savedArchives = explicitArchives || JSON.parse(localStorage.getItem(`archived_programs_${targetStudent.id}`) || '[]');
+
+      // Fallback: If trials are empty in localStorage, attempt fetch from cloud Firestore
+      if (detailedTrials.length === 0 && savedTrials.length === 0 && (!studentTrials || studentTrials.length === 0)) {
+        try {
+          const cloudTrials = await getStudentTrials(targetStudent.id);
+          if (cloudTrials.detailedTrials?.length) {
+            detailedTrials = cloudTrials.detailedTrials;
+            localStorage.setItem(`trial_results_detailed_${targetStudent.id}`, JSON.stringify(detailedTrials));
+          }
+          if (cloudTrials.simpleTrials?.length) {
+            savedTrials = cloudTrials.simpleTrials;
+            localStorage.setItem(`trial_results_${targetStudent.id}`, JSON.stringify(savedTrials));
+          }
+        } catch {}
+      }
+
+      const trialsToPass = detailedTrials.length > 0 
+        ? detailedTrials 
+        : (studentTrials.length > 0 ? studentTrials : savedTrials);
 
       const data = await fetchAiAnalysisSafely({
         studentName: targetStudent.name,
         grade: targetStudent.grade,
         tasks: studentTasks.length > 0 ? studentTasks : savedTasks,
         trialResults: studentTrials.length > 0 ? studentTrials : savedTrials,
-        detailedTrials,
+        detailedTrials: detailedTrials.length > 0 ? detailedTrials : trialsToPass,
         topicErrors: studentErrors.length > 0 ? studentErrors : savedErrors,
         archivedPrograms: archivedPrograms.length > 0 ? archivedPrograms : savedArchives
       });
@@ -547,7 +590,34 @@ export function MyStudents() {
 
   const handleExportParentPdf = async () => {
     if (!selectedStudent) return;
-    if (aiAnalysis) {
+
+    let savedTrials = JSON.parse(localStorage.getItem(`trial_results_${selectedStudent.id}`) || '[]');
+    let detailedTrials = JSON.parse(localStorage.getItem(`trial_results_detailed_${selectedStudent.id}`) || '[]');
+
+    // Check if cloud has trials if local has none
+    if (detailedTrials.length === 0 && savedTrials.length === 0 && (!studentTrials || studentTrials.length === 0)) {
+      try {
+        const cloudTrials = await getStudentTrials(selectedStudent.id);
+        if (cloudTrials.detailedTrials?.length) {
+          detailedTrials = cloudTrials.detailedTrials;
+          localStorage.setItem(`trial_results_detailed_${selectedStudent.id}`, JSON.stringify(detailedTrials));
+        }
+        if (cloudTrials.simpleTrials?.length) {
+          savedTrials = cloudTrials.simpleTrials;
+          localStorage.setItem(`trial_results_${selectedStudent.id}`, JSON.stringify(savedTrials));
+        }
+      } catch {}
+    }
+
+    const totalTrialsAvailable = (studentTrials?.length || 0) || (detailedTrials?.length || 0) || (savedTrials?.length || 0);
+
+    // If cached aiAnalysis has 0 trials or 0 net while the student actually has trials, re-run analysis so report is accurate
+    const needsRefresh = Boolean(
+      !aiAnalysis ||
+      (totalTrialsAvailable > 0 && (!aiAnalysis.trialAnalysis?.trialCount || Number(aiAnalysis.trialAnalysis?.latestTrialNet || 0) === 0))
+    );
+
+    if (aiAnalysis && !needsRefresh) {
       exportAiAnalysisToPdf(aiAnalysis, selectedStudent.name, selectedStudent.grade || '12. Sınıf');
       showToast('Veli bilgilendirme PDF raporu hazırlandı ve açıldı! 📄');
       return;
@@ -557,17 +627,19 @@ export function MyStudents() {
     setAnalysisError(null);
     try {
       const savedTasks = JSON.parse(localStorage.getItem(`tasks_${selectedStudent.id}`) || '[]');
-      const savedTrials = JSON.parse(localStorage.getItem(`trial_results_${selectedStudent.id}`) || '[]');
-      const detailedTrials = JSON.parse(localStorage.getItem(`trial_results_detailed_${selectedStudent.id}`) || '[]');
       const savedErrors = JSON.parse(localStorage.getItem(`topic_errors_${selectedStudent.id}`) || '[]');
       const savedArchives = JSON.parse(localStorage.getItem(`archived_programs_${selectedStudent.id}`) || '[]');
+
+      const trialsToPass = detailedTrials.length > 0 
+        ? detailedTrials 
+        : (studentTrials.length > 0 ? studentTrials : savedTrials);
 
       const data = await fetchAiAnalysisSafely({
         studentName: selectedStudent.name,
         grade: selectedStudent.grade,
         tasks: studentTasks.length > 0 ? studentTasks : savedTasks,
         trialResults: studentTrials.length > 0 ? studentTrials : savedTrials,
-        detailedTrials,
+        detailedTrials: detailedTrials.length > 0 ? detailedTrials : trialsToPass,
         topicErrors: studentErrors.length > 0 ? studentErrors : savedErrors,
         archivedPrograms: archivedPrograms.length > 0 ? archivedPrograms : savedArchives
       });

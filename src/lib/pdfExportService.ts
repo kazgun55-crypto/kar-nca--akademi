@@ -29,10 +29,10 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
   const emptyQ = stats.totalEmpty ?? weekly.totalEmpty ?? 0;
   const successRate = stats.successRate ?? weekly.successRate ?? 0;
   const completionRate = stats.completionRate ?? weekly.completionRate ?? 0;
-  const latestTrialNet = stats.latestTrialNet ?? trial.latestTrialNet ?? 0;
-  const highestTrialNet = stats.highestTrialNet ?? trial.highestTrialNet ?? latestTrialNet;
-  const avgTrialNet = trial.averageTrialNet ?? latestTrialNet;
-  const trialCount = stats.trialCount ?? trial.trialCount ?? 0;
+  const latestTrialNet = stats.latestTrialNet ?? trial.latestTrialNet ?? (analysis as any).latestTrialNet ?? 0;
+  const highestTrialNet = stats.highestTrialNet ?? trial.highestTrialNet ?? (analysis as any).highestTrialNet ?? latestTrialNet;
+  const avgTrialNet = trial.averageTrialNet ?? stats.averageTrialNet ?? (analysis as any).averageTrialNet ?? latestTrialNet;
+  const trialCount = stats.trialCount ?? trial.trialCount ?? (analysis as any).trialCount ?? (latestTrialNet > 0 ? 1 : 0);
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -315,7 +315,7 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
       </div>
       <div class="summary-card">
         <div class="summary-label">Son Deneme Neti</div>
-        <div class="summary-val">${latestTrialNet > 0 ? `${latestTrialNet} Net` : 'Kayıt Bekleniyor'}</div>
+        <div class="summary-val">${trialCount > 0 ? `${Number(latestTrialNet).toFixed(1)} Net` : 'Kayıt Bekleniyor'}</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">%85 Eşik Durumu</div>
@@ -365,22 +365,22 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
           <h4>🎯 Deneme Sınavı Performansı</h4>
           <div class="stat-line">
             <span>Kayıtlı Deneme Sayısı:</span>
-            <span>${trialCount} Adet</span>
+            <span>${trialCount > 0 ? `${trialCount} Adet` : 'Henüz Yok'}</span>
           </div>
           <div class="stat-line">
             <span>Son Deneme Neti:</span>
-            <span style="font-weight: 800; color: #0284c7;">${latestTrialNet > 0 ? `${latestTrialNet} Net` : '-'}</span>
+            <span style="font-weight: 800; color: #0284c7;">${trialCount > 0 ? `${Number(latestTrialNet).toFixed(1)} Net` : 'Kayıt Bekleniyor'}</span>
           </div>
           <div class="stat-line">
             <span>En Yüksek Net:</span>
-            <span>${highestTrialNet > 0 ? `${highestTrialNet} Net` : '-'}</span>
+            <span>${trialCount > 0 ? `${Number(highestTrialNet).toFixed(1)} Net` : '-'}</span>
           </div>
           <div class="stat-line">
             <span>Genel Ortalama:</span>
-            <span>${avgTrialNet > 0 ? `${avgTrialNet} Net` : '-'}</span>
+            <span>${trialCount > 0 ? `${Number(avgTrialNet).toFixed(1)} Net` : '-'}</span>
           </div>
           <p style="margin: 6px 0 0 0; font-size: 8pt; color: #64748b; line-height: 1.35;">
-            ${trial.summary || 'Deneme sınavı netleri ve zaman yönetimi takip edilmektedir.'}
+            ${trial.summary || (trialCount > 0 ? `Son deneme neti ${Number(latestTrialNet).toFixed(1)} olarak gerçekleşti (Kayıtlı: ${trialCount} Deneme).` : 'Deneme sınavı netleri ve zaman yönetimi takip edilmektedir.')}
           </p>
         </div>
       </div>
