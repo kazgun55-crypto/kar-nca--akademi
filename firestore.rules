@@ -19,6 +19,9 @@ service cloud.firestore {
     match /meetings/{meetingId} {
       allow read, write: if true;
     }
+    match /study_resources/{resourceId} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if true;
     }

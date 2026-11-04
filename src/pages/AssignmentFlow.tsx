@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Calendar, PlayCircle, BookOpen, CheckCircle2, Clock, Plus, User, Send, 
+  Calendar, PlayCircle, BookOpen, BookMarked, CheckCircle2, Clock, Plus, User, Send, 
   Trash2, ClipboardCheck, Award, Repeat, Sparkles, Users, Check, Share2, Copy,
   ExternalLink, X, Target
 } from 'lucide-react';
@@ -14,7 +14,9 @@ import {
   subscribeStudents, 
   getStudentById,
   saveGlobalAcademicTasks, 
-  getGlobalAcademicTasks 
+  getGlobalAcademicTasks,
+  StudentResource,
+  getStudentResources
 } from '../lib/firestoreService';
 
 interface Task {
@@ -64,6 +66,16 @@ export function AssignmentFlow() {
   const [newTaskVideoUrl, setNewTaskVideoUrl] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [selectedVideoTask, setSelectedVideoTask] = useState<Task | null>(null);
+  const [studentResources, setStudentResources] = useState<StudentResource[]>([]);
+  const [resourceSubjectFilter, setResourceSubjectFilter] = useState<string>('all');
+
+  useEffect(() => {
+    if (assignedStudentId && assignedStudentId !== 'all') {
+      getStudentResources(assignedStudentId).then(list => setStudentResources(list || []));
+    } else {
+      setStudentResources([]);
+    }
+  }, [assignedStudentId]);
 
   // Student Task Result Entry states
   const [showResultModal, setShowResultModal] = useState(false);
@@ -672,6 +684,104 @@ export function AssignmentFlow() {
                       ))}
                     </select>
                   </div>
+
+                  {/* Dynamic Student Resource Picker for Selected Student */}
+                  {assignedStudentId !== 'all' && (
+                    <div className="p-3.5 bg-amber-500/10 rounded-2xl border border-amber-500/30 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                          <BookMarked className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Öğrencinin Kaynakları ({studentResources.length})</span>
+                        </label>
+                        <a
+                          href={`/resources?studentId=${assignedStudentId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] font-bold text-amber-800 hover:underline flex items-center gap-0.5"
+                        >
+                          Yönet <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </div>
+
+                      {studentResources.length > 0 ? (
+                        <div className="space-y-2">
+                          {/* Subject filter chips if multiple subjects exist */}
+                          {(() => {
+                            const subjects = Array.from(new Set(studentResources.map(r => r.subject).filter(Boolean)));
+                            if (subjects.length <= 1) return null;
+                            return (
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setResourceSubjectFilter('all')}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                                    resourceSubjectFilter === 'all'
+                                      ? 'bg-amber-600 text-white shadow-xs'
+                                      : 'bg-white/80 text-amber-900 hover:bg-white'
+                                  }`}
+                                >
+                                  Tümü ({studentResources.length})
+                                </button>
+                                {subjects.map(sub => (
+                                  <button
+                                    key={sub}
+                                    type="button"
+                                    onClick={() => setResourceSubjectFilter(sub)}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                                      resourceSubjectFilter === sub
+                                        ? 'bg-amber-600 text-white shadow-xs'
+                                        : 'bg-white/80 text-amber-900 hover:bg-white'
+                                    }`}
+                                  >
+                                    {sub}
+                                  </button>
+                                ))}
+                              </div>
+                            );
+                          })()}
+
+                          {/* List of Resources */}
+                          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                            {studentResources
+                              .filter(r => resourceSubjectFilter === 'all' || r.subject === resourceSubjectFilter)
+                              .map(res => {
+                                const isSelected = newTaskTitle.includes(res.name);
+                                return (
+                                  <button
+                                    key={res.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setNewTaskTitle(`${res.name} Soru Çözümü`);
+                                      setNewTaskType('question');
+                                      if (!newTaskAmount) setNewTaskAmount('30 Soru');
+                                    }}
+                                    className={`w-full p-2 rounded-xl border text-left transition-all flex items-center justify-between gap-2 text-xs font-bold ${
+                                      isSelected 
+                                        ? 'bg-amber-100 border-amber-600 text-amber-950 shadow-xs' 
+                                        : 'bg-white hover:bg-amber-50 border-outline-variant/15 text-on-surface'
+                                    }`}
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="truncate font-black">{res.name}</p>
+                                      <p className="text-[10px] text-amber-800 font-semibold truncate">
+                                        {res.subject} • {res.publisher || 'Yayın'}
+                                      </p>
+                                    </div>
+                                    <span className="text-[10px] shrink-0 font-extrabold text-amber-900 bg-amber-100 px-2 py-0.5 rounded">
+                                      Seç & Ata
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] font-medium text-amber-950">
+                          Öğrenciye ait kayıtlı kaynak bulunamadı. <a href={`/resources?studentId=${assignedStudentId}`} target="_blank" rel="noreferrer" className="underline font-bold">Yeni kaynak ekleyin.</a>
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Gün Seçin</label>

@@ -18,6 +18,11 @@ import {
   getStudentDailyStudySummary,
   subscribeStudentStudySessions,
   getStudentTrials,
+  StudentResource,
+  getStudentResources,
+  subscribeStudentResources,
+  saveStudentResource,
+  deleteStudentResource,
   DailyStudySummary,
   StudentStudySession
 } from '../lib/firestoreService';
@@ -35,7 +40,7 @@ import {
   BookOpen, 
   PlayCircle, 
   CheckCircle2, 
-  X,
+  X, 
   Target,
   AlertTriangle,
   ExternalLink,
@@ -57,7 +62,8 @@ import {
   Lightbulb,
   FileText,
   CheckSquare,
-  ArrowRight
+  ArrowRight,
+  BookMarked
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -114,10 +120,11 @@ export function MyStudents() {
   const [allDirectoryStudents, setAllDirectoryStudents] = useState<any[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [view, setView] = useState<'list' | 'details'>('list');
-  const [activeTab, setActiveTab] = useState<'program' | 'trials' | 'analytics' | 'books'>('program');
+  const [activeTab, setActiveTab] = useState<'program' | 'trials' | 'analytics' | 'books' | 'resources'>('program');
   const [mainViewMode, setMainViewMode] = useState<'cards' | 'trial_tracking'>('cards');
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [studentBooks, setStudentBooks] = useState<StudentBook[]>([]);
+  const [studentResources, setStudentResources] = useState<StudentResource[]>([]);
   const [teacherMeetings, setTeacherMeetings] = useState<TeacherMeeting[]>([]);
 
   const userRole = localStorage.getItem('userRole') || 'teacher';
@@ -315,9 +322,14 @@ export function MyStudents() {
       setStudentBooks(books);
     });
 
+    const unsubResources = subscribeStudentResources(selectedStudent.id, (resourcesList) => {
+      setStudentResources(resourcesList);
+    });
+
     return () => {
       unsubTasks();
       unsubBooks();
+      unsubResources();
     };
   }, [selectedStudent]);
 
@@ -472,6 +484,19 @@ export function MyStudents() {
     else if (student.archivedPrograms && Array.isArray(student.archivedPrograms)) {
       setArchivedPrograms(student.archivedPrograms);
     } else setArchivedPrograms([]);
+
+    const savedResources = localStorage.getItem(`student_resources_${student.id}`);
+    if (savedResources) {
+      try { setStudentResources(JSON.parse(savedResources)); } catch {}
+    } else {
+      setStudentResources([]);
+    }
+    getStudentResources(student.id).then(resList => {
+      if (Array.isArray(resList)) {
+        setStudentResources(resList);
+        localStorage.setItem(`student_resources_${student.id}`, JSON.stringify(resList));
+      }
+    });
 
     // Subject performance from real detailed trials or real task completion
     if (savedDetailedTrials) {
@@ -1376,6 +1401,13 @@ export function MyStudents() {
                   Gelişim Analizi
                 </button>
                 <button 
+                  onClick={() => setActiveTab('resources')}
+                  className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 ${activeTab === 'resources' ? 'bg-white text-primary shadow-sm font-black' : 'text-on-surface-variant'}`}
+                >
+                  <BookMarked className="w-4 h-4 text-primary" />
+                  <span>Soru Kaynakları ({studentResources.length})</span>
+                </button>
+                <button 
                   onClick={() => setActiveTab('books')}
                   className={`px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${activeTab === 'books' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant'}`}
                 >
@@ -1919,6 +1951,172 @@ export function MyStudents() {
               }}
               showToast={showToast}
             />
+          ) : activeTab === 'resources' ? (
+            <div className="space-y-6">
+              {/* Header & Stats for Student Resources */}
+              <div className="p-6 bg-gradient-to-br from-indigo-950 via-primary to-primary-container rounded-[2.5rem] text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
+                <div className="space-y-1">
+                  <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider text-white">
+                    Ders & Soru Bankaları
+                  </span>
+                  <h4 className="text-2xl font-black">{selectedStudent?.name} Soru Kaynakları</h4>
+                  <p className="text-xs text-white/80 font-medium">
+                    Öğrencinin kendi portalından veya sizin tarafınızdan sisteme girilen tüm soru bankaları ve ders föyleri.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const subj = prompt('Ders adı (Örn: Matematik, Fizik, Türkçe):') || 'Matematik';
+                      const name = prompt('Kaynak / Kitap Adı (Örn: 3D TYT Matematik SB):');
+                      if (name && name.trim()) {
+                        const pub = prompt('Yayınevi (İsteğe bağlı):') || '';
+                        saveStudentResource(selectedStudent!.id, {
+                          subject: subj.trim(),
+                          name: name.trim(),
+                          publisher: pub.trim() || undefined,
+                          status: 'active'
+                        }).then(() => showToast('Kaynak başarıyla eklendi! 📚'));
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-white text-primary rounded-xl text-xs font-black hover:bg-white/90 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Yeni Kaynak Ekle</span>
+                  </button>
+                  <a
+                    href={`/resources?studentId=${selectedStudent?.id}`}
+                    className="px-4 py-2.5 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  >
+                    <span>Gelişmiş Yönetim</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Summary 4-grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Toplam Kaynak</p>
+                  <p className="text-2xl font-black text-primary">{studentResources.length} Kitap</p>
+                  <p className="text-[10px] text-on-surface-variant">Kayıtlı soru bankası</p>
+                </div>
+
+                <div className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Aktif Çözülen</p>
+                  <p className="text-2xl font-black text-emerald-600">
+                    {studentResources.filter(r => r.status === 'active').length} Kitap
+                  </p>
+                  <p className="text-[10px] text-on-surface-variant">Ödevlerde öncelikli</p>
+                </div>
+
+                <div className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Biten Kaynaklar</p>
+                  <p className="text-2xl font-black text-slate-700">
+                    {studentResources.filter(r => r.status === 'completed').length} Kitap
+                  </p>
+                  <p className="text-[10px] text-on-surface-variant">Tamamlandı</p>
+                </div>
+
+                <div className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-1">
+                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Kayıtlı Çözülen Soru</p>
+                  <p className="text-2xl font-black text-indigo-700">
+                    {studentResources.reduce((acc, r) => acc + (r.solvedQuestions || 0), 0)} Soru
+                  </p>
+                  <p className="text-[10px] text-on-surface-variant">Kitaplardan çözülen</p>
+                </div>
+              </div>
+
+              {studentResources.length === 0 ? (
+                <div className="py-16 px-6 text-center bg-surface-container-lowest rounded-[2.5rem] border border-outline-variant/10 shadow-xs space-y-4 max-w-md mx-auto my-6">
+                  <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                    <BookMarked className="w-7 h-7" />
+                  </div>
+                  <h4 className="text-xl font-bold text-on-surface">Öğrencinin Kaynak Kaydı Yok</h4>
+                  <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
+                    {selectedStudent?.name} henüz soru çözdüğü kaynakları girmedi.
+                    Öğrenci veya siz kaynak eklediğinizde ödev verirken ders bazında doğrudan görüntülenecektir.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {studentResources.map(res => (
+                    <div
+                      key={res.id}
+                      className="p-5 bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-xs space-y-3 flex flex-col justify-between"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                            {res.subject}
+                          </span>
+                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                            res.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                            res.status === 'completed' ? 'bg-slate-100 text-slate-700' :
+                            res.status === 'new' ? 'bg-sky-50 text-sky-700' : 'bg-amber-50 text-amber-700'
+                          }`}>
+                            {res.status === 'active' ? 'Aktif Çözülüyor' : res.status === 'completed' ? 'Bitti' : res.status === 'new' ? 'Yeni' : 'Beklemede'}
+                          </span>
+                        </div>
+
+                        <h5 className="font-extrabold text-base text-on-surface">{res.name}</h5>
+                        {res.publisher && (
+                          <p className="text-xs text-on-surface-variant font-medium">{res.publisher}</p>
+                        )}
+
+                        {res.totalQuestions !== undefined && (
+                          <div className="text-[11px] font-bold text-primary bg-primary/5 p-2 rounded-xl">
+                            İlerleme: {res.solvedQuestions || 0} / {res.totalQuestions} Soru
+                          </div>
+                        )}
+
+                        {res.notes && (
+                          <p className="text-xs text-on-surface-variant italic bg-surface-container-high/40 p-2.5 rounded-xl">
+                            "{res.notes}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-outline-variant/10 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewTask(prev => ({
+                              ...prev,
+                              subject: res.subject,
+                              title: `${res.name} - Soru Çözümü`
+                            }));
+                            setActiveTab('program');
+                            setShowProgramModal(true);
+                            showToast(`"${res.name}" seçilerek ödev formu açıldı!`);
+                          }}
+                          className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Bu Kaynaktan Ödev Ver</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`"${res.name}" kaynağını silmek istiyor musunuz?`)) {
+                              deleteStudentResource(selectedStudent!.id, res.id);
+                              showToast('Kaynak silindi.');
+                            }
+                          }}
+                          className="p-1.5 text-on-surface-variant hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-all cursor-pointer"
+                          title="Kaynağı Sil"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : activeTab === 'books' ? (
             <div className="space-y-6">
               {/* Books Summary Cards for Teacher */}
@@ -3088,6 +3286,114 @@ export function MyStudents() {
                       )}
                     </select>
                   </div>
+
+                  {/* Dynamic Student Resources for the Selected Subject */}
+                  {newTask.type !== 'book' && (() => {
+                    const selSub = (newTask.subject || '').trim().toLowerCase();
+                    const normalizeSubject = (s: string) => {
+                      return s.toLowerCase()
+                        .replace(/tyt|ayt|lgs|yks|dersi|konusu/g, '')
+                        .replace(/ı/g, 'i')
+                        .replace(/ö/g, 'o')
+                        .replace(/ü/g, 'u')
+                        .replace(/ş/g, 's')
+                        .replace(/ç/g, 'c')
+                        .replace(/ğ/g, 'g')
+                        .trim();
+                    };
+
+                    const normSelected = normalizeSubject(selSub);
+                    const matchingResources = (studentResources || []).filter(r => {
+                      if (!r.subject) return false;
+                      const normRes = normalizeSubject(r.subject);
+                      if (normRes === normSelected) return true;
+                      if (normRes.length >= 3 && normSelected.length >= 3) {
+                        return normRes.includes(normSelected) || normSelected.includes(normRes);
+                      }
+                      return false;
+                    });
+
+                    return (
+                      <div className="p-3.5 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-primary/5 rounded-2xl border border-amber-500/30 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                            <BookMarked className="w-3.5 h-3.5 text-amber-600" />
+                            {selectedStudent?.name ? `${selectedStudent.name.split(' ')[0]}'ın` : 'Öğrencinin'} {newTask.subject} Kaynakları ({matchingResources.length})
+                          </label>
+                          <NavLink
+                            to={`/resources?studentId=${selectedStudent?.id}`}
+                            target="_blank"
+                            className="text-[10px] font-bold text-amber-800 hover:text-amber-900 hover:underline flex items-center gap-0.5"
+                          >
+                            Tümünü Gör <ExternalLink className="w-2.5 h-2.5" />
+                          </NavLink>
+                        </div>
+
+                        {matchingResources.length > 0 ? (
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] font-bold text-amber-800/80 block">
+                              Ödev vermek için öğrencinin elindeki kitaba tıklayın:
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {matchingResources.map((res) => {
+                                const isSelected = newTask.title.includes(res.name);
+                                return (
+                                  <button
+                                    key={res.id}
+                                    type="button"
+                                    onClick={() => {
+                                      // Suggest book title and standard task quantity
+                                      setNewTask({
+                                        ...newTask,
+                                        title: `${res.name} - Soru Çözümü`,
+                                        amount: newTask.amount || '30 Soru'
+                                      });
+                                    }}
+                                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                                      isSelected 
+                                        ? 'bg-amber-100/90 border-amber-600 text-amber-950 shadow-sm ring-2 ring-amber-500/40' 
+                                        : 'bg-white hover:bg-amber-50 border-amber-200/80 text-on-surface'
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-1">
+                                      <p className="text-xs font-black truncate">{res.name}</p>
+                                      {isSelected && (
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px] font-bold text-on-surface-variant mt-1.5 pt-1 border-t border-amber-100">
+                                      <span className="text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded text-[9px]">
+                                        {res.publisher || 'Yayın belirtilmedi'}
+                                      </span>
+                                      {res.totalQuestions ? (
+                                        <span className="text-[10px] text-amber-900 font-bold">
+                                          {res.solvedQuestions || 0}/{res.totalQuestions} soru
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] capitalize text-amber-800">{res.status}</span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between p-2.5 bg-white/80 rounded-xl border border-dashed border-amber-400 text-[11px] text-amber-950">
+                            <span>Bu ders için öğrencinin kayıtlı kaynağı bulunamadı.</span>
+                            <NavLink
+                              to={`/resources?studentId=${selectedStudent?.id}&newSubject=${encodeURIComponent(newTask.subject)}`}
+                              target="_blank"
+                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] shrink-0 transition-colors shadow-xs"
+                            >
+                              + Kaynak Ekle
+                            </NavLink>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
 
                   {/* Book Reading Specific Block */}
                   {newTask.type === 'book' && (

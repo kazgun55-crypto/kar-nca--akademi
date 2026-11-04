@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { NavLink } from 'react-router-dom';
 import { 
-  Play, Pause, Download, BookOpen, CheckSquare, AlertTriangle, Save, Calendar, 
+  Play, Pause, Download, BookOpen, BookMarked, CheckSquare, AlertTriangle, Save, Calendar, 
   ShieldCheck, CheckCircle2, Youtube, Archive, Trash2, History, X, RotateCcw, 
   Timer, ClipboardCheck, ArrowRight, Sparkles, Target, Award, Minus, Plus, Quote,
   RefreshCw, Cloud, Smartphone, LayoutGrid, ListFilter, Check, Share2, Copy, Users, ExternalLink,
@@ -24,7 +25,9 @@ import {
   subscribeStudentStudySessions,
   getStudentDailyStudySummary,
   DailyStudySummary,
-  StudentStudySession
+  StudentStudySession,
+  StudentResource,
+  subscribeStudentResources
 } from '../lib/firestoreService';
 import { calculateWeeklyQuestionStats, getTaskQuestionCount, getTaskSolvedCount, WeeklyQuestionStats, calculateNetScore } from '../lib/utils';
 import { db } from '../lib/firebase';
@@ -135,6 +138,19 @@ export function StudentPortal() {
   const [todayStudySessions, setTodayStudySessions] = useState<StudentStudySession[]>([]);
   const [dailyStudySummary, setDailyStudySummary] = useState<DailyStudySummary>({});
   const timerStartTimeRef = useRef<number | null>(null);
+
+  // 📚 Soru ve Konu Kaynaklarım
+  const [studentResources, setStudentResources] = useState<StudentResource[]>([]);
+
+  useEffect(() => {
+    const targetStudentId = studentId || localStorage.getItem('currentUserId') || '1';
+    if (!targetStudentId) return;
+
+    const unsub = subscribeStudentResources(targetStudentId, (resList) => {
+      setStudentResources(resList || []);
+    });
+    return () => unsub();
+  }, [studentId]);
 
   // Load and subscribe to student study sessions
   useEffect(() => {
@@ -3067,6 +3083,122 @@ export function StudentPortal() {
 
         {/* Right Column - Secondary Actions, Results & History */}
         <div className="lg:col-span-4 flex flex-col gap-8">
+          {/* Kaynaklarım Widget */}
+          <div className="bg-gradient-to-br from-amber-500/10 via-surface-container-highest to-surface-container-low rounded-[2.5rem] p-6 sm:p-8 border border-amber-500/20 shadow-sm space-y-5">
+            <div className="flex items-center justify-between border-b border-outline-variant/10 pb-4">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md">
+                    Ders & Soru Takibi
+                  </span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black font-manrope text-on-surface flex items-center gap-2">
+                  <span>Kaynaklarım</span>
+                  <span className="text-sm font-bold text-amber-800 bg-amber-500/15 px-2.5 py-0.5 rounded-full">
+                    {studentResources.length} Kitap
+                  </span>
+                </h3>
+                <p className="text-xs text-on-surface-variant font-medium">
+                  Çözdüğün soru bankalarını ders ders takip et, öğretmeninin ödevleriyle eşleştir.
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-800 flex items-center justify-center shrink-0">
+                <BookMarked className="w-6 h-6 text-amber-800" />
+              </div>
+            </div>
+
+            {studentResources.length > 0 ? (
+              <div className="space-y-3.5">
+                {/* Subject Distribution Pills */}
+                <div className="flex flex-wrap gap-1.5">
+                  {Array.from(new Set(studentResources.map(r => r.subject).filter(Boolean))).slice(0, 5).map(sub => {
+                    const count = studentResources.filter(r => r.subject === sub).length;
+                    return (
+                      <span key={sub} className="text-[10px] font-bold px-2 py-0.5 bg-surface-container-lowest text-amber-950 border border-amber-500/20 rounded-lg">
+                        {sub}: <strong>{count}</strong>
+                      </span>
+                    );
+                  })}
+                  {new Set(studentResources.map(r => r.subject).filter(Boolean)).size > 5 && (
+                    <span className="text-[10px] font-bold text-on-surface-variant px-1.5 py-0.5">
+                      +{new Set(studentResources.map(r => r.subject).filter(Boolean)).size - 5} ders
+                    </span>
+                  )}
+                </div>
+
+                {/* Top Active Books Preview */}
+                <div className="space-y-2">
+                  {studentResources.slice(0, 3).map((res) => {
+                    const pct = res.totalQuestions && res.totalQuestions > 0
+                      ? Math.min(100, Math.round(((res.solvedQuestions || 0) / res.totalQuestions) * 100))
+                      : 0;
+
+                    return (
+                      <div key={res.id} className="p-3 bg-surface-container-lowest/90 rounded-2xl border border-outline-variant/10 text-left space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-100/60 px-1.5 py-0.2 rounded">
+                              {res.subject}
+                            </span>
+                            <p className="text-xs font-black text-on-surface truncate mt-0.5">{res.name}</p>
+                          </div>
+                          <span className="text-[9px] font-bold text-on-surface-variant shrink-0 bg-surface-container-high px-1.5 py-0.5 rounded">
+                            {res.publisher || 'Kaynak'}
+                          </span>
+                        </div>
+
+                        {res.totalQuestions ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px] font-bold text-on-surface-variant">
+                              <span>İlerleme: %{pct}</span>
+                              <span className="text-amber-900 font-extrabold">{res.solvedQuestions || 0} / {res.totalQuestions} Soru</span>
+                            </div>
+                            <div className="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-amber-500 h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] font-semibold text-on-surface-variant capitalize">Durum: {res.status}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 flex items-center gap-2">
+                  <NavLink
+                    to="/resources"
+                    className="flex-1 py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs text-center transition-all shadow-sm flex items-center justify-center gap-1.5"
+                  >
+                    <BookMarked className="w-4 h-4" />
+                    <span>Tüm Kaynakları Yönet</span>
+                  </NavLink>
+                  <NavLink
+                    to="/resources"
+                    className="py-2.5 px-3 bg-surface-container-lowest hover:bg-surface-container-high text-amber-950 font-bold border border-amber-500/20 rounded-xl text-xs transition-all flex items-center justify-center gap-1"
+                    title="Yeni Kaynak Ekle"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Ekle</span>
+                  </NavLink>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4 space-y-3 bg-surface-container-lowest/60 rounded-2xl p-4 border border-dashed border-amber-500/30">
+                <p className="text-xs font-medium text-on-surface-variant">
+                  Henüz soru bankası veya kaynak eklemedin. Çözdüğün kaynakları ders ders ekle, öğretmeninin doğrudan bu kitaplardan ödev vermesini sağla!
+                </p>
+                <NavLink
+                  to="/resources"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>İlk Kaynağını Ekle</span>
+                </NavLink>
+              </div>
+            )}
+          </div>
+
           {/* Exam Entry (İşlevsel Deneme & Sınav Sonucu Gir) */}
           <div className="bg-surface-container-highest rounded-[2.5rem] p-6 sm:p-8 border border-outline-variant/10 shadow-sm space-y-6">
             <div className="flex items-center justify-between border-b border-outline-variant/10 pb-4">

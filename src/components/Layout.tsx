@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
-import { Menu, X, LayoutDashboard, Users, UserCircle, ClipboardCheck, BarChart3, Settings, ShieldCheck, BookOpen, Calendar, Trophy, LogOut } from 'lucide-react';
+import { Menu, X, LayoutDashboard, Users, UserCircle, ClipboardCheck, BarChart3, Settings, ShieldCheck, BookOpen, BookMarked, Calendar, Trophy, LogOut } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
@@ -36,7 +36,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     } else {
       return [
         { icon: UserCircle, label: 'Portal', path: '/portal' },
-        { icon: BookOpen, label: 'Kütüphanem', path: '/library' },
+        { icon: BookMarked, label: 'Kaynaklarım', path: '/resources' },
         { icon: ClipboardCheck, label: 'Deneme Gir', path: '/enter-trial' },
         { icon: BarChart3, label: 'Analiz', path: '/analytics' },
       ];

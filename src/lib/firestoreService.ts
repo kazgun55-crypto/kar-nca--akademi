@@ -1213,6 +1213,9 @@ export function initGlobalCloudSync() {
         if (Array.isArray(s.trialResults) && s.trialResults.length > 0) {
           localStorage.setItem(`trial_results_${s.id}`, JSON.stringify(s.trialResults));
         }
+        if (Array.isArray(s.studyResources)) {
+          localStorage.setItem(`student_resources_${s.id}`, JSON.stringify(s.studyResources));
+        }
       });
       window.dispatchEvent(new Event('storage'));
     }
@@ -1340,6 +1343,241 @@ export function subscribeStudentBooks(studentId: string, callback: (books: Stude
     console.warn('subscribeStudentBooks setup error:', err);
     return () => {};
   }
+}
+
+// --------------------------------------------------------------------------
+// Student Study Resources (Ders Kaynakları & Soru Bankaları) Services
+// --------------------------------------------------------------------------
+
+export interface StudentResource {
+  id: string;
+  studentId: string;
+  subject: string; // e.g. 'Matematik', 'Türkçe', 'Fizik', etc.
+  name: string; // e.g. '3D TYT Matematik Soru Bankası'
+  publisher?: string; // e.g. '3D Yayınları', 'Apotemi', 'Limit'
+  status: 'active' | 'completed' | 'new' | 'paused'; // 'active': Aktif Çözülüyor, 'completed': Bitti, 'new': Yeni Başlandı, 'paused': Beklemede
+  totalQuestions?: number;
+  solvedQuestions?: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export async function saveStudentResource(
+  studentId: string,
+  resource: Omit<StudentResource, 'id' | 'createdAt' | 'studentId'> & { id?: string; createdAt?: string; studentId?: string; updatedAt?: string }
+): Promise<StudentResource> {
+  const cleanId = (studentId || (typeof localStorage !== 'undefined' ? localStorage.getItem('currentUserId') : '') || '1').trim();
+  const resourceId = resource.id || 'res_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  const now = new Date().toISOString();
+  
+  let canonicalId = cleanId;
+  try {
+    const student = await getStudentById(cleanId);
+    if (student && student.id) canonicalId = student.id;
+  } catch {}
+
+  const fullResource: StudentResource = {
+    ...cleanForFirestore(resource),
+    id: resourceId,
+    studentId: canonicalId,
+    createdAt: resource.createdAt || now,
+    updatedAt: now
+  };
+
+  // 1. Update localStorage cache immediately
+  const localKey = `student_resources_${canonicalId}`;
+  let existingList: StudentResource[] = [];
+  try {
+    const raw = localStorage.getItem(localKey);
+    if (raw) existingList = JSON.parse(raw);
+  } catch {}
+  
+  const filtered = existingList.filter(r => r.id !== resourceId);
+  const updatedList = [fullResource, ...filtered];
+  localStorage.setItem(localKey, JSON.stringify(updatedList));
+  if (cleanId !== canonicalId) {
+    localStorage.setItem(`student_resources_${cleanId}`, JSON.stringify(updatedList));
+  }
+
+  // 2. Dual persistence in Firestore: dedicated collection 'study_resources' and inside 'students' doc
+  try {
+    await setDoc(doc(db, 'study_resources', resourceId), fullResource, { merge: true });
+    await setDoc(doc(db, 'students', canonicalId), {
+      studyResources: updatedList,
+      lastResourceUpdate: now
+    }, { merge: true });
+
+    if (cleanId !== canonicalId) {
+      await setDoc(doc(db, 'students', cleanId), {
+        studyResources: updatedList,
+        lastResourceUpdate: now
+      }, { merge: true });
+    }
+  } catch (err) {
+    console.warn('Firestore save student resource error:', err);
+  } finally {
+    window.dispatchEvent(new CustomEvent('student_resources_updated', {
+      detail: { studentId: canonicalId, resources: updatedList }
+    }));
+    window.dispatchEvent(new Event('storage'));
+  }
+
+  return fullResource;
+}
+
+export async function deleteStudentResource(studentId: string, resourceId: string): Promise<void> {
+  const cleanId = (studentId || '1').trim();
+  let canonicalId = cleanId;
+  try {
+    const student = await getStudentById(cleanId);
+    if (student && student.id) canonicalId = student.id;
+  } catch {}
+
+  const localKey = `student_resources_${canonicalId}`;
+  let existingList: StudentResource[] = [];
+  try {
+    const raw = localStorage.getItem(localKey);
+    if (raw) existingList = JSON.parse(raw);
+  } catch {}
+
+  const updatedList = existingList.filter(r => r.id !== resourceId);
+  localStorage.setItem(localKey, JSON.stringify(updatedList));
+  if (cleanId !== canonicalId) {
+    localStorage.setItem(`student_resources_${cleanId}`, JSON.stringify(updatedList));
+  }
+
+  try {
+    await deleteDoc(doc(db, 'study_resources', resourceId));
+    await setDoc(doc(db, 'students', canonicalId), {
+      studyResources: updatedList,
+      lastResourceUpdate: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn('Firestore delete student resource error:', err);
+  } finally {
+    window.dispatchEvent(new CustomEvent('student_resources_updated', {
+      detail: { studentId: canonicalId, resources: updatedList }
+    }));
+    window.dispatchEvent(new Event('storage'));
+  }
+}
+
+export async function getStudentResources(studentId: string): Promise<StudentResource[]> {
+  if (!studentId) return [];
+  const cleanId = studentId.trim();
+  let canonicalId = cleanId;
+  try {
+    const student = await getStudentById(cleanId);
+    if (student && student.id) canonicalId = student.id;
+  } catch {}
+
+  const localKey = `student_resources_${canonicalId}`;
+
+  try {
+    // 1. Direct query from study_resources collection
+    const q = query(collection(db, 'study_resources'), where('studentId', '==', canonicalId));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as StudentResource));
+      localStorage.setItem(localKey, JSON.stringify(list));
+      return list;
+    }
+
+    // 2. Lookup in students doc
+    const sDoc = await getDoc(doc(db, 'students', canonicalId));
+    if (sDoc.exists() && Array.isArray(sDoc.data()?.studyResources)) {
+      const list = sDoc.data().studyResources;
+      localStorage.setItem(localKey, JSON.stringify(list));
+      return list;
+    }
+  } catch (err) {
+    console.warn('getStudentResources firestore error:', err);
+  }
+
+  try {
+    const raw = localStorage.getItem(localKey);
+    if (raw) return JSON.parse(raw);
+    const rawAlt = localStorage.getItem(`student_resources_${cleanId}`);
+    if (rawAlt) return JSON.parse(rawAlt);
+  } catch {}
+
+  return [];
+}
+
+export function subscribeStudentResources(
+  studentId: string,
+  callback: (resources: StudentResource[]) => void
+): () => void {
+  if (!studentId) {
+    callback([]);
+    return () => {};
+  }
+  const cleanId = studentId.trim();
+
+  // Instant local delivery
+  let initialList: StudentResource[] = [];
+  try {
+    const raw = localStorage.getItem(`student_resources_${cleanId}`);
+    if (raw) initialList = JSON.parse(raw);
+  } catch {}
+  callback(initialList);
+
+  let unsubs: (() => void)[] = [];
+  let isCleanedUp = false;
+
+  const setupListener = async () => {
+    let targetDocId = cleanId;
+    try {
+      const student = await getStudentById(cleanId);
+      if (student && student.id) targetDocId = student.id;
+    } catch {}
+
+    if (isCleanedUp) return;
+
+    try {
+      // 1. Listen to study_resources collection
+      const q = query(collection(db, 'study_resources'), where('studentId', '==', targetDocId));
+      const u1 = onSnapshot(q, (snap) => {
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as StudentResource));
+          list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+          localStorage.setItem(`student_resources_${cleanId}`, JSON.stringify(list));
+          localStorage.setItem(`student_resources_${targetDocId}`, JSON.stringify(list));
+          callback(list);
+        }
+      }, () => {});
+      unsubs.push(u1);
+
+      // 2. Listen to student document
+      const u2 = onSnapshot(doc(db, 'students', targetDocId), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && Array.isArray(data.studyResources)) {
+            localStorage.setItem(`student_resources_${cleanId}`, JSON.stringify(data.studyResources));
+            localStorage.setItem(`student_resources_${targetDocId}`, JSON.stringify(data.studyResources));
+            callback(data.studyResources);
+          }
+        }
+      }, () => {});
+      unsubs.push(u2);
+    } catch {}
+  };
+
+  setupListener();
+
+  const handleCustomEvent = (e: any) => {
+    if (e.detail && (e.detail.studentId === cleanId || e.detail.cleanId === cleanId)) {
+      callback(e.detail.resources || []);
+    }
+  };
+  window.addEventListener('student_resources_updated', handleCustomEvent);
+
+  return () => {
+    isCleanedUp = true;
+    unsubs.forEach(u => u());
+    window.removeEventListener('student_resources_updated', handleCustomEvent);
+  };
 }
 
 // --------------------------------------------------------------------------

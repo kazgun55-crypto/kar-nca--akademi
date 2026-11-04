@@ -16,7 +16,8 @@ import {
   Timer,
   Calendar,
   Trophy,
-  Sparkles
+  Sparkles,
+  BookMarked
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 
@@ -30,6 +31,7 @@ const navItems = [
   { icon: Users, label: 'Öğrenci Dizini', path: '/students', roles: ['admin'] },
   { icon: UserCircle, label: 'Öğrenci Portalı', path: '/portal', roles: ['student'] },
   { icon: Sparkles, label: 'Soru Çözücü AI', path: '/solver', roles: ['student', 'teacher', 'admin'], isSpecial: true },
+  { icon: BookMarked, label: 'Kaynaklarım', path: '/resources', roles: ['student', 'teacher', 'admin'] },
   { icon: BookOpen, label: 'Kütüphanem', path: '/library', roles: ['student', 'teacher', 'admin'] },
   { icon: ClipboardCheck, label: 'Deneme Gir', path: '/enter-trial', roles: ['student'] },
   { icon: GraduationCap, label: 'Sınıf Yönetimi', path: '/classes', roles: ['admin'] },
