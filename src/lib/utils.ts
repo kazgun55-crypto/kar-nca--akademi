@@ -19,10 +19,39 @@ export interface WeeklyQuestionStats {
   accuracyRate: number;
   videoTasksCount: number;
   completedVideoTasksCount: number;
+  videoProgressPercent: number;
   readingTasksCount: number;
   completedReadingTasksCount: number;
+  readingProgressPercent: number;
   questionTasksCount: number;
   completedQuestionTasksCount: number;
+}
+
+/**
+ * Accurately determines whether a task is a book/reading task.
+ */
+export function isReadingTask(task: any): boolean {
+  if (!task) return false;
+  const type = String(task.type || '').toLowerCase().trim();
+  const subj = String(task.subject || '').toLowerCase().trim();
+  const title = String(task.title || task.topic || '').toLowerCase().trim();
+  const amountStr = String(task.amount || '').toLowerCase().trim();
+
+  return type === 'book' || type === 'reading' || 
+         subj.includes('okuma') || subj.includes('kitap') ||
+         title.includes('kitap okuma') || title.includes('serbest okuma') || title.includes('sayfa okuma') || title.includes('paragraf okuma') ||
+         amountStr.includes('sayfa') || amountStr.includes('syf');
+}
+
+/**
+ * Accurately determines whether a task is a video task.
+ */
+export function isVideoTask(task: any): boolean {
+  if (!task) return false;
+  const type = String(task.type || '').toLowerCase().trim();
+  const amountStr = String(task.amount || '').toLowerCase().trim();
+  const title = String(task.title || task.topic || '').toLowerCase().trim();
+  return type === 'video' || amountStr.includes('video') || title.includes('video');
 }
 
 /**
@@ -34,6 +63,13 @@ export interface WeeklyQuestionStats {
 export function isQuestionTask(task: any): boolean {
   if (!task) return false;
 
+  // If it's a reading or video task, it's NOT a question task unless student explicitly entered test scores
+  if (isReadingTask(task) || isVideoTask(task)) {
+    const hasScores = (task.correct !== undefined && task.correct !== null) || 
+                      (task.incorrect !== undefined && task.incorrect !== null);
+    if (!hasScores) return false;
+  }
+
   // If the task has entered correct or incorrect scores, it is definitely a question-based evaluation!
   const hasScores = (task.correct !== undefined && task.correct !== null) || 
                     (task.incorrect !== undefined && task.incorrect !== null) ||
@@ -43,9 +79,10 @@ export function isQuestionTask(task: any): boolean {
   }
 
   const type = String(task.type || '').toLowerCase().trim();
+  const subj = String(task.subject || '').toLowerCase().trim();
 
   // Explicit non-question task types (unless scores were explicitly entered above):
-  if (type === 'book' || type === 'reading' || type === 'video') {
+  if (type === 'book' || type === 'reading' || type === 'video' || subj.includes('kitap') || subj.includes('okuma')) {
     return false;
   }
 
@@ -165,8 +202,10 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
       accuracyRate: 0,
       videoTasksCount: 0,
       completedVideoTasksCount: 0,
+      videoProgressPercent: 0,
       readingTasksCount: 0,
       completedReadingTasksCount: 0,
+      readingProgressPercent: 0,
       questionTasksCount: 0,
       completedQuestionTasksCount: 0
     };
@@ -189,14 +228,8 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
   for (const t of tasks) {
     if (!t) continue;
     const isQ = isQuestionTask(t);
-    const type = String(t.type || '').toLowerCase().trim();
-    const amountStr = String(t.amount || '').toLowerCase().trim();
-    const titleStr = String(t.title || t.topic || '').toLowerCase().trim();
-
-    const isVideo = type === 'video' || amountStr.includes('video');
-    const isReading = type === 'book' || type === 'reading' || 
-                      amountStr.includes('sayfa') || amountStr.includes('syf') || 
-                      titleStr.includes('kitap') || titleStr.includes('okuma');
+    const isVideo = isVideoTask(t);
+    const isReading = isReadingTask(t);
 
     if (isVideo) {
       videoTasksCount++;
@@ -242,6 +275,13 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
   const evaluatedTotalWithEmpty = correct + incorrect + empty;
   const accuracyRate = evaluatedTotalWithEmpty > 0 ? Math.round((correct / evaluatedTotalWithEmpty) * 100) : 0;
 
+  const readingProgressPercent = readingTasksCount > 0 
+    ? Math.round((completedReadingTasksCount / readingTasksCount) * 100) 
+    : 0;
+  const videoProgressPercent = videoTasksCount > 0 
+    ? Math.round((completedVideoTasksCount / videoTasksCount) * 100) 
+    : 0;
+
   return {
     assignedQuestions: assigned,
     solvedQuestions: solved,
@@ -256,8 +296,10 @@ export function calculateWeeklyQuestionStats(tasks: any[], customWeeklyTarget?: 
     accuracyRate,
     videoTasksCount,
     completedVideoTasksCount,
+    videoProgressPercent,
     readingTasksCount,
     completedReadingTasksCount,
+    readingProgressPercent,
     questionTasksCount,
     completedQuestionTasksCount
   };

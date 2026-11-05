@@ -478,9 +478,38 @@ app.post("/api/analyze", async (req, res) => {
           }
         }
 
+        let finalSummary = parsedAi.summary || smartStats.summary;
+        let finalWeeklyReview = parsedAi.weeklyProgramReview || smartStats.weeklyProgramAnalysis.summary;
+
+        // Strict guard against AI hallucinating 100% book reading when tasks were incomplete
+        const readingCount = smartStats.weeklyPerformanceStats?.readingTasksCount || 0;
+        const readingDone = smartStats.weeklyPerformanceStats?.completedReadingTasksCount || 0;
+        const readingRate = smartStats.weeklyPerformanceStats?.readingCompletionRate || 0;
+
+        if (readingCount > 0 && readingRate < 100) {
+          const falseClaims = [
+            /kitap okuma[\w\s]*%100/gi,
+            /kitap okuma[\w\s]*tamamlandı/gi,
+            /kitap okuma[\w\s]*başarıyla tamamlandı/gi,
+            /kitap okuma[\w\s]*eksiksiz/gi
+          ];
+          const correction = readingRate === 0 
+            ? `kitap okuma görevi henüz tamamlanmamış olup (%0 tamamlama) telafi edilmesi önerilmektedir`
+            : `${readingCount} kitap okuma görevinden ${readingDone} tanesi tamamlanmış (%${readingRate} tamamlama) olup kalan görev telafi edilmelidir`;
+
+          falseClaims.forEach(regex => {
+            if (regex.test(finalSummary)) {
+              finalSummary = finalSummary.replace(regex, correction);
+            }
+            if (regex.test(finalWeeklyReview)) {
+              finalWeeklyReview = finalWeeklyReview.replace(regex, correction);
+            }
+          });
+        }
+
         const mergedResponse = {
           ...smartStats,
-          summary: parsedAi.summary || smartStats.summary,
+          summary: finalSummary,
           errorAnalysis: parsedAi.errorAnalysis || smartStats.errorAnalysis,
           teacherPedagogyNotes: (parsedAi.teacherPedagogyNotes && parsedAi.teacherPedagogyNotes.length > 0) ? parsedAi.teacherPedagogyNotes : smartStats.teacherPedagogyNotes,
           weeklyPlanRecommendations: sanitizedRecs,
@@ -490,7 +519,7 @@ app.post("/api/analyze", async (req, res) => {
           },
           weeklyProgramAnalysis: {
             ...smartStats.weeklyProgramAnalysis,
-            summary: parsedAi.weeklyProgramReview || smartStats.weeklyProgramAnalysis.summary
+            summary: finalWeeklyReview
           }
         };
 

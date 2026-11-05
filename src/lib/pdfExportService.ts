@@ -29,6 +29,9 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
   const emptyQ = stats.totalEmpty ?? weekly.totalEmpty ?? 0;
   const successRate = stats.successRate ?? weekly.successRate ?? 0;
   const completionRate = stats.completionRate ?? weekly.completionRate ?? 0;
+  const readingTasksCount = stats.readingTasksCount || 0;
+  const completedReadingTasksCount = stats.completedReadingTasksCount || 0;
+  const readingRate = stats.readingCompletionRate ?? (readingTasksCount > 0 ? Math.round((completedReadingTasksCount / readingTasksCount) * 100) : 0);
   const latestTrialNet = stats.latestTrialNet ?? trial.latestTrialNet ?? (analysis as any).latestTrialNet ?? 0;
   const highestTrialNet = stats.highestTrialNet ?? trial.highestTrialNet ?? (analysis as any).highestTrialNet ?? latestTrialNet;
   const avgTrialNet = trial.averageTrialNet ?? stats.averageTrialNet ?? (analysis as any).averageTrialNet ?? latestTrialNet;
@@ -355,6 +358,14 @@ export function exportAiAnalysisToPdf(analysis: any, studentName: string = 'Öğ
             <span>Genel Soru Başarısı (Boşlar Dahil):</span>
             <span style="color: ${successRate >= 85 ? '#16a34a' : '#ea580c'}; font-weight: 800;">%${successRate}</span>
           </div>
+          ${readingTasksCount > 0 ? `
+          <div class="stat-line">
+            <span>Kitap Okuma Görevi:</span>
+            <span style="color: ${readingRate >= 100 ? '#16a34a' : '#ea580c'}; font-weight: 800;">
+              ${completedReadingTasksCount} / ${readingTasksCount} Tamamlandı (%${readingRate})
+            </span>
+          </div>
+          ` : ''}
           <p style="margin: 6px 0 0 0; font-size: 8pt; color: #64748b; line-height: 1.35;">
             ${weekly.summary || 'Öğrencinin ödev tamamlama ve soru çözme performansı düzenli olarak değerlendirilmektedir.'}
           </p>

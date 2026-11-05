@@ -7,6 +7,8 @@ import {
   getTaskQuestionCount, 
   getTaskSolvedCount, 
   isQuestionTask, 
+  isReadingTask,
+  isVideoTask,
   calculateNetScore 
 } from './utils';
 
@@ -18,6 +20,8 @@ export interface AnalysisInput {
   detailedTrials?: any[];
   topicErrors?: any[];
   archivedPrograms?: any[];
+  studentBooks?: any[];
+  latestTrialNet?: number;
 }
 
 // Curated YouTube Educational Resources for Turkish Exam Prep
@@ -139,7 +143,17 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     : (canonicalStats.accuracyRate > 0 ? canonicalStats.accuracyRate : (completionRate > 0 ? completionRate : 85));
 
   // 2. Build Topic Performance Map & Subject Task Stats from active question tasks
-  const subjectTaskStats: Record<string, { correct: number; incorrect: number; empty: number; net: number; total: number; evaluatedTotal: number; topics: Record<string, number> }> = {};
+  const subjectTaskStats: Record<string, { 
+    correct: number; 
+    incorrect: number; 
+    empty: number; 
+    net: number; 
+    total: number; 
+    evaluatedTotal: number; 
+    totalTasks: number;
+    completedTasks: number;
+    topics: Record<string, number> 
+  }> = {};
   const topicPerformanceMap: Record<string, {
     subject: string;
     topic: string;
@@ -158,7 +172,21 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     const topicKey = `${subj}_${topic}`.toLowerCase();
 
     if (!subjectTaskStats[subj]) {
-      subjectTaskStats[subj] = { correct: 0, incorrect: 0, empty: 0, net: 0, total: 0, evaluatedTotal: 0, topics: {} };
+      subjectTaskStats[subj] = { 
+        correct: 0, 
+        incorrect: 0, 
+        empty: 0, 
+        net: 0, 
+        total: 0, 
+        evaluatedTotal: 0, 
+        totalTasks: 0,
+        completedTasks: 0,
+        topics: {} 
+      };
+    }
+    subjectTaskStats[subj].totalTasks += 1;
+    if (t.completed) {
+      subjectTaskStats[subj].completedTasks += 1;
     }
 
     if (!topicPerformanceMap[topicKey]) {
@@ -558,25 +586,46 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     ...Object.keys(trialBranchStats)
   ]));
 
+  const readingTasksCount = canonicalStats.readingTasksCount;
+  const completedReadingTasksCount = canonicalStats.completedReadingTasksCount;
+  const uncompletedReadingTasksCount = Math.max(0, readingTasksCount - completedReadingTasksCount);
+  const readingCompletionRate = canonicalStats.readingProgressPercent ?? (readingTasksCount > 0 ? Math.round((completedReadingTasksCount / readingTasksCount) * 100) : 0);
+
+  const videoTasksCount = canonicalStats.videoTasksCount;
+  const completedVideoTasksCount = canonicalStats.completedVideoTasksCount;
+  const uncompletedVideoTasksCount = Math.max(0, videoTasksCount - completedVideoTasksCount);
+  const videoCompletionRate = canonicalStats.videoProgressPercent ?? (videoTasksCount > 0 ? Math.round((completedVideoTasksCount / videoTasksCount) * 100) : 0);
+
   const subjectsAnalysis = actualSubjectNames.map(name => {
     const stats = Object.entries(subjectTaskStats).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
-    const relevantUnder85 = under80Topics.filter(u => u.subject.toLowerCase() === name.toLowerCase());
+    const subTasks = activeMetricsTasks.filter((t: any) => (t.subject || '').trim().toLowerCase() === name.toLowerCase());
+    const subCompleted = subTasks.filter((t: any) => t && t.completed);
+    const subUncompleted = subTasks.filter((t: any) => t && !t.completed);
+
+    const isReadingSubj = name.toLowerCase().includes('okuma') || name.toLowerCase().includes('kitap') || subTasks.some(isReadingTask);
+    const isVideoSubj = name.toLowerCase().includes('video') || subTasks.some(isVideoTask);
 
     const correctCount = stats?.correct || 0;
     const incorrectCount = stats?.incorrect || 0;
     const emptyCount = stats?.empty || 0;
     const evaluatedTotal = correctCount + incorrectCount + emptyCount;
 
-    let accuracy = 100;
+    let accuracy = 0;
     if (evaluatedTotal > 0) {
+      // Soru ödevi ve test doğru/yanlış analiz oranı
       accuracy = Math.round((correctCount / evaluatedTotal) * 100);
+    } else if (subTasks.length > 0) {
+      // Kitap okuma, video ve soru sonucu henüz girilmemiş görevler:
+      // KESİNLİKLE GERÇEK TAMAMLANMA ORANI ESAS ALINIR (Tamamlanan Görev / Toplam Görev)
+      // Öğrenci kitap okumayı tamamlamadıysa ASLA %100 DEĞİL, gerçek oran (%0 vb.) verilir!
+      accuracy = Math.round((subCompleted.length / subTasks.length) * 100);
     } else {
       const branchTrial = trialBranchStats[name];
       const branchEvaluated = (branchTrial?.correct || 0) + (branchTrial?.incorrect || 0) + (branchTrial?.empty || 0);
       if (branchEvaluated > 0) {
         accuracy = Math.round(((branchTrial?.correct || 0) / branchEvaluated) * 100);
       } else {
-        accuracy = 100;
+        accuracy = 0;
       }
     }
 
@@ -584,15 +633,31 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     if (accuracy < 60) status = 'danger';
     else if (accuracy < 85) status = 'warning';
 
-    const deficiencies = relevantUnder85.map(u => ({
-      topic: u.topic,
-      errorCount: u.incorrect,
-      accuracy: u.accuracy,
-      description: `${name} dersinde '${u.topic}' konusunda ${u.incorrect} yanlış ve ${u.empty || 0} boş kaydedildi. Boş sorular dahil başarı oranı %${u.accuracy} olup %85 eşiğinin altındadır.`,
-      recommendations: [
-        getRecommendedVideo(name, u.topic)
-      ]
-    }));
+    const deficiencies: any[] = [];
+    if (isReadingSubj && subUncompleted.length > 0) {
+      deficiencies.push({
+        topic: 'Kitap Okuma Görevi',
+        errorCount: subUncompleted.length,
+        accuracy,
+        description: subCompleted.length === 0
+          ? `${name} görevi bu hafta henüz tamamlanmadı (%0 tamamlanma). Paragraf hızı ve okuduğunu anlama becerisi için günlük kitap okuma görevi aksatılmamalıdır.`
+          : `${subTasks.length} kitap okuma görevinden ${subCompleted.length} tanesi tamamlandı, ${subUncompleted.length} görev henüz tamamlanmadı (%${accuracy} tamamlama).`,
+        recommendations: []
+      });
+    }
+
+    const relevantUnder85 = under80Topics.filter(u => u.subject.toLowerCase() === name.toLowerCase());
+    relevantUnder85.forEach(u => {
+      deficiencies.push({
+        topic: u.topic,
+        errorCount: u.incorrect,
+        accuracy: u.accuracy,
+        description: `${name} dersinde '${u.topic}' konusunda ${u.incorrect} yanlış ve ${u.empty || 0} boş kaydedildi. Boş sorular dahil başarı oranı %${u.accuracy} olup %85 eşiğinin altındadır.`,
+        recommendations: [
+          getRecommendedVideo(name, u.topic)
+        ]
+      });
+    });
 
     return {
       name,
@@ -606,11 +671,20 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
     ? `Son deneme sınavı neti ${latestTrialNet.toFixed(1)} olarak gerçekleşti (Kayıtlı: ${effectiveTrialCount} Deneme, En yüksek: ${highestTrialNet.toFixed(1)} net, Ortalama: ${averageTrialNet.toFixed(1)} net).` 
     : `Kayıtlı deneme sınavı bulunmamaktadır; öğrenciye seviyesine uygun deneme sınavı tanımlanmalıdır.`;
   
-  const videoText = canonicalStats.videoTasksCount > 0 
-    ? `Programdaki ${canonicalStats.videoTasksCount} video görevinden ${canonicalStats.completedVideoTasksCount} tanesi izlendi.` 
+  const videoText = videoTasksCount > 0 
+    ? (videoCompletionRate === 100
+        ? `Programdaki ${videoTasksCount} video ders görevinin tamamı (%100) izlendi.`
+        : (videoCompletionRate === 0
+            ? `Programdaki ${videoTasksCount} video ders görevi henüz izlenmemiştir (%0 izlenme).`
+            : `Programdaki ${videoTasksCount} video görevinden ${completedVideoTasksCount} tanesi izlendi (%${videoCompletionRate} izlenme).`))
     : '';
-  const readingText = canonicalStats.readingTasksCount > 0 
-    ? `Programdaki ${canonicalStats.readingTasksCount} kitap/okuma ödevinden ${canonicalStats.completedReadingTasksCount} tanesi tamamlandı.` 
+
+  const readingText = readingTasksCount > 0 
+    ? (readingCompletionRate === 100 
+        ? `Programdaki ${readingTasksCount} kitap okuma görevinin tamamı (%100) başarıyla tamamlandı.` 
+        : (readingCompletionRate === 0 
+            ? `Programdaki ${readingTasksCount} kitap okuma görevi henüz tamamlanmamıştır (%0 tamamlanma).` 
+            : `Programdaki ${readingTasksCount} kitap okuma görevinden ${completedReadingTasksCount} tanesi tamamlandı (%${readingCompletionRate} tamamlama, ${uncompletedReadingTasksCount} okuma görevi henüz tamamlanmadı).`))
     : '';
 
   const taskText = totalEvaluatedQuestions > 0 
@@ -756,10 +830,13 @@ export function generateSmartAnalysis(input: AnalysisInput = {}) {
       successRate: weeklyOverallAccuracy,
       evaluatedQuestions: weeklyEvaluatedQuestions,
       unevaluatedQuestions: weeklyUnevaluatedQuestions,
-      videoTasksCount: canonicalStats.videoTasksCount,
-      completedVideoTasksCount: canonicalStats.completedVideoTasksCount,
-      readingTasksCount: canonicalStats.readingTasksCount,
-      completedReadingTasksCount: canonicalStats.completedReadingTasksCount,
+      videoTasksCount,
+      completedVideoTasksCount,
+      videoCompletionRate,
+      readingTasksCount,
+      completedReadingTasksCount,
+      uncompletedReadingTasksCount,
+      readingCompletionRate,
       completedTasksCount: completedTasks.length,
       totalTasksCount: activeMetricsTasks.length,
       uncompletedTasksCount: uncompletedTasks.length,
@@ -866,15 +943,18 @@ export function buildAiPromptData(smartStats: any, input: AnalysisInput) {
 
     const lines = dTasks.map((t: any, idx: number) => {
       const isQ = isQuestionTask(t);
-      const type = String(t.type || '').toLowerCase().trim();
+      const isReading = isReadingTask(t);
+      const isVideo = isVideoTask(t);
       const amountStr = t.amount ? ` (${t.amount})` : '';
-      const statusStr = t.completed ? 'Tamamlandı' : 'Bekliyor';
 
-      if (type === 'video' || String(t.amount || '').toLowerCase().includes('video')) {
-        return `  ${idx + 1}. [Video İzleme] ${t.subject || 'Ders'} - ${t.title || t.topic || 'Video'}${amountStr} -> Durum: ${statusStr} (Konu Anlatım Videosu)`;
-      } else if (type === 'book' || type === 'reading' || String(t.amount || '').toLowerCase().includes('sayfa') || String(t.title || '').toLowerCase().includes('kitap')) {
-        return `  ${idx + 1}. [Kitap Okuma / Tekrar] ${t.subject || 'Okuma'} - ${t.title || t.topic || 'Kitap'}${amountStr} -> Durum: ${statusStr} (Okuma Görevi)`;
+      if (isReading) {
+        const isDone = !!t.completed;
+        return `  ${idx + 1}. [Kitap Okuma Görevi] ${t.subject || 'Genel Okuma / Kitap'} - ${t.title || t.topic || 'Kitap Okuma'}${amountStr} -> DURUM: ${isDone ? 'TAMAMLANDI (Kitap okundu ✅)' : 'TAMAMLANMADI / BEKLİYOR (Öğrenci okumayı bitirmedi, %0 ❌)'}`;
+      } else if (isVideo) {
+        const isDone = !!t.completed;
+        return `  ${idx + 1}. [Video İzleme] ${t.subject || 'Ders'} - ${t.title || t.topic || 'Video'}${amountStr} -> DURUM: ${isDone ? 'TAMAMLANDI (Video izlendi ✅)' : 'TAMAMLANMADI / BEKLİYOR (Video izlenmedi ❌)'}`;
       } else if (isQ) {
+        const statusStr = t.completed ? 'Tamamlandı' : 'Bekliyor';
         const hasScore = (t.correct !== undefined && t.correct !== null) || (t.incorrect !== undefined && t.incorrect !== null);
         if (hasScore) {
           const c = Number(t.correct) || 0;
@@ -890,6 +970,7 @@ export function buildAiPromptData(smartStats: any, input: AnalysisInput) {
           return `  ${idx + 1}. [Soru Çözümü] ${t.subject || 'Ders'} - ${t.topic || t.title || 'Soru'}${amountStr} -> Durum: ${statusStr}`;
         }
       } else {
+        const statusStr = t.completed ? 'Tamamlandı' : 'Bekliyor';
         return `  ${idx + 1}. [Çalışma] ${t.subject || 'Ders'} - ${t.title || t.topic || 'Görev'}${amountStr} -> Durum: ${statusStr}`;
       }
     }).join('\n');
@@ -910,8 +991,11 @@ export function buildAiPromptData(smartStats: any, input: AnalysisInput) {
   const systemInstruction = `Sen Türkiye sınav sistemlerine (LGS, YKS, TYT, AYT, KPSS, DGS) ve okul müfredatına tam hakim, üst düzey uzman bir pedagojik yapay zeka eğitim koçusun.
 
 TEMEL VE TAVİZSİZ PEDAGOJİK KURALLAR:
-1. GÖREV TÜRLERİNİ ASLA KARIŞTIRMA:
-   - Video izleme (type: video) ve kitap/metin okuma (type: book/reading) görevleri soru testi DEĞİLDİR. Bunlar için ASLA "0 doğru yaptı", "soru çözemedi" veya "başarısız oldu" deme. Video izlendiyse "konu anlatım videosunu başarıyla izledi", kitap okunduysa "kitap okuma hedefini tamamladı" şeklinde takdir et.
+1. KİTAP OKUMA VE VİDEO GÖREVLERİNİN GERÇEK TAMAMLANMA DURUMU KESİN KURALI:
+   - Kitap okuma (type: book / reading / Genel Okuma) ve video görevlerini HARFİYEN verilen tamamlanma verisine (completed: true veya false) göre değerlendir!
+   - TAVİZSİZ KURAL: Öğrenci kitap okuma görevini tamamlamadıysa (Durum: Bekliyor / 0 Tamamlanan / %0), ASLA VE ASLA "kitap okuma %100" veya "kitap okuma hedefini tamamladı" DEME! Bu kabul edilemez bir veri hatasıdır.
+   - Eğer öğrenci kitap okuma görevini tamamlamadıysa (0 tamamlandı veya eksik), bunu açıkça ve dürüstçe belirt: "Haftalık programdaki kitap okuma görevi henüz tamamlanmamıştır (%0 tamamlanma). Paragraf hızı ve anlama kabiliyeti için kitap okuma görevinin mutlaka tamamlanması gerekmektedir."
+   - Sadece ve sadece öğrenci görevi tamamlamışsa (completed: true) tamamlandı olarak takdir et.
 2. DOĞRU-YANLIŞ VE BOŞ GİRİŞLERİNİ DÜZGÜN ANALİZ ET:
    - Bir soru ödevi tamamlanmış ancak öğrenci henüz doğru/yanlış girmemişse, bunu "sıfır doğru yaptı" şeklinde YORUMLAMA. "Soru çözümü tamamlanmış olup doğru/yanlış girişi beklenmektedir" şeklinde ifade et.
    - Başarı ve doğruluk oranı formülü: (Doğru / [Doğru + Yanlış + Boş]) * 100 olarak hesaplanır. Boş bırakılan sorular da başarı oranını düşürür ve hesaba mutlaka dahil edilmelidir.
@@ -949,7 +1033,13 @@ Yanıtını mutlaka geçerli JSON formatında döndür.`;
   * Sonucu Girilen Sorular: ${stats.totalCorrect + stats.totalIncorrect + stats.totalEmpty} soru (Doğru: ${stats.totalCorrect}, Yanlış: ${stats.totalIncorrect}, Boş: ${stats.totalEmpty}, Net: ${stats.totalNet})
   * Sonuç Doğruluk Oranı (Boşlar Dahil): %${stats.successRate}
 ${stats.unevaluatedQuestions > 0 ? `  * Not: Çözülen sorulardan ${stats.unevaluatedQuestions} tanesi için öğrenci henüz doğru/yanlış girişi yapmadı.\n` : ''}
-${stats.videoTasksCount > 0 ? `- Video Görevleri: ${stats.videoTasksCount} adet (Tamamlanan: ${stats.completedVideoTasksCount})\n` : ''}${stats.readingTasksCount > 0 ? `- Kitap/Okuma Görevleri: ${stats.readingTasksCount} adet (Tamamlanan: ${stats.completedReadingTasksCount})\n` : ''}
+${stats.readingTasksCount > 0 
+  ? `- Kitap Okuma Görevleri: Toplam ${stats.readingTasksCount} adet | Tamamlanan: ${stats.completedReadingTasksCount} adet | Tamamlanma Oranı: %${stats.readingCompletionRate}
+  * DİKKAT KİTAP OKUMA BİLGİSİ: ${stats.readingCompletionRate === 100 ? 'Tüm kitap okuma görevleri tamamlandı (%100).' : stats.readingCompletionRate === 0 ? 'ÖĞRENCİ KİTAP OKUMAYI HENÜZ TAMAMLAMADI (%0 tamamlanma). KESİNLİKLE %100 DEME, EKSİK OLDUĞUNU VE TELAFİ GEREKTİĞİNİ BELİRT!' : `${stats.uncompletedReadingTasksCount} kitap okuma görevi henüz tamamlanmadı (%${stats.readingCompletionRate} tamamlanma).`}\n` 
+  : '- Kitap Okuma Görevi: Bu hafta tanımlanmadı.\n'}
+${stats.videoTasksCount > 0 
+  ? `- Video Ders Görevleri: Toplam ${stats.videoTasksCount} adet | Tamamlanan: ${stats.completedVideoTasksCount} adet | İzlenme Oranı: %${stats.videoCompletionRate}\n` 
+  : '- Video Dersi: Bu hafta tanımlanmadı.\n'}
 Öğrencinin Günlük Program Dağılımı ve Görev Durumları:
 ${formattedDaySchedule}
 
